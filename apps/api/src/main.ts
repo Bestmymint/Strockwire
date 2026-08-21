@@ -6,12 +6,12 @@ import { createShutdownHandler, startApiServer } from "./server.ts";
 const logger = createApiLogger();
 
 async function main(): Promise<void> {
-  loadApiEnvironment();
+  const environment = loadApiEnvironment();
 
   const app = createApp({ logger });
   const runningServer = await startApiServer(app, {
     host: "127.0.0.1",
-    port: 0,
+    port: environment.STOCKWISE_API_PORT,
   });
   const shutdown = createShutdownHandler(runningServer, logger);
 

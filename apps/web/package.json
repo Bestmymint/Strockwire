@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "build": "next build",
-    "dev": "next dev",
+    "dev": "next dev --port 3000",
     "lint": "eslint .",
-    "start": "next start",
+    "start": "next start --port 3000",
     "test": "vitest run --config ../../vitest.config.mts src",
     "typecheck": "next typegen && tsc --project tsconfig.json --noEmit"
   },

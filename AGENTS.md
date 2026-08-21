@@ -109,7 +109,7 @@ apps/api/src/server.ts
 apps/api/src/main.ts
 ```
 
-The web and API packages have separate strict empty Zod environment schemas because neither shell owns configurable values yet. The API binds only to an OS-assigned loopback port until P1-M2-T04 defines the web-to-API development path. There is no endpoint, domain-module directory, active environment variable, Prisma schema, or Docker setup in this workspace yet.
+The web and API packages have separate strict Zod environment schemas. P1-M2-T04 defines the local path: the API binds to `127.0.0.1:3001`, and Next.js serves the browser at `http://localhost:3000` with a same-origin `/api/health` rewrite to the Express `/health` probe. There is no business endpoint, domain-module directory, Prisma schema, or Docker setup in this workspace yet.
 
 ### Approved physical boundaries
 
@@ -265,7 +265,7 @@ pnpm test
 pnpm typecheck
 ```
 
-The first command installs every current workspace from the committed lockfile without permitting lockfile changes. The second lists the private `stockwise` root plus `@stockwise/api` and `@stockwise/web`. `pnpm build` builds every workspace package that exposes a build script. `pnpm dev:api` runs the TypeScript API entry with Node.js watch mode; `pnpm start:api` serves the compiled API. Until P1-M2-T04 defines an origin/port contract, both API commands bind to an OS-assigned loopback port and emit the selected address in a structured startup log. `pnpm dev:web` starts the Next.js development server; `pnpm start:web` serves a previously built production application. `pnpm format` writes Prettier formatting for applicable non-generated, non-Markdown files; `pnpm format:check` checks the same scope without writing. `pnpm lint` runs the shared ESLint correctness rules plus Next.js Core Web Vitals rules for `apps/web`. `pnpm test` runs Vitest once and discovers root and workspace `*.test.ts`/`*.test.tsx` files; future cross-application tests under `tests/e2e` remain excluded for their dedicated runner. `pnpm typecheck` validates root tooling input, generates Next.js route types, and runs strict API/web package TypeScript validation.
+The first command installs every current workspace from the committed lockfile without permitting lockfile changes. The second lists the private `stockwise` root plus `@stockwise/api` and `@stockwise/web`. `pnpm build` builds every workspace package that exposes a build script. `pnpm dev:api` runs the TypeScript API entry with Node.js watch mode, and `pnpm start:api` serves the compiled API; both require `STOCKWISE_API_PORT` and bind only to `127.0.0.1`. `pnpm dev:web` and `pnpm start:web` use fixed port `3000`; Next.js loads the root `.env` when present and requires its server-only `STOCKWISE_API_ORIGIN` to configure the local health rewrite. `pnpm format` writes Prettier formatting for applicable non-generated, non-Markdown files; `pnpm format:check` checks the same scope without writing. `pnpm lint` runs the shared ESLint correctness rules plus Next.js Core Web Vitals rules for `apps/web`. `pnpm test` runs Vitest once and discovers root and workspace `*.test.ts`/`*.test.tsx` files; future cross-application tests under `tests/e2e` remain excluded for their dedicated runner. `pnpm typecheck` validates root tooling input, generates Next.js route types, and runs strict API/web package TypeScript validation.
 
 The web and API packages expose verified package-scoped `lint`, `test`, `typecheck`, and `build` scripts. The API package additionally exposes package-scoped `dev` and `start` scripts. No migration, database, or infrastructure commands exist yet.
 
@@ -285,6 +285,8 @@ The Phase 1 foundation tasks collectively must establish exact root commands, st
 
 `P1-M2-T03 — Health and Readiness Endpoints` established root-level `GET /health` and `GET /ready` operational probes. Health returns only `{"status":"ok"}` when the API process can handle requests. Readiness returns only `{"status":"ready"}` when all configured required dependencies are ready, otherwise `503 {"status":"not_ready"}`; it never exposes dependency identity or failure details. With no required external dependency yet, readiness defaults to ready. Frozen install, format-check, lint, strict typecheck, 18 root tests/14 API tests, API/web builds, and a compiled-API HTTP smoke were verified on 2026-08-22. It adds no business API, web integration, database, domain module, authentication, Docker, or infrastructure.
 
+`P1-M2-T04 — Web-to-API development path` established `STOCKWISE_API_PORT=3001` for the API loopback listener and server-only `STOCKWISE_API_ORIGIN=http://127.0.0.1:3001` for the Next.js rewrite. The browser requests same-origin `GET /api/health`; Next.js proxies it to Express `GET /health`. Express enables no CORS policy for this path and emits no cross-origin permission header. The web shell contains one narrow typed health client/view only; business REST APIs remain Express-owned under `/api/v1`. Frozen install, format-check, lint, strict typecheck, 24 tests, builds, dev/start HTTP proxy smokes, direct-origin header checks, and desktop-browser responsive smoke at 375px passed on 2026-08-22. It adds no business API, database, domain module, authentication, Docker, or infrastructure.
+
 Across the later foundation/application-shell tasks:
 
 1. `OQ-002` is resolved by `ADR-012`; preserve the App Router, `src/app`, Server Component default, and Express-owned business API boundary.
@@ -295,16 +297,16 @@ Across the later foundation/application-shell tasks:
 
 ### Environment and configuration contract
 
-`P1-M1-T04 — Environment example and validation contract` established the root `.env.example` as a comment-only ownership and handling contract. It intentionally contains no active assignments: exact names and values are added only when an owning process or infrastructure task exists and its blockers are resolved.
+`P1-M1-T04 — Environment example and validation contract` established the root `.env.example` ownership and handling contract. Exact names and values are added only when an owning process or infrastructure task exists and its blockers are resolved.
 
-- `apps/web` owns browser/build-time configuration. Its current Zod schema intentionally accepts no values and is loaded by `next.config.ts`; only intentionally public, non-sensitive values may enter the client bundle later. Tenant scope, trusted prices/totals, credentials, database settings, provider keys, and cloud secrets are never client configuration.
-- `apps/api` owns server-only runtime configuration, including future PostgreSQL, authentication, OpenRouter, and cloud settings. Its current schema intentionally accepts no values. Server-only values must not be exposed through web configuration, logs, errors, health endpoints, screenshots, analytics snapshots, or AI prompts.
+- `apps/web` owns browser/build-time configuration. Its current Zod schema requires `STOCKWISE_API_ORIGIN`, which `next.config.ts` reads from the root `.env` only to configure the local same-origin health rewrite. It is not public client configuration. Tenant scope, trusted prices/totals, credentials, database settings, provider keys, and cloud secrets are never client configuration.
+- `apps/api` owns server-only runtime configuration, including `STOCKWISE_API_PORT` and future PostgreSQL, authentication, OpenRouter, and cloud settings. Server-only values must not be exposed through web configuration, logs, errors, health endpoints, screenshots, analytics snapshots, or AI prompts.
 - Each process validates only its own environment with a process-owned Zod schema at startup. Separate strict empty Next.js and Express schemas and tests exist; there is no speculative shared root schema.
 - Local development values must be non-production and documented by the task that introduces the corresponding process or resource. Test values must identify isolated, disposable resources and must never target shared, staging, or production data.
 - Populated `.env` and `.env.*` files remain ignored. Only redacted example files may be committed. Never place real secrets, tokens, credentials, or production values in an example.
-- Web/API origins and ports are deferred to `P1-M2-T04`; local PostgreSQL connection examples to `P1-M3-T01`; authentication settings to the accepted `OQ-003` implementation; reporting/schedule/provider settings to `OQ-016`–`OQ-018` and Phase 7; AWS region/topology/secret-management settings to `OQ-015`/`OQ-020` and Phase 8.
+- `P1-M2-T04` owns the verified local port/origin contract: `STOCKWISE_API_PORT=3001`, `STOCKWISE_API_ORIGIN=http://127.0.0.1:3001`, and fixed web port `3000`. Local PostgreSQL connection examples remain deferred to `P1-M3-T01`; authentication settings to the accepted `OQ-003` implementation; reporting/schedule/provider settings to `OQ-016`–`OQ-018` and Phase 7; AWS region/topology/secret-management settings to `OQ-015`/`OQ-020` and Phase 8.
 
-P1-M1-T04 added no runtime validation before a process existed. P1-M2-T01 and P1-M2-T02 now own separate web and API schemas with tests; both contain no active names because web/API origins and every other setting remain assigned to later tasks or decisions.
+P1-M1-T04 added no runtime validation before a process existed. P1-M2-T04 updates the web and API schemas with the only concrete local integration values; both schemas select only their owned input and reject missing, invalid, and unowned values. All remaining configuration stays assigned to later tasks or decisions.
 
 ## 15. What agents may change
 

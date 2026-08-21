@@ -212,6 +212,23 @@ Health endpoints must not return environment values, versions with known exploit
 
 At this foundation stage the API has no required external dependency, so the default readiness result is ready. Future resource-owning tasks must register only their required dependency checks and must preserve the same status-only response contract.
 
+### 5.1 Local web development path
+
+For local development only, the Next.js server proxies its same-origin
+`GET /api/health` request to the Express `GET /health` operational probe. The
+browser never calls the Express loopback listener directly. This is not a
+StockWise business REST endpoint and does not change the `/api/v1` API base path.
+
+The root `.env` supplies `STOCKWISE_API_PORT=3001` to the API and
+`STOCKWISE_API_ORIGIN=http://127.0.0.1:3001` to the Next.js server; the browser
+server runs on fixed port `3000`. Both values are validated by their owning
+process and the origin value is server-only.
+
+Express does not enable CORS for this development path. It listens on
+`127.0.0.1` and emits no `Access-Control-Allow-Origin` header, including for a
+direct request carrying `Origin: http://localhost:3000`. The Next.js proxy is
+therefore the sole browser path for the health check.
+
 ## 6. Identity and account endpoints
 
 ### Endpoint catalog

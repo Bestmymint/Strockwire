@@ -4,6 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import HomePage from "@/app/page";
+import { QueryProvider } from "@/providers/query-provider";
 
 import { AppShell } from "./app-shell";
 
@@ -12,9 +13,11 @@ afterEach(cleanup);
 describe("web application shell", () => {
   it("renders its only route with accessible shell landmarks", () => {
     render(
-      <AppShell>
-        <HomePage />
-      </AppShell>,
+      <QueryProvider>
+        <AppShell>
+          <HomePage />
+        </AppShell>
+      </QueryProvider>,
     );
 
     expect(

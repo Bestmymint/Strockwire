@@ -294,6 +294,9 @@ Owning a table does not mean bypassing another module's invariant. For example, 
 - Keep React Server Components as the default and add `"use client"` only at boundaries that require state, effects, event handlers, browser APIs, or client-only providers.
 - Add Route Groups such as `(auth)` or `(app)` only when implemented routes justify them; do not create speculative route structure.
 - Keep StockWise core and business REST APIs in the Express application. Do not implement them as Next.js Route Handlers.
+- During local development, the browser reaches the Express operational health
+  probe through the Next.js same-origin `/api/health` rewrite. The rewrite targets
+  the API's loopback origin and avoids enabling broad browser-to-API CORS.
 
 ## 9. Backend layering
 

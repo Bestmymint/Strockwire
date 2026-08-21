@@ -94,6 +94,16 @@ describe("Express API application", () => {
     expect(response.headers.get("content-type")).toContain("application/json");
   });
 
+  it("does not permit direct cross-origin browser access to operational probes", async () => {
+    const { baseUrl } = await startApplication();
+    const response = await fetch(`${baseUrl}/health`, {
+      headers: { origin: "http://localhost:3000" },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
   it("returns ready when required dependencies are ready", async () => {
     const { baseUrl } = await startApplication({ readinessCheck: () => true });
     const response = await fetch(`${baseUrl}/ready`);

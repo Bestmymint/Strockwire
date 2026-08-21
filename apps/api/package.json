@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
-    "dev": "node --watch src/main.ts",
+    "dev": "node --env-file-if-exists=../../.env --watch src/main.ts",
     "lint": "eslint .",
-    "start": "node dist/main.js",
+    "start": "node --env-file-if-exists=../../.env dist/main.js",
     "test": "vitest run --config ../../vitest.config.mts src",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },

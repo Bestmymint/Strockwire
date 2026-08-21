@@ -1,3 +1,5 @@
+import { ApiHealthStatus } from "@/components/api-health-status";
+
 export default function HomePage() {
   return (
     <section className="max-w-2xl self-center">
@@ -11,6 +13,9 @@ export default function HomePage() {
         The responsive application shell is ready for later, explicitly scoped
         StockWise workflows.
       </p>
+      <div className="mt-6 text-sm text-muted-foreground">
+        <ApiHealthStatus />
+      </div>
     </section>
   );
 }
