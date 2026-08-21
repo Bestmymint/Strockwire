@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1 logical data contract; no Prisma schema or migration exists yet |
+| Status | Architecture Freeze v1 logical data contract; Prisma foundation exists without models or migrations |
 | Database | PostgreSQL |
 | ORM/migrations | Prisma |
 | Baseline | Architecture Freeze v1 |
@@ -13,6 +13,22 @@
 This document is the Source of Truth for StockWise's logical entities, ownership, relationships, constraints, indexes, lifecycle rules, and transaction invariants. It does not choose physical identifier types, quantity precision, or unresolved business states.
 
 Metric formulas belong to `docs/ANALYTICS.md`. HTTP payloads belong to `docs/API.md`. Product questions are tracked only in the master Open Questions register in `BUILD_SPEC.md`.
+
+### Prisma foundation
+
+`apps/api` owns Prisma configuration at `apps/api/prisma.config.ts`, the empty
+PostgreSQL provider schema at `apps/api/prisma/schema.prisma`, future generated
+migrations at `apps/api/prisma/migrations/`, and the ignored generated client at
+`apps/api/src/generated/prisma/`. P1-M3-T02 deliberately creates no model,
+table, migration, naming/mapping convention, or database business rule.
+
+The API validates its required server-only `DATABASE_URL` before runtime use.
+Prisma CLI generation and schema validation work without a populated local URL;
+commands that access PostgreSQL, including future migrations, require that URL.
+Generated clients are regenerated locally and in quality commands, while
+migrations remain reviewable source files. A later authorized model task must
+select physical table/column naming and Prisma mappings consistently with this
+logical contract.
 
 ## 2. Database-wide invariants
 

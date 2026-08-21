@@ -10,6 +10,7 @@ build/
 coverage/
 .nyc_output/
 *.tsbuildinfo
+apps/api/src/generated/
 
 # Local environment and secrets
 .env

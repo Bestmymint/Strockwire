@@ -2,8 +2,15 @@ packages:
   - "apps/*"
   - "packages/*"
 
+overrides:
+  deepmerge-ts: 8.0.2
+
 allowBuilds:
+  "@prisma/engines": true
+  prisma: true
   unrs-resolver: false
 
 engineStrict: true
 saveExact: true
+minimumReleaseAgeExclude:
+  - deepmerge-ts@8.0.2

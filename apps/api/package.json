@@ -4,21 +4,30 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --project tsconfig.build.json",
+    "build": "pnpm run prisma:generate && tsc --project tsconfig.build.json",
     "dev": "node --env-file-if-exists=../../.env --watch src/main.ts",
     "lint": "eslint .",
+    "prisma:connectivity-check": "pnpm run build && node --env-file-if-exists=../../.env dist/prisma/connectivity-smoke.js",
+    "prisma:generate": "prisma generate --config prisma.config.ts",
+    "prisma:migrate:dev": "prisma migrate dev --config prisma.config.ts",
+    "prisma:validate": "prisma validate --config prisma.config.ts",
     "start": "node --env-file-if-exists=../../.env dist/main.js",
-    "test": "vitest run --config ../../vitest.config.mts src",
-    "typecheck": "tsc --project tsconfig.json --noEmit"
+    "test": "pnpm run prisma:generate && vitest run --config ../../vitest.config.mts src",
+    "typecheck": "pnpm run prisma:generate && tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "7.9.1",
+    "@prisma/client": "7.9.1",
     "express": "5.2.1",
+    "pg": "8.16.3",
     "pino": "10.3.1",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/express": "5.0.6",
-    "@types/node": "24.13.3"
+    "@types/node": "24.13.3",
+    "@types/pg": "8.16.0",
+    "prisma": "7.9.1"
   },
   "engines": {
     "node": ">=24.19.0 <25",
