@@ -74,7 +74,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 | --- | --- | --- | --- | --- | --- |
 | [x] **P1-M2-T01 — Next.js web shell** | Bootstrap responsive frontend | Approved Next.js routing, TypeScript, Tailwind, shadcn/ui baseline, TanStack Query provider, accessible shell, web-owned Zod environment boundary | P1-M1-T01–T04, `OQ-002` resolved by `ADR-012` | Web dev/build starts; responsive navigation shell; no product features or PWA/offline requirement | Frozen install, workspace discovery, format-check, lint, strict typecheck/type generation, root and web tests, build, dev/start HTTP smoke, dependency/route/RSC/diff review passed 2026-08-22 |
 | [x] **P1-M2-T02 — Express API shell** | Bootstrap backend modular boundary | Express app factory/server entry, middleware order, `/api/v1`, safe error envelope, structured request ID/logging, API-owned Zod environment boundary | P1-M1-T01–T04 | App starts/stops cleanly; no domain logic; safe 404/error/config behavior | Frozen install, workspace discovery, format-check, lint, strict typecheck, 15 root tests/11 API tests, API/web builds, dev/start and signal-shutdown smoke, dependency/audit/environment/error/diff review passed 2026-08-22 |
-| [ ] **P1-M2-T03 — Health/readiness** | Provide deployment probes | `/health`, `/ready`, dependency-safe status semantics | T02 | No secrets/details; readiness changes with required dependency | API tests for healthy/unready/safe output |
+| [x] **P1-M2-T03 — Health/readiness** | Provide deployment probes | `/health`, `/ready`, dependency-safe status semantics | T02 | No secrets/details; readiness changes with required dependency | Frozen install, format-check, lint, strict typecheck, 18 root tests/14 API tests, API/web builds, compiled API HTTP smoke, and dependency/safe-output/diff review passed 2026-08-22 |
 | [ ] **P1-M2-T04 — Web-to-API development path** | Validate local integration | Approved origins/proxy/CORS strategy, typed base client boundary, one health view | Web/API shells | Browser reaches API without disabling security broadly | Integration test + build + manual responsive smoke |
 
 ### Milestone 1.3 — Local data foundation
@@ -327,7 +327,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 ## 2. Next Codex task
 
-The next implementation task is **P1-M2-T03 — Health/readiness**. This record does not authorize starting it in the P1-M2-T02 task.
+The next implementation task is **P1-M2-T04 — Web-to-API development path**. This record does not authorize starting it in the P1-M2-T03 task.
 
 Current-state constraints that the next task must preserve:
 
@@ -339,8 +339,8 @@ Current-state constraints that the next task must preserve:
 - `.github/workflows/ci.yml` reproduces the frozen install, format-check, lint, typecheck, test, and build gates for pushes and pull requests with read-only repository permission and immutable action pins.
 - `apps/web` contains only the Next.js App Router root shell, Tailwind/shadcn baseline, TanStack Query provider, and environment/test boundary. It has no feature routes, Route Handlers, authentication, API client, or product/domain behavior.
 - `OQ-002` is resolved by `ADR-012`: App Router under `src/app`, Server Components by default, justified Client Components only, deferred Route Groups, and Express-owned business REST APIs.
-- `apps/api` contains only the Express app/server bootstrap, empty `/api/v1` boundary, safe transport middleware/errors, structured request telemetry, shutdown lifecycle, and strict empty environment boundary. It has no endpoint or domain-module directory.
-- No health/readiness endpoint, web-to-API integration, Prisma/PostgreSQL/Docker setup, domain code, analytics, AI, AWS resource, deployment, or release automation exists.
+- `apps/api` contains the Express app/server bootstrap, empty `/api/v1` boundary, root-level `/health` and `/ready` operational probes, safe transport middleware/errors, structured request telemetry, shutdown lifecycle, and strict empty environment boundary. It has no business endpoint or domain-module directory.
+- No web-to-API integration, Prisma/PostgreSQL/Docker setup, domain code, analytics, AI, AWS resource, deployment, or release automation exists.
 - Git metadata is present, but P1-M1-T05 did not create a commit or perform any remote action.
 
 ### Handoff prompt
@@ -348,9 +348,9 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P1-M2-T03 — Health/readiness
+Task: P1-M2-T04 — Web-to-API development path
 
-Follow the exact task row and affected Source of Truth documents. Add only the assigned liveness/readiness behavior to the existing Express shell, preserving safe output and dependency semantics.
+Follow the exact task row and affected Source of Truth documents. Add only the assigned web-to-API development path behavior, preserving the existing safe operational probe semantics.
 
-Preserve the repository-foundation, web/API-shell, environment-contract, and CI baselines. Keep work within health/readiness scope; do not begin web-to-API integration, database, domain, analytics, AI, cloud, deployment, or release tasks, and do not commit anything without separate authorization.
+Preserve the repository-foundation, web/API-shell, health/readiness, environment-contract, and CI baselines. Keep work within web-to-API integration scope; do not begin database, domain, analytics, AI, cloud, deployment, or release tasks, and do not commit anything without separate authorization.
 ```

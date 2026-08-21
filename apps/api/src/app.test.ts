@@ -38,13 +38,19 @@ describe("Express API application", () => {
     runningServer = undefined;
   });
 
-  async function startApplication(apiRouter?: Router) {
+  async function startApplication({
+    apiRouter,
+    readinessCheck,
+  }: {
+    apiRouter?: Router;
+    readinessCheck?: () => boolean | Promise<boolean>;
+  } = {}) {
     const captured = createCapturingLogger();
-    const app = createApp(
-      apiRouter === undefined
-        ? { logger: captured.logger }
-        : { apiRouter, logger: captured.logger },
-    );
+    const app = createApp({
+      apiRouter,
+      logger: captured.logger,
+      readinessCheck,
+    });
     runningServer = await startApiServer(app, {
       host: "127.0.0.1",
       port: 0,
@@ -78,6 +84,39 @@ describe("Express API application", () => {
       expect(response.headers.get("x-powered-by")).toBeNull();
     },
   );
+
+  it("returns a deterministic liveness response without dependency details", async () => {
+    const { baseUrl } = await startApplication();
+    const response = await fetch(`${baseUrl}/health`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "ok" });
+    expect(response.headers.get("content-type")).toContain("application/json");
+  });
+
+  it("returns ready when required dependencies are ready", async () => {
+    const { baseUrl } = await startApplication({ readinessCheck: () => true });
+    const response = await fetch(`${baseUrl}/ready`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "ready" });
+  });
+
+  it("returns a safe unavailable response when a required dependency is unready", async () => {
+    const dependencyDetail = "DATABASE_URL=must-not-leak";
+    const { baseUrl, entries } = await startApplication({
+      readinessCheck: async () => {
+        throw new Error(dependencyDetail);
+      },
+    });
+    const response = await fetch(`${baseUrl}/ready`);
+    const responseText = await response.text();
+
+    expect(response.status).toBe(503);
+    expect(responseText).not.toContain(dependencyDetail);
+    expect(JSON.parse(responseText)).toEqual({ status: "not_ready" });
+    expect(JSON.stringify(entries)).not.toContain(dependencyDetail);
+  });
 
   it("maps malformed JSON to a request-correlated validation error", async () => {
     const { baseUrl } = await startApplication();
@@ -124,7 +163,7 @@ describe("Express API application", () => {
       throw new Error("DATABASE_PASSWORD=must-not-leak");
     });
 
-    const { baseUrl, entries } = await startApplication(apiRouter);
+    const { baseUrl, entries } = await startApplication({ apiRouter });
     const response = await fetch(`${baseUrl}/api/v1/explode`);
     const responseText = await response.text();
 

@@ -56,7 +56,7 @@ flowchart TD
     CW -. job telemetry .- JOB
 ```
 
-Only the minimal Next.js web shell and Express API transport shell are implemented. The API exposes no endpoints or domain modules; PostgreSQL/Prisma, AWS resources, and diagrammed integrations do not exist yet.
+Only the minimal Next.js web shell, Express API transport shell, and root-level operational probes are implemented. The API exposes no business endpoints or domain modules; PostgreSQL/Prisma, AWS resources, and diagrammed integrations do not exist yet.
 
 ### Repository boundaries
 

@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1 planning contract; transport shell implemented, no endpoints implemented |
+| Status | Architecture Freeze v1 planning contract; transport shell and operational probes implemented |
 | Base path | `/api/v1` |
 | Style | JSON REST |
 | Baseline | Architecture Freeze v1 |
@@ -205,10 +205,12 @@ Cost and branch override fields remain blocked by `OQ-010`/`OQ-014`.
 
 | Method/path | Auth | Request | Response | Validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `GET /health` | Public | None | Liveness/status without dependency secrets | `503 SERVICE_UNAVAILABLE` only if liveness semantics require it | Planned in foundation |
-| `GET /ready` | Deployment/internal exposure policy | None | Readiness of required dependencies | `503 SERVICE_UNAVAILABLE`; no connection details | Planned; exposure depends on `OQ-015` |
+| `GET /health` | Public | None | `200 {"status":"ok"}` while the API process handles requests; does not check dependencies | No dependency detail | Implemented in foundation |
+| `GET /ready` | Deployment/internal exposure policy | None | `200 {"status":"ready"}` when every configured required dependency is ready; `503 {"status":"not_ready"}` otherwise | `503 SERVICE_UNAVAILABLE`; no connection details | Implemented in foundation; exposure policy still depends on `OQ-015` |
 
 Health endpoints must not return environment values, versions with known exploit value, SQL errors, credentials, or OpenRouter secrets.
+
+At this foundation stage the API has no required external dependency, so the default readiness result is ready. Future resource-owning tasks must register only their required dependency checks and must preserve the same status-only response contract.
 
 ## 6. Identity and account endpoints
 

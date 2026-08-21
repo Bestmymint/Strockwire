@@ -11,8 +11,9 @@ import type { ApiLogger } from "./logger.ts";
 const REQUEST_ID_HEADER = "X-Request-Id";
 
 interface CreateAppOptions {
-  apiRouter?: Router;
+  apiRouter?: Router | undefined;
   logger: ApiLogger;
+  readinessCheck?: (() => boolean | Promise<boolean>) | undefined;
 }
 
 interface ErrorBody {
@@ -59,7 +60,11 @@ function isPayloadTooLargeError(error: unknown): boolean {
   );
 }
 
-export function createApp({ logger, apiRouter = Router() }: CreateAppOptions) {
+export function createApp({
+  logger,
+  apiRouter = Router(),
+  readinessCheck = () => true,
+}: CreateAppOptions) {
   const app = express();
 
   app.disable("x-powered-by");
@@ -89,6 +94,24 @@ export function createApp({ logger, apiRouter = Router() }: CreateAppOptions) {
   });
 
   app.use(express.json());
+
+  app.get("/health", (_request, response) => {
+    response.status(200).json({ status: "ok" });
+  });
+
+  app.get("/ready", async (_request, response) => {
+    try {
+      if (await readinessCheck()) {
+        response.status(200).json({ status: "ready" });
+        return;
+      }
+    } catch {
+      // A required dependency failure is intentionally reported only as unready.
+    }
+
+    response.status(503).json({ status: "not_ready" });
+  });
+
   app.use("/api/v1", apiRouter);
 
   const notFoundHandler: RequestHandler = (_request, response) => {

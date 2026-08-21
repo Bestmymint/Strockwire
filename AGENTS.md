@@ -283,6 +283,8 @@ The Phase 1 foundation tasks collectively must establish exact root commands, st
 
 `P1-M2-T02 — Express API shell` established `apps/api` with an Express app factory, empty `/api/v1` router boundary, ordered request-ID/logging and JSON middleware, safe 404/JSON/error envelopes, idempotent HTTP server shutdown, signal handling, Pino structured logs, and an API-owned empty Zod environment boundary. It adds no endpoint, health/readiness probe, domain-module directory, authentication, database, web integration, or infrastructure.
 
+`P1-M2-T03 — Health and Readiness Endpoints` established root-level `GET /health` and `GET /ready` operational probes. Health returns only `{"status":"ok"}` when the API process can handle requests. Readiness returns only `{"status":"ready"}` when all configured required dependencies are ready, otherwise `503 {"status":"not_ready"}`; it never exposes dependency identity or failure details. With no required external dependency yet, readiness defaults to ready. Frozen install, format-check, lint, strict typecheck, 18 root tests/14 API tests, API/web builds, and a compiled-API HTTP smoke were verified on 2026-08-22. It adds no business API, web integration, database, domain module, authentication, Docker, or infrastructure.
+
 Across the later foundation/application-shell tasks:
 
 1. `OQ-002` is resolved by `ADR-012`; preserve the App Router, `src/app`, Server Component default, and Express-owned business API boundary.
