@@ -72,7 +72,7 @@ Do not introduce Python, FastAPI, microservices, Kubernetes, another database, G
 
 ### Current structure
 
-The root package-manager foundation exists:
+The root package-manager and code-quality foundation exists:
 
 ```text
 package.json
@@ -80,9 +80,14 @@ pnpm-workspace.yaml
 pnpm-lock.yaml
 .gitignore
 .gitattributes
+tsconfig.base.json
+tsconfig.json
+eslint.config.mjs
+prettier.config.mts
+.prettierignore
 ```
 
-There is no application scaffold, TypeScript quality/test configuration, environment contract, Prisma schema, Docker setup, or verified Git repository in this workspace yet.
+There is no application scaffold, test configuration, environment contract, Prisma schema, or Docker setup in this workspace yet.
 
 ### Approved physical boundaries
 
@@ -226,15 +231,21 @@ Prerequisites are Node.js 24 LTS and pnpm 11.19.0. These repository-root command
 ```powershell
 pnpm install --frozen-lockfile
 pnpm list --recursive --depth -1
+pnpm format
+pnpm format:check
+pnpm lint
+pnpm typecheck
 ```
 
-The first command installs every current workspace from the committed lockfile without permitting lockfile changes. The second lists discovered workspace packages; until application tasks create child packages, only the private `stockwise` root is present.
+The first command installs every current workspace from the committed lockfile without permitting lockfile changes. The second lists discovered workspace packages; until application tasks create child packages, only the private `stockwise` root is present. `pnpm format` writes Prettier formatting for applicable non-generated, non-Markdown files; `pnpm format:check` checks the same scope without writing. `pnpm lint` runs the shared ESLint correctness rules. `pnpm typecheck` validates the root TypeScript configuration and its current tooling input; future application packages must extend `tsconfig.base.json` and update the root typecheck orchestration when those packages exist.
 
-No application scaffold, quality scripts, test scripts, environment schema, build, migration, or development commands exist yet.
+No application scaffold, test scripts, environment schema, build, migration, or development commands exist yet.
 
 The Phase 1 foundation tasks collectively must establish exact root commands, strict TypeScript, linting, formatting, test baseline, safe environment examples, and verified documentation. Keep the tasks bounded as defined in `PROJECT_PLAN.md`.
 
 `P1-M1-T01 — Repository Foundation & Tooling` established only the approved workspace/package-manager root, lockfile, repository conventions, and ignore policy after resolving `OQ-001`. It did not initialize Next.js or include TypeScript/lint/format configuration, test-runner setup, `.env.example`, Express, Prisma, PostgreSQL/Docker, authentication, domain logic, AWS resources, analytics, or AI; those belong to later Phase 1 tasks.
+
+`P1-M1-T02 — TypeScript and code-quality baseline` established the shared strict TypeScript policy, ESLint correctness rules, Prettier formatting policy, and the verified root quality commands above. It did not add an application shell, test runner, environment contract, database, domain, or infrastructure implementation.
 
 Across the later foundation/application-shell tasks:
 
