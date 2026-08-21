@@ -11,7 +11,7 @@ This file is the execution contract for human and AI developers working in the `
 
 StockWise is a responsive, cloud-based retail platform for SMEs. It covers organization-level product and supplier management; branch-level inventory, purchasing/receiving, POS, and sales; deterministic analytics and forecasting; and scheduled aggregate summaries through OpenRouter.
 
-The repository is in a **repository-foundation, pre-application state**. The pnpm workspace root and non-domain test baseline exist, but no web/API application, schema, environment contract, or infrastructure implementation exists. Do not treat later planned directories, commands, schemas, or endpoints as existing code.
+The repository is in a **repository-foundation, pre-application state**. The pnpm workspace root, code-quality/test baselines, and comment-only environment contract exist, but no web/API application, schema, process-specific environment validation, active environment variables, or infrastructure implementation exists. Do not treat later planned directories, commands, schemas, or endpoints as existing code.
 
 ## 2. Read before changing anything
 
@@ -78,6 +78,7 @@ The root package-manager, code-quality, and test foundation exists:
 package.json
 pnpm-workspace.yaml
 pnpm-lock.yaml
+.env.example
 .gitignore
 .gitattributes
 tsconfig.base.json
@@ -89,7 +90,7 @@ vitest.config.mts
 test/smoke.test.ts
 ```
 
-There is no application scaffold, environment contract, Prisma schema, or Docker setup in this workspace yet.
+There is no application scaffold, process-specific environment schema, active environment variable, Prisma schema, or Docker setup in this workspace yet.
 
 ### Approved physical boundaries
 
@@ -242,7 +243,7 @@ pnpm typecheck
 
 The first command installs every current workspace from the committed lockfile without permitting lockfile changes. The second lists discovered workspace packages; until application tasks create child packages, only the private `stockwise` root is present. `pnpm format` writes Prettier formatting for applicable non-generated, non-Markdown files; `pnpm format:check` checks the same scope without writing. `pnpm lint` runs the shared ESLint correctness rules. `pnpm test` runs Vitest once and fails when no matching tests are discovered; root and workspace unit/integration tests use `*.test.ts` or `*.test.tsx`, while future cross-application tests under `tests/e2e` are excluded for their later dedicated runner. `pnpm typecheck` validates the root TypeScript configuration and its current tooling input; future application packages must extend `tsconfig.base.json` and update the root typecheck orchestration when those packages exist.
 
-No application scaffold, environment schema, build, migration, or development commands exist yet.
+No application scaffold, process-specific environment schema, active environment variable, build, migration, or development commands exist yet.
 
 The Phase 1 foundation tasks collectively must establish exact root commands, strict TypeScript, linting, formatting, test baseline, safe environment examples, and verified documentation. Keep the tasks bounded as defined in `PROJECT_PLAN.md`.
 
@@ -260,13 +261,18 @@ Across the later foundation/application-shell tasks:
 4. Validate environment input with Zod when the owning process boundary exists.
 5. Update this section with commands actually executed successfully; do not document guessed commands.
 
-Expected environment categories, not final variable names:
+### Environment and configuration contract
 
-- PostgreSQL connection information
-- Authentication secrets/settings after `OQ-003`
-- Application origins/ports
-- OpenRouter key/model settings after `OQ-018`
-- AWS settings only when cloud implementation begins
+`P1-M1-T04 — Environment example and validation contract` established the root `.env.example` as a comment-only ownership and handling contract. It intentionally contains no active assignments: exact names and values are added only when an owning process or infrastructure task exists and its blockers are resolved.
+
+- `apps/web` will own browser/build-time configuration. Only intentionally public, non-sensitive values may enter the client bundle; tenant scope, trusted prices/totals, credentials, database settings, provider keys, and cloud secrets are never client configuration.
+- `apps/api` will own server-only runtime configuration, including future PostgreSQL, authentication, OpenRouter, and cloud settings. Server-only values must not be exposed through web configuration, logs, errors, health endpoints, screenshots, analytics snapshots, or AI prompts.
+- Each future process validates only its own environment with a process-owned Zod schema at startup. The Next.js and Express shell tasks add their schemas and tests; there is no speculative shared root schema in the pre-application repository.
+- Local development values must be non-production and documented by the task that introduces the corresponding process or resource. Test values must identify isolated, disposable resources and must never target shared, staging, or production data.
+- Populated `.env` and `.env.*` files remain ignored. Only redacted example files may be committed. Never place real secrets, tokens, credentials, or production values in an example.
+- Web/API origins and ports are deferred to `P1-M2-T04`; local PostgreSQL connection examples to `P1-M3-T01`; authentication settings to the accepted `OQ-003` implementation; reporting/schedule/provider settings to `OQ-016`–`OQ-018` and Phase 7; AWS region/topology/secret-management settings to `OQ-015`/`OQ-020` and Phase 8.
+
+No dependency or runtime validation code was added by P1-M1-T04 because neither owning process shell exists.
 
 ## 15. What agents may change
 
