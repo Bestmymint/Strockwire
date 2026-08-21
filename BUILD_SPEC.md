@@ -6,7 +6,7 @@
 | Full name | StockWise: Smart Inventory and Sales Analytics Platform for SMEs |
 | Repository | `stockwise` pnpm workspace monorepo |
 | Baseline | Architecture Freeze v1 |
-| Status | Repository foundation and minimal web shell implemented; domain implementation gated by explicit decisions |
+| Status | Repository foundation and minimal web/API shells implemented; domain implementation gated by explicit decisions |
 | Last updated | 2026-08-22 |
 
 ## 1. Purpose and source-of-truth map
@@ -353,7 +353,7 @@ Python, FastAPI, microservices, and Kubernetes are not part of the current basel
 
 ## 14. Important constraints
 
-1. This repository contains the approved repository/tooling foundation, Source of Truth documentation, and the minimal Next.js web shell. No API, domain, database, or infrastructure implementation exists yet.
+1. This repository contains the approved repository/tooling foundation, Source of Truth documentation, and minimal Next.js web and Express API transport shells. No API endpoint, domain, database, or infrastructure implementation exists yet.
 2. Product requirements and architecture decisions are made in planning and recorded here before Codex implements them.
 3. Codex may choose local implementation details only inside accepted boundaries; it must surface product or architecture ambiguity.
 4. Significant domain implementation must not start until the Critical Domain Decision Gate and every additional task-specific Open Question affecting that domain are resolved.

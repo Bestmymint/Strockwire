@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1; accepted logical architecture; minimal web shell implemented |
+| Status | Architecture Freeze v1; accepted logical architecture; minimal web/API shells implemented |
 | Baseline | Architecture Freeze v1 |
 | Last updated | 2026-08-22 |
 
@@ -56,7 +56,7 @@ flowchart TD
     CW -. job telemetry .- JOB
 ```
 
-Only the minimal Next.js web shell is implemented. The Express API, PostgreSQL/Prisma, AWS resources, and diagrammed integrations do not exist yet.
+Only the minimal Next.js web shell and Express API transport shell are implemented. The API exposes no endpoints or domain modules; PostgreSQL/Prisma, AWS resources, and diagrammed integrations do not exist yet.
 
 ### Repository boundaries
 
@@ -66,7 +66,7 @@ The native pnpm workspace uses these physical boundaries:
 stockwise/
   apps/
     web/                 # Next.js App Router shell under src/app
-    api/                 # Express modular monolith, created by its later shell task
+    api/                 # Express transport shell and future modular monolith
       src/modules/       # Business modules remain inside the API application
       prisma/            # API-owned Prisma schema and migrations
   packages/              # Deliberately shared internal packages only when justified

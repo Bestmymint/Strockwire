@@ -11,7 +11,7 @@ This file is the execution contract for human and AI developers working in the `
 
 StockWise is a responsive, cloud-based retail platform for SMEs. It covers organization-level product and supplier management; branch-level inventory, purchasing/receiving, POS, and sales; deterministic analytics and forecasting; and scheduled aggregate summaries through OpenRouter.
 
-The repository contains the **repository foundation and minimal Next.js web shell**. The pnpm workspace root, code-quality/test baselines, comment-only environment contract, CI quality/build workflow, and `apps/web` App Router shell exist. No Express API application, database schema, active environment variable, domain feature, or infrastructure implementation exists. Do not treat later planned directories, commands, schemas, endpoints, or features as existing code.
+The repository contains the **repository foundation and minimal web/API application shells**. The pnpm workspace root, code-quality/test baselines, comment-only environment contract, CI quality/build workflow, `apps/web` App Router shell, and `apps/api` Express transport shell exist. No API endpoint, database schema, active environment variable, domain feature, or infrastructure implementation exists. Do not treat later planned directories, commands, schemas, endpoints, or features as existing code.
 
 ## 2. Read before changing anything
 
@@ -99,9 +99,17 @@ apps/web/src/app/layout.tsx
 apps/web/src/app/page.tsx
 apps/web/src/components/app-shell.tsx
 apps/web/src/providers/query-provider.tsx
+apps/api/package.json
+apps/api/tsconfig.json
+apps/api/tsconfig.build.json
+apps/api/src/environment.ts
+apps/api/src/logger.ts
+apps/api/src/app.ts
+apps/api/src/server.ts
+apps/api/src/main.ts
 ```
 
-The web package has a strict empty Zod environment schema because P1-M2-T01 owns no configurable values. There is no Express application scaffold, active environment variable, Prisma schema, or Docker setup in this workspace yet.
+The web and API packages have separate strict empty Zod environment schemas because neither shell owns configurable values yet. The API binds only to an OS-assigned loopback port until P1-M2-T04 defines the web-to-API development path. There is no endpoint, domain-module directory, active environment variable, Prisma schema, or Docker setup in this workspace yet.
 
 ### Approved physical boundaries
 
@@ -246,18 +254,20 @@ Prerequisites are Node.js 24 LTS and pnpm 11.19.0. These repository-root command
 pnpm install --frozen-lockfile
 pnpm list --recursive --depth -1
 pnpm build
+pnpm dev:api
 pnpm dev:web
 pnpm format
 pnpm format:check
 pnpm lint
+pnpm start:api
 pnpm start:web
 pnpm test
 pnpm typecheck
 ```
 
-The first command installs every current workspace from the committed lockfile without permitting lockfile changes. The second lists the private `stockwise` root and `@stockwise/web` workspace. `pnpm build` builds every workspace package that exposes a build script. `pnpm dev:web` starts the Next.js development server; `pnpm start:web` serves a previously built production application. `pnpm format` writes Prettier formatting for applicable non-generated, non-Markdown files; `pnpm format:check` checks the same scope without writing. `pnpm lint` runs the shared ESLint correctness rules plus Next.js Core Web Vitals rules for `apps/web`. `pnpm test` runs Vitest once and discovers root and workspace `*.test.ts`/`*.test.tsx` files; future cross-application tests under `tests/e2e` remain excluded for their dedicated runner. `pnpm typecheck` validates the root tooling input, generates Next.js route types, and runs strict web-package TypeScript validation.
+The first command installs every current workspace from the committed lockfile without permitting lockfile changes. The second lists the private `stockwise` root plus `@stockwise/api` and `@stockwise/web`. `pnpm build` builds every workspace package that exposes a build script. `pnpm dev:api` runs the TypeScript API entry with Node.js watch mode; `pnpm start:api` serves the compiled API. Until P1-M2-T04 defines an origin/port contract, both API commands bind to an OS-assigned loopback port and emit the selected address in a structured startup log. `pnpm dev:web` starts the Next.js development server; `pnpm start:web` serves a previously built production application. `pnpm format` writes Prettier formatting for applicable non-generated, non-Markdown files; `pnpm format:check` checks the same scope without writing. `pnpm lint` runs the shared ESLint correctness rules plus Next.js Core Web Vitals rules for `apps/web`. `pnpm test` runs Vitest once and discovers root and workspace `*.test.ts`/`*.test.tsx` files; future cross-application tests under `tests/e2e` remain excluded for their dedicated runner. `pnpm typecheck` validates root tooling input, generates Next.js route types, and runs strict API/web package TypeScript validation.
 
-The web package also exposes verified package-scoped `lint`, `test`, `typecheck`, and `build` scripts. No API development, migration, database, or infrastructure commands exist yet.
+The web and API packages expose verified package-scoped `lint`, `test`, `typecheck`, and `build` scripts. The API package additionally exposes package-scoped `dev` and `start` scripts. No migration, database, or infrastructure commands exist yet.
 
 The Phase 1 foundation tasks collectively must establish exact root commands, strict TypeScript, linting, formatting, test baseline, safe environment examples, and verified documentation. Keep the tasks bounded as defined in `PROJECT_PLAN.md`.
 
@@ -270,6 +280,8 @@ The Phase 1 foundation tasks collectively must establish exact root commands, st
 `P1-M1-T05 — CI quality gates` established one least-privilege GitHub Actions workflow for pushes and pull requests. On Ubuntu 24.04 with Node.js 24.19.0 and pnpm 11.19.0, it performs a frozen-lockfile install followed by the existing `format:check`, `lint`, `typecheck`, and `test` scripts. `P1-M2-T01` adds the verified root `build` gate after tests. The workflow uses immutable action commit pins and adds no cache, matrix, service, secret, deployment, or release behavior.
 
 `P1-M2-T01 — Next.js web shell` resolved `OQ-002` through `ADR-012` and established `apps/web` with the App Router under `src/app`, Server Components by default, one narrow TanStack Query Client Component provider, Tailwind CSS, shadcn/ui initialization metadata, an accessible responsive shell, and a web-owned empty Zod environment boundary. It adds no feature routes, Next.js Route Handlers, authentication, API implementation, database, domain behavior, or infrastructure.
+
+`P1-M2-T02 — Express API shell` established `apps/api` with an Express app factory, empty `/api/v1` router boundary, ordered request-ID/logging and JSON middleware, safe 404/JSON/error envelopes, idempotent HTTP server shutdown, signal handling, Pino structured logs, and an API-owned empty Zod environment boundary. It adds no endpoint, health/readiness probe, domain-module directory, authentication, database, web integration, or infrastructure.
 
 Across the later foundation/application-shell tasks:
 
@@ -284,13 +296,13 @@ Across the later foundation/application-shell tasks:
 `P1-M1-T04 — Environment example and validation contract` established the root `.env.example` as a comment-only ownership and handling contract. It intentionally contains no active assignments: exact names and values are added only when an owning process or infrastructure task exists and its blockers are resolved.
 
 - `apps/web` owns browser/build-time configuration. Its current Zod schema intentionally accepts no values and is loaded by `next.config.ts`; only intentionally public, non-sensitive values may enter the client bundle later. Tenant scope, trusted prices/totals, credentials, database settings, provider keys, and cloud secrets are never client configuration.
-- `apps/api` will own server-only runtime configuration, including future PostgreSQL, authentication, OpenRouter, and cloud settings. Server-only values must not be exposed through web configuration, logs, errors, health endpoints, screenshots, analytics snapshots, or AI prompts.
-- Each process validates only its own environment with a process-owned Zod schema at startup. The Next.js schema and tests exist; the Express shell task adds its own later. There is no speculative shared root schema.
+- `apps/api` owns server-only runtime configuration, including future PostgreSQL, authentication, OpenRouter, and cloud settings. Its current schema intentionally accepts no values. Server-only values must not be exposed through web configuration, logs, errors, health endpoints, screenshots, analytics snapshots, or AI prompts.
+- Each process validates only its own environment with a process-owned Zod schema at startup. Separate strict empty Next.js and Express schemas and tests exist; there is no speculative shared root schema.
 - Local development values must be non-production and documented by the task that introduces the corresponding process or resource. Test values must identify isolated, disposable resources and must never target shared, staging, or production data.
 - Populated `.env` and `.env.*` files remain ignored. Only redacted example files may be committed. Never place real secrets, tokens, credentials, or production values in an example.
 - Web/API origins and ports are deferred to `P1-M2-T04`; local PostgreSQL connection examples to `P1-M3-T01`; authentication settings to the accepted `OQ-003` implementation; reporting/schedule/provider settings to `OQ-016`–`OQ-018` and Phase 7; AWS region/topology/secret-management settings to `OQ-015`/`OQ-020` and Phase 8.
 
-P1-M1-T04 added no runtime validation before a process existed. P1-M2-T01 now owns the web schema and its tests; it contains no active names because web/API origins and every other setting remain assigned to later tasks or decisions.
+P1-M1-T04 added no runtime validation before a process existed. P1-M2-T01 and P1-M2-T02 now own separate web and API schemas with tests; both contain no active names because web/API origins and every other setting remain assigned to later tasks or decisions.
 
 ## 15. What agents may change
 

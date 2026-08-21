@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1 planning contract; no routes are implemented |
+| Status | Architecture Freeze v1 planning contract; transport shell implemented, no endpoints implemented |
 | Base path | `/api/v1` |
 | Style | JSON REST |
 | Baseline | Architecture Freeze v1 |
@@ -96,6 +96,7 @@ Rules:
 | `403` | `FORBIDDEN` | Authenticated but action not permitted; use safely |
 | `404` | `RESOURCE_NOT_FOUND` | Missing or intentionally undisclosed resource |
 | `409` | `DUPLICATE_RESOURCE`, `STATE_CONFLICT`, `IDEMPOTENCY_CONFLICT`, `INSUFFICIENT_STOCK` | Uniqueness/current-state/business conflict |
+| `413` | `VALIDATION_ERROR` | Request body exceeds the accepted transport limit |
 | `422` | `BUSINESS_RULE_VIOLATION` | Valid JSON cannot satisfy an accepted domain rule; choose consistently during foundation |
 | `429` | `RATE_LIMITED` | Abuse/budget limit reached |
 | `500` | `INTERNAL_ERROR` | Unexpected safe server failure |
