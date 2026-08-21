@@ -66,7 +66,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 | [x] **P1-M1-T02 — TypeScript and code-quality baseline** | Establish strict compile/lint/format policy | Shared strict TypeScript baseline, linting, formatting, and exact root quality scripts; no application shell | T01 | Configurations are minimal/non-overlapping; lint/format/typecheck commands are documented and pass for applicable files | Config validation, lint, format-check, typecheck |
 | [x] **P1-M1-T03 — Test baseline and root test scripts** | Provide a verified non-domain test foundation | Approved test runner, minimal smoke test/config, root test scripts and conventions; no business tests or app initialization | T01, T02 | Test command passes and demonstrates discovery/failure behavior without domain code | Passing smoke test plus intentional failure/discovery verification |
 | [x] **P1-M1-T04 — Environment example and validation contract** | Define secret-safe configuration ownership | `.env.example`, variable categories/ownership, safe local/test guidance; per-process Zod validation is added when each process shell exists | T01 | No secrets; client/server exposure boundaries documented; no speculative provider/cloud variables | Secret scan, ignore-policy verification, documentation review, frozen install, format-check, lint, typecheck, and tests passed 2026-08-22; process-schema tests remain assigned to the owning shell tasks |
-| [ ] **P1-M1-T05 — CI quality gates** | Reproduce verified local quality checks in CI | GitHub Actions for frozen install, lint, format-check, typecheck, and tests; add builds only after app shells exist | T02–T04 | Minimal least-privilege workflow uses the same root commands and no secrets | Workflow syntax validation and local-command parity review |
+| [x] **P1-M1-T05 — CI quality gates** | Reproduce verified local quality checks in CI | GitHub Actions for frozen install, lint, format-check, typecheck, and tests; add builds only after app shells exist | T02–T04 | Minimal least-privilege workflow uses the same root commands and no secrets | Workflow YAML parsing, immutable action-pin resolution, permissions/scope review, frozen install, format-check, lint, typecheck, and tests passed 2026-08-22 |
 
 ### Milestone 1.2 — Application shells
 
@@ -327,7 +327,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 ## 2. Next Codex task
 
-The next implementation task is **P1-M1-T05 — CI quality gates**.
+The next implementation task is **P1-M2-T01 — Next.js web shell**, after `OQ-002` is owner-resolved.
 
 Current-state constraints that the next task must preserve:
 
@@ -336,18 +336,19 @@ Current-state constraints that the next task must preserve:
 - Vitest discovers root and future workspace `*.test.ts`/`*.test.tsx` files, excludes future `tests/e2e` files, and has one passing non-domain smoke test; intentional failure behavior was verified.
 - The root `.env.example` is a comment-only ownership and handling contract with no active variables, values, secrets, or process-specific validation schema.
 - Web/API configuration ownership, client/server exposure boundaries, local/test rules, and later-task deferrals are documented in `AGENTS.md`.
-- No application shell, Prisma/PostgreSQL/Docker setup, domain code, analytics, AI, or AWS resource exists.
-- `OQ-002` belongs to the later Next.js shell task and remains unresolved.
-- Git metadata is present, but P1-M1-T04 did not create a commit or perform any remote action.
+- `.github/workflows/ci.yml` reproduces the frozen install, format-check, lint, typecheck, and test gates for pushes and pull requests with read-only repository permission and immutable action pins.
+- No application shell, Prisma/PostgreSQL/Docker setup, domain code, analytics, AI, AWS resource, deployment, or release automation exists.
+- `OQ-002` blocks the Next.js shell task and remains unresolved; do not initialize the web application until the owner accepts that decision.
+- Git metadata is present, but P1-M1-T05 did not create a commit or perform any remote action.
 
 ### Handoff prompt
 
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P1-M1-T05 — CI quality gates
+Task: P1-M2-T01 — Next.js web shell
 
-Add only the minimal GitHub Actions quality workflow required by the task row. Reuse the verified frozen install, format-check, lint, typecheck, and test commands; do not add application builds before application shells exist.
+Before implementation, obtain and record the owner-approved answer to `OQ-002`, then follow the exact task row and affected Source of Truth documents.
 
-Preserve the existing Node.js 24 LTS, pnpm 11.19.0, strict TypeScript, ESLint, Prettier, Vitest, and environment-contract baselines. Use least privilege, add no secrets or deployment behavior, run all existing root checks, update only affected Source of Truth documentation and task status, and do not commit anything.
+Preserve the repository-foundation, environment-contract, and CI baselines. Keep work within the web-shell scope; do not begin the API shell, database, domain, analytics, AI, cloud, deployment, or release tasks, and do not commit anything without separate authorization.
 ```

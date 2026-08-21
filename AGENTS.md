@@ -11,7 +11,7 @@ This file is the execution contract for human and AI developers working in the `
 
 StockWise is a responsive, cloud-based retail platform for SMEs. It covers organization-level product and supplier management; branch-level inventory, purchasing/receiving, POS, and sales; deterministic analytics and forecasting; and scheduled aggregate summaries through OpenRouter.
 
-The repository is in a **repository-foundation, pre-application state**. The pnpm workspace root, code-quality/test baselines, and comment-only environment contract exist, but no web/API application, schema, process-specific environment validation, active environment variables, or infrastructure implementation exists. Do not treat later planned directories, commands, schemas, or endpoints as existing code.
+The repository is in a **repository-foundation, pre-application state**. The pnpm workspace root, code-quality/test baselines, comment-only environment contract, and CI quality workflow exist, but no web/API application, schema, process-specific environment validation, active environment variables, or infrastructure implementation exists. Do not treat later planned directories, commands, schemas, or endpoints as existing code.
 
 ## 2. Read before changing anything
 
@@ -75,6 +75,7 @@ Do not introduce Python, FastAPI, microservices, Kubernetes, another database, G
 The root package-manager, code-quality, and test foundation exists:
 
 ```text
+.github/workflows/ci.yml
 package.json
 pnpm-workspace.yaml
 pnpm-lock.yaml
@@ -252,6 +253,8 @@ The Phase 1 foundation tasks collectively must establish exact root commands, st
 `P1-M1-T02 — TypeScript and code-quality baseline` established the shared strict TypeScript policy, ESLint correctness rules, Prettier formatting policy, and the verified root quality commands above. It did not add an application shell, test runner, environment contract, database, domain, or infrastructure implementation.
 
 `P1-M1-T03 — Test baseline and root test scripts` established Vitest, the verified one-shot `pnpm test` command, an interactive `pnpm test:watch` script, reusable root discovery configuration, and one non-domain smoke test. It did not add coverage tooling, browser/DOM testing, end-to-end tooling, an application shell, an environment contract, database, domain, or infrastructure implementation.
+
+`P1-M1-T05 — CI quality gates` established one least-privilege GitHub Actions workflow for pushes and pull requests. On Ubuntu 24.04 with Node.js 24.19.0 and pnpm 11.19.0, it performs a frozen-lockfile install followed by the existing `format:check`, `lint`, `typecheck`, and `test` scripts. The workflow uses immutable action commit pins and adds no cache, matrix, service, secret, build, deployment, or release behavior.
 
 Across the later foundation/application-shell tasks:
 
