@@ -11,7 +11,7 @@ This file is the execution contract for human and AI developers working in the `
 
 StockWise is a responsive, cloud-based retail platform for SMEs. It covers organization-level product and supplier management; branch-level inventory, purchasing/receiving, POS, and sales; deterministic analytics and forecasting; and scheduled aggregate summaries through OpenRouter.
 
-The repository is in a **repository-foundation, pre-application state**. The pnpm workspace root exists, but no web/API application, schema, test stack, environment contract, or infrastructure implementation exists. Do not treat later planned directories, commands, schemas, or endpoints as existing code.
+The repository is in a **repository-foundation, pre-application state**. The pnpm workspace root and non-domain test baseline exist, but no web/API application, schema, environment contract, or infrastructure implementation exists. Do not treat later planned directories, commands, schemas, or endpoints as existing code.
 
 ## 2. Read before changing anything
 
@@ -72,7 +72,7 @@ Do not introduce Python, FastAPI, microservices, Kubernetes, another database, G
 
 ### Current structure
 
-The root package-manager and code-quality foundation exists:
+The root package-manager, code-quality, and test foundation exists:
 
 ```text
 package.json
@@ -85,9 +85,11 @@ tsconfig.json
 eslint.config.mjs
 prettier.config.mts
 .prettierignore
+vitest.config.mts
+test/smoke.test.ts
 ```
 
-There is no application scaffold, test configuration, environment contract, Prisma schema, or Docker setup in this workspace yet.
+There is no application scaffold, environment contract, Prisma schema, or Docker setup in this workspace yet.
 
 ### Approved physical boundaries
 
@@ -234,18 +236,21 @@ pnpm list --recursive --depth -1
 pnpm format
 pnpm format:check
 pnpm lint
+pnpm test
 pnpm typecheck
 ```
 
-The first command installs every current workspace from the committed lockfile without permitting lockfile changes. The second lists discovered workspace packages; until application tasks create child packages, only the private `stockwise` root is present. `pnpm format` writes Prettier formatting for applicable non-generated, non-Markdown files; `pnpm format:check` checks the same scope without writing. `pnpm lint` runs the shared ESLint correctness rules. `pnpm typecheck` validates the root TypeScript configuration and its current tooling input; future application packages must extend `tsconfig.base.json` and update the root typecheck orchestration when those packages exist.
+The first command installs every current workspace from the committed lockfile without permitting lockfile changes. The second lists discovered workspace packages; until application tasks create child packages, only the private `stockwise` root is present. `pnpm format` writes Prettier formatting for applicable non-generated, non-Markdown files; `pnpm format:check` checks the same scope without writing. `pnpm lint` runs the shared ESLint correctness rules. `pnpm test` runs Vitest once and fails when no matching tests are discovered; root and workspace unit/integration tests use `*.test.ts` or `*.test.tsx`, while future cross-application tests under `tests/e2e` are excluded for their later dedicated runner. `pnpm typecheck` validates the root TypeScript configuration and its current tooling input; future application packages must extend `tsconfig.base.json` and update the root typecheck orchestration when those packages exist.
 
-No application scaffold, test scripts, environment schema, build, migration, or development commands exist yet.
+No application scaffold, environment schema, build, migration, or development commands exist yet.
 
 The Phase 1 foundation tasks collectively must establish exact root commands, strict TypeScript, linting, formatting, test baseline, safe environment examples, and verified documentation. Keep the tasks bounded as defined in `PROJECT_PLAN.md`.
 
 `P1-M1-T01 — Repository Foundation & Tooling` established only the approved workspace/package-manager root, lockfile, repository conventions, and ignore policy after resolving `OQ-001`. It did not initialize Next.js or include TypeScript/lint/format configuration, test-runner setup, `.env.example`, Express, Prisma, PostgreSQL/Docker, authentication, domain logic, AWS resources, analytics, or AI; those belong to later Phase 1 tasks.
 
 `P1-M1-T02 — TypeScript and code-quality baseline` established the shared strict TypeScript policy, ESLint correctness rules, Prettier formatting policy, and the verified root quality commands above. It did not add an application shell, test runner, environment contract, database, domain, or infrastructure implementation.
+
+`P1-M1-T03 — Test baseline and root test scripts` established Vitest, the verified one-shot `pnpm test` command, an interactive `pnpm test:watch` script, reusable root discovery configuration, and one non-domain smoke test. It did not add coverage tooling, browser/DOM testing, end-to-end tooling, an application shell, an environment contract, database, domain, or infrastructure implementation.
 
 Across the later foundation/application-shell tasks:
 

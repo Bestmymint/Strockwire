@@ -64,7 +64,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 | --- | --- | --- | --- | --- | --- |
 | [x] **P1-M1-T01 — Repository Foundation & Tooling** | Establish the approved workspace/package-manager root | Inspect the documentation-only starting state; resolve `OQ-001`; add only the approved root workspace/package-manager files, lockfile, repository conventions, and ignore policy; update verified workspace/install commands in `AGENTS.md` | P0-M1-T10; `OQ-001` owner-approved 2026-08-22 | One minimal `stockwise` pnpm workspace root; frozen install and workspace discovery verified; no application, TypeScript quality stack, tests, environment contract, database, domain, or cloud implementation | pnpm 11.19.0 frozen install, stale-lock rejection, workspace discovery, manifest/ignore/repository-scope review passed |
 | [x] **P1-M1-T02 — TypeScript and code-quality baseline** | Establish strict compile/lint/format policy | Shared strict TypeScript baseline, linting, formatting, and exact root quality scripts; no application shell | T01 | Configurations are minimal/non-overlapping; lint/format/typecheck commands are documented and pass for applicable files | Config validation, lint, format-check, typecheck |
-| [ ] **P1-M1-T03 — Test baseline and root test scripts** | Provide a verified non-domain test foundation | Approved test runner, minimal smoke test/config, root test scripts and conventions; no business tests or app initialization | T01, T02 | Test command passes and demonstrates discovery/failure behavior without domain code | Passing smoke test plus intentional failure/discovery verification |
+| [x] **P1-M1-T03 — Test baseline and root test scripts** | Provide a verified non-domain test foundation | Approved test runner, minimal smoke test/config, root test scripts and conventions; no business tests or app initialization | T01, T02 | Test command passes and demonstrates discovery/failure behavior without domain code | Passing smoke test plus intentional failure/discovery verification |
 | [ ] **P1-M1-T04 — Environment example and validation contract** | Define secret-safe configuration ownership | `.env.example`, variable categories/ownership, safe local/test guidance; per-process Zod validation is added when each process shell exists | T01 | No secrets; client/server exposure boundaries documented; no speculative provider/cloud variables | Secret scan and documentation review; later process-schema tests |
 | [ ] **P1-M1-T05 — CI quality gates** | Reproduce verified local quality checks in CI | GitHub Actions for frozen install, lint, format-check, typecheck, and tests; add builds only after app shells exist | T02–T04 | Minimal least-privilege workflow uses the same root commands and no secrets | Workflow syntax validation and local-command parity review |
 
@@ -327,24 +327,25 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 ## 2. Next Codex task
 
-The next implementation task is **P1-M1-T03 — Test baseline and root test scripts**.
+The next implementation task is **P1-M1-T04 — Environment example and validation contract**.
 
 Current-state constraints that the next task must preserve:
 
 - `OQ-001` is resolved by `ADR-011`: Node.js 24 LTS, pnpm 11.19.0, and native `apps/*`/`packages/*` workspaces.
-- The root contains only the pinned TypeScript, ESLint, and Prettier development dependencies and the verified `format`, `format:check`, `lint`, and `typecheck` scripts established by P1-M1-T02.
-- No application shell, test runner, environment contract, Prisma/PostgreSQL/Docker setup, domain code, analytics, AI, or AWS resource exists.
+- The root contains the pinned TypeScript, ESLint, Prettier, and Vitest development dependencies and the verified `format`, `format:check`, `lint`, `test`, and `typecheck` scripts established through P1-M1-T03.
+- Vitest discovers root and future workspace `*.test.ts`/`*.test.tsx` files, excludes future `tests/e2e` files, and has one passing non-domain smoke test; intentional failure behavior was verified.
+- No application shell, environment contract, Prisma/PostgreSQL/Docker setup, domain code, analytics, AI, or AWS resource exists.
 - `OQ-002` belongs to the later Next.js shell task and remains unresolved.
-- Git metadata is present, but P1-M1-T02 did not create a commit or perform any remote action.
+- Git metadata is present, but P1-M1-T03 did not create a commit or perform any remote action.
 
 ### Handoff prompt
 
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P1-M1-T03 — Test baseline and root test scripts
+Task: P1-M1-T04 — Environment example and validation contract
 
-Establish only the approved non-domain test baseline, minimal smoke test/configuration, and exact root test scripts required by the task row. Demonstrate test discovery and intentional failure behavior without initializing an application or adding business tests.
+Establish only the approved secret-safe environment example and configuration ownership contract required by the task row. Do not initialize an application or add process-specific validation before the owning process shell exists.
 
-Preserve the existing Node.js 24 LTS, pnpm 11.19.0, strict TypeScript, ESLint, and Prettier baseline. Justify every added development dependency, generate the lockfile through pnpm, run the new test verification plus the existing format-check/lint/typecheck commands, update only affected Source of Truth documentation and task status, and do not commit anything.
+Preserve the existing Node.js 24 LTS, pnpm 11.19.0, strict TypeScript, ESLint, Prettier, and Vitest baseline. Add no secrets or speculative provider/cloud variables, run all existing root checks, update only affected Source of Truth documentation and task status, and do not commit anything.
 ```
