@@ -421,6 +421,48 @@ The API owns its domain modules and Prisma assets beneath `apps/api`; they are n
 - Shared packages require a specific reuse case and must not become a generic `common`, `shared`, or `utils` dumping ground.
 - A future monorepo task runner or release tool requires demonstrated need and a separately reviewed decision.
 
+## ADR-012 — Use the Next.js App Router with `src/app`
+
+- **Date:** 2026-08-22
+- **Status:** Accepted
+- **Type:** Frontend architecture
+
+### Context
+
+The frontend baseline selected Next.js but left its routing and layout convention unresolved under `OQ-002`. The web shell needs one durable convention before application routes, layouts, providers, and future user flows are created. StockWise also has a separate Express REST backend, so the frontend boundary must not accidentally become a second business API.
+
+### Alternatives considered
+
+1. Next.js Pages Router
+2. Next.js App Router at the repository package root
+3. Next.js App Router using the `src/app` directory convention
+4. Mixing Pages Router and App Router
+
+### Decision
+
+Use the **Next.js App Router** with the **`src/app` directory convention**. Do not use the Pages Router.
+
+React Server Components are the default. Add `"use client"` only when a component requires client-side state, effects, event handlers, browser APIs, or a client-only provider. Route Groups such as `(auth)` and `(app)` may be introduced later only when implemented routes justify them.
+
+StockWise core and business REST APIs remain in the Express backend under `/api/v1`. Do not implement them as Next.js Route Handlers. The shell task creates no speculative routes or feature pages.
+
+### Why selected
+
+- App Router is the current Next.js routing model and supports nested layouts and Server Components directly.
+- `src/app` keeps application source separate from package-level configuration and generated output.
+- Server Components by default minimize unnecessary client JavaScript and make client boundaries explicit.
+- Deferring Route Groups avoids encoding authentication or product navigation before those flows are accepted and implemented.
+- Keeping business APIs in Express preserves the accepted REST boundary and prevents duplicated backend responsibilities.
+
+### Consequences
+
+- All application routes and layouts are created beneath `apps/web/src/app`.
+- No `pages` directory or mixed-router convention is allowed.
+- Client providers must be narrow explicit boundaries beneath a Server Component root layout.
+- Route Groups are added only with the routes that need them.
+- Next.js Route Handlers must not host StockWise business APIs; any future framework-specific handler needs a separately justified non-business purpose and review against the Express boundary.
+- `OQ-002` is resolved and no longer blocks `P1-M2-T01`.
+
 ## 2. Explicitly superseded planning directions
 
 The current ADRs supersede these earlier, unimplemented ideas:

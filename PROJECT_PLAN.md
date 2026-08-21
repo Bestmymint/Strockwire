@@ -4,7 +4,7 @@
 | --- | --- |
 | Project | StockWise |
 | Plan baseline | Architecture Freeze v1 |
-| Repository state | Repository foundation through environment contract; no application scaffold |
+| Repository state | Repository foundation plus verified minimal Next.js web shell |
 | Last updated | 2026-08-22 |
 
 ## 1. Plan rules
@@ -72,7 +72,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
-| [ ] **P1-M2-T01 — Next.js web shell** | Bootstrap responsive frontend | Approved Next.js routing, TypeScript, Tailwind, shadcn/ui baseline, TanStack Query provider, accessible shell, web-owned Zod environment boundary | P1-M1-T01–T04, `OQ-002` | Web dev/build starts; responsive navigation shell; no product features or PWA/offline requirement | Lint/typecheck/build + environment/component smoke/accessibility test |
+| [x] **P1-M2-T01 — Next.js web shell** | Bootstrap responsive frontend | Approved Next.js routing, TypeScript, Tailwind, shadcn/ui baseline, TanStack Query provider, accessible shell, web-owned Zod environment boundary | P1-M1-T01–T04, `OQ-002` resolved by `ADR-012` | Web dev/build starts; responsive navigation shell; no product features or PWA/offline requirement | Frozen install, workspace discovery, format-check, lint, strict typecheck/type generation, root and web tests, build, dev/start HTTP smoke, dependency/route/RSC/diff review passed 2026-08-22 |
 | [ ] **P1-M2-T02 — Express API shell** | Bootstrap backend modular boundary | Express app factory/server entry, middleware order, `/api/v1`, safe error envelope, structured request ID/logging, API-owned Zod environment boundary | P1-M1-T01–T04 | App starts/stops cleanly; no domain logic; safe 404/error/config behavior | Unit/integration tests for app, environment, errors, shutdown |
 | [ ] **P1-M2-T03 — Health/readiness** | Provide deployment probes | `/health`, `/ready`, dependency-safe status semantics | T02 | No secrets/details; readiness changes with required dependency | API tests for healthy/unready/safe output |
 | [ ] **P1-M2-T04 — Web-to-API development path** | Validate local integration | Approved origins/proxy/CORS strategy, typed base client boundary, one health view | Web/API shells | Browser reaches API without disabling security broadly | Integration test + build + manual responsive smoke |
@@ -327,18 +327,19 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 ## 2. Next Codex task
 
-The next implementation task is **P1-M2-T01 — Next.js web shell**, after `OQ-002` is owner-resolved.
+The next implementation task is **P1-M2-T02 — Express API shell**. This record does not authorize starting it in the P1-M2-T01 task.
 
 Current-state constraints that the next task must preserve:
 
 - `OQ-001` is resolved by `ADR-011`: Node.js 24 LTS, pnpm 11.19.0, and native `apps/*`/`packages/*` workspaces.
-- The root contains the pinned TypeScript, ESLint, Prettier, and Vitest development dependencies and the verified `format`, `format:check`, `lint`, `test`, and `typecheck` scripts established through P1-M1-T03.
-- Vitest discovers root and future workspace `*.test.ts`/`*.test.tsx` files, excludes future `tests/e2e` files, and has one passing non-domain smoke test; intentional failure behavior was verified.
-- The root `.env.example` is a comment-only ownership and handling contract with no active variables, values, secrets, or process-specific validation schema.
+- The root contains pinned TypeScript, ESLint, Prettier, Vitest, and Next-specific lint tooling with verified `build`, `dev:web`, `start:web`, `format`, `format:check`, `lint`, `test`, and `typecheck` scripts.
+- Vitest discovers root and workspace `*.test.ts`/`*.test.tsx` files, excludes future `tests/e2e` files, and currently runs the root smoke test plus web environment and accessible-component smoke tests.
+- The root `.env.example` remains a comment-only ownership and handling contract with no active variables, values, or secrets. `apps/web` owns a strict empty Zod environment schema loaded from `next.config.ts`.
 - Web/API configuration ownership, client/server exposure boundaries, local/test rules, and later-task deferrals are documented in `AGENTS.md`.
-- `.github/workflows/ci.yml` reproduces the frozen install, format-check, lint, typecheck, and test gates for pushes and pull requests with read-only repository permission and immutable action pins.
-- No application shell, Prisma/PostgreSQL/Docker setup, domain code, analytics, AI, AWS resource, deployment, or release automation exists.
-- `OQ-002` blocks the Next.js shell task and remains unresolved; do not initialize the web application until the owner accepts that decision.
+- `.github/workflows/ci.yml` reproduces the frozen install, format-check, lint, typecheck, test, and build gates for pushes and pull requests with read-only repository permission and immutable action pins.
+- `apps/web` contains only the Next.js App Router root shell, Tailwind/shadcn baseline, TanStack Query provider, and environment/test boundary. It has no feature routes, Route Handlers, authentication, API client, or product/domain behavior.
+- `OQ-002` is resolved by `ADR-012`: App Router under `src/app`, Server Components by default, justified Client Components only, deferred Route Groups, and Express-owned business REST APIs.
+- No Express shell, Prisma/PostgreSQL/Docker setup, domain code, analytics, AI, AWS resource, deployment, or release automation exists.
 - Git metadata is present, but P1-M1-T05 did not create a commit or perform any remote action.
 
 ### Handoff prompt
@@ -346,9 +347,9 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P1-M2-T01 — Next.js web shell
+Task: P1-M2-T02 — Express API shell
 
-Before implementation, obtain and record the owner-approved answer to `OQ-002`, then follow the exact task row and affected Source of Truth documents.
+Follow the exact task row and affected Source of Truth documents. Preserve the separate Express `/api/v1` boundary and do not move business APIs into Next.js.
 
-Preserve the repository-foundation, environment-contract, and CI baselines. Keep work within the web-shell scope; do not begin the API shell, database, domain, analytics, AI, cloud, deployment, or release tasks, and do not commit anything without separate authorization.
+Preserve the repository-foundation, web-shell, environment-contract, and CI baselines. Keep work within the API-shell scope; do not begin health/readiness, web-to-API integration, database, domain, analytics, AI, cloud, deployment, or release tasks, and do not commit anything without separate authorization.
 ```

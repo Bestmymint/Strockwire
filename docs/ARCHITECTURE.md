@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1; accepted logical architecture; pre-implementation |
+| Status | Architecture Freeze v1; accepted logical architecture; minimal web shell implemented |
 | Baseline | Architecture Freeze v1 |
 | Last updated | 2026-08-22 |
 
@@ -56,7 +56,7 @@ flowchart TD
     CW -. job telemetry .- JOB
 ```
 
-No runtime application, AWS resource, or diagrammed integration is implemented in the current repository.
+Only the minimal Next.js web shell is implemented. The Express API, PostgreSQL/Prisma, AWS resources, and diagrammed integrations do not exist yet.
 
 ### Repository boundaries
 
@@ -65,7 +65,7 @@ The native pnpm workspace uses these physical boundaries:
 ```text
 stockwise/
   apps/
-    web/                 # Next.js application, created by its later shell task
+    web/                 # Next.js App Router shell under src/app
     api/                 # Express modular monolith, created by its later shell task
       src/modules/       # Business modules remain inside the API application
       prisma/            # API-owned Prisma schema and migrations
@@ -290,8 +290,10 @@ Owning a table does not mean bypassing another module's invariant. For example, 
 - Present loading, empty, stale, partial-data, error, and retry states.
 - Never compute authoritative checkout prices or analytics in the browser.
 - Do not add a native wrapper or offline mutation queue within the current scope.
-
-Next.js routing conventions remain open under `OQ-002`.
+- Use the Next.js App Router with the `src/app` directory convention; do not use the Pages Router.
+- Keep React Server Components as the default and add `"use client"` only at boundaries that require state, effects, event handlers, browser APIs, or client-only providers.
+- Add Route Groups such as `(auth)` or `(app)` only when implemented routes justify them; do not create speculative route structure.
+- Keep StockWise core and business REST APIs in the Express application. Do not implement them as Next.js Route Handlers.
 
 ## 9. Backend layering
 
@@ -405,7 +407,6 @@ Scale in measured stages:
 
 This document does not answer the following canonical questions from `BUILD_SPEC.md`:
 
-- `OQ-002` Next.js routing convention
 - `OQ-003` token/session strategy
 - `OQ-007` negative stock
 - `OQ-008` payment/tax/discount/receipt rules

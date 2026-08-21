@@ -6,7 +6,7 @@
 | Full name | StockWise: Smart Inventory and Sales Analytics Platform for SMEs |
 | Repository | `stockwise` pnpm workspace monorepo |
 | Baseline | Architecture Freeze v1 |
-| Status | Pre-implementation; accepted architecture frozen with explicit domain decision gates |
+| Status | Repository foundation and minimal web shell implemented; domain implementation gated by explicit decisions |
 | Last updated | 2026-08-22 |
 
 ## 1. Purpose and source-of-truth map
@@ -353,7 +353,7 @@ Python, FastAPI, microservices, and Kubernetes are not part of the current basel
 
 ## 14. Important constraints
 
-1. This repository contains only the approved repository/tooling foundation and Source of Truth documentation; no application or infrastructure implementation exists yet.
+1. This repository contains the approved repository/tooling foundation, Source of Truth documentation, and the minimal Next.js web shell. No API, domain, database, or infrastructure implementation exists yet.
 2. Product requirements and architecture decisions are made in planning and recorded here before Codex implements them.
 3. Codex may choose local implementation details only inside accepted boundaries; it must surface product or architecture ambiguity.
 4. Significant domain implementation must not start until the Critical Domain Decision Gate and every additional task-specific Open Question affecting that domain are resolved.
@@ -391,12 +391,12 @@ This is the canonical list. Other documents reference these IDs and must not red
 | ID | Accepted answer | Decision record |
 | --- | --- | --- |
 | **OQ-001** | Use a native pnpm workspace on Node.js 24 LTS. Runtime applications use `apps/web` and `apps/api`; deliberately shared internal packages may use `packages/*` only when justified. Use one root lockfile and no monorepo orchestration framework until a measured need exists. | `ADR-011` |
+| **OQ-002** | Use the Next.js App Router with the `src/app` directory convention. React Server Components are the default; use Client Components only for required client-side behavior. Route Groups may be added later only for implemented routes. StockWise business REST APIs remain in Express and must not be implemented as Next.js Route Handlers. | `ADR-012` |
 
 ### Open Questions
 
 | ID | Question | Blocks | Priority |
 | --- | --- | --- | --- |
-| **OQ-002** | Will Next.js use the App Router, and what is the approved application route/layout convention? | Frontend bootstrap | Medium |
 | **OQ-003** | What access-token/session and refresh/revocation strategy will be used, and where will browser credentials be stored? | Authentication/API security | Critical |
 | **OQ-004** | Is email verification required, and which provider handles verification and password reset? | Authentication | High |
 | **OQ-005** | What user profile and organization onboarding fields are required, and when is an account considered complete? | Onboarding/data model | High |

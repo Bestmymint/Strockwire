@@ -7,15 +7,19 @@
     "pnpm": "11.19.0"
   },
   "scripts": {
+    "build": "pnpm --recursive --if-present build",
+    "dev:web": "pnpm --filter @stockwise/web dev",
     "format": "prettier --write . --ignore-unknown",
     "format:check": "prettier --check . --ignore-unknown",
     "lint": "eslint .",
+    "start:web": "pnpm --filter @stockwise/web start",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --project tsconfig.json"
+    "typecheck": "tsc --project tsconfig.json && pnpm --recursive --if-present typecheck"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@next/eslint-plugin-next": "16.3.1",
     "eslint": "10.8.0",
     "prettier": "3.9.6",
     "typescript": "6.0.3",
