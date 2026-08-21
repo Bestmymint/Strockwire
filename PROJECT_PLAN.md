@@ -81,7 +81,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
-| [ ] **P1-M3-T01 — Local PostgreSQL and Docker setup** | Provide reproducible disposable development database | Docker configuration, healthcheck, volumes, safe local credentials/examples | P1-M1-T01, P1-M1-T04 | Documented start/stop; no production credentials; data target explicit | Container health/connectivity smoke |
+| [x] **P1-M3-T01 — Local PostgreSQL and Docker setup** | Provide reproducible disposable development database | Docker configuration, healthcheck, volumes, safe local credentials/examples | P1-M1-T01, P1-M1-T04 | Documented start/stop; no production credentials; data target explicit | Compose validation, clean-start health, loopback/connectivity, restart persistence, and non-destructive teardown passed 2026-08-22 |
 | [ ] **P1-M3-T02 — Prisma foundation** | Establish safe schema/migration workflow | Initialize Prisma for PostgreSQL, generated client location, empty/foundation migration policy, scripts | P1-M1-T02, T01 | Client generation and disposable migration work; `docs/DATABASE.md` naming conventions updated | Generate/validate/migrate on disposable DB |
 | [ ] **P1-M3-T03 — Database test harness** | Enable real integration/concurrency tests | Isolated test database/schema, reset strategy restricted to disposable target, transaction helpers | T01, T02 | Repeatable parallel-safe test setup; production URL guard | Run repeated DB smoke and target-safety tests |
 
@@ -327,20 +327,20 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 ## 2. Next Codex task
 
-The next implementation task is **P1-M3-T01 — Local PostgreSQL and Docker setup**. This status update does not authorize starting it.
+The next implementation task is **P1-M3-T02 — Prisma foundation**. This status update does not authorize starting it.
 
 Current-state constraints that the next task must preserve:
 
 - `OQ-001` is resolved by `ADR-011`: Node.js 24 LTS, pnpm 11.19.0, and native `apps/*`/`packages/*` workspaces.
 - The root contains pinned TypeScript, ESLint, Prettier, Vitest, and Next-specific lint tooling with verified `build`, `dev:api`, `dev:web`, `start:api`, `start:web`, `format`, `format:check`, `lint`, `test`, and `typecheck` scripts.
 - Vitest discovers root and workspace `*.test.ts`/`*.test.tsx` files, excludes future `tests/e2e` files, and currently runs the root smoke test plus web and API shell tests.
-- The root `.env.example` remains a comment-only ownership and handling contract with no active variables, values, or secrets. `apps/web` and `apps/api` own separate strict empty Zod environment schemas.
+- The root `.env.example` documents the active web/API loopback contract and redacted Docker-only `STOCKWISE_POSTGRES_*` placeholders. `apps/web` and `apps/api` retain separate strict Zod environment schemas; an API-owned database connection URL remains deferred to P1-M3-T02.
 - Web/API configuration ownership, client/server exposure boundaries, local/test rules, and later-task deferrals are documented in `AGENTS.md`.
 - `.github/workflows/ci.yml` reproduces the frozen install, format-check, lint, typecheck, test, and build gates for pushes and pull requests with read-only repository permission and immutable action pins.
 - `apps/web` contains the Next.js App Router root shell, Tailwind/shadcn baseline, TanStack Query provider, strict environment boundary, and one health-only client/view. It has no feature routes, Route Handlers, authentication, business API client, or product/domain behavior.
 - `OQ-002` is resolved by `ADR-012`: App Router under `src/app`, Server Components by default, justified Client Components only, deferred Route Groups, and Express-owned business REST APIs.
 - `apps/api` contains the Express app/server bootstrap, empty `/api/v1` boundary, root-level `/health` and `/ready` operational probes, safe transport middleware/errors, structured request telemetry, shutdown lifecycle, and strict port environment boundary. It has no business endpoint or domain-module directory.
-- The only web-to-API integration is the Next.js same-origin `/api/health` rewrite to loopback Express `/health`; Express CORS remains disabled. No Prisma/PostgreSQL/Docker setup, domain code, analytics, AI, AWS resource, deployment, or release automation exists.
+- The only web-to-API integration is the Next.js same-origin `/api/health` rewrite to loopback Express `/health`; Express CORS remains disabled. `compose.yaml` provides a local-only PostgreSQL 16.11 container with a loopback port, healthcheck, and named persistent volume. No Prisma implementation, domain code, analytics, AI, AWS resource, deployment, or release automation exists.
 - Git metadata is present, but P1-M1-T05 did not create a commit or perform any remote action.
 
 ### Handoff prompt
@@ -348,7 +348,7 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P1-M3-T01 — Local PostgreSQL and Docker setup
+Task: P1-M3-T02 — Prisma foundation
 
 Follow the exact task row and affected Source of Truth documents. Preserve the existing safe web-to-API health path and operational probe semantics.
 

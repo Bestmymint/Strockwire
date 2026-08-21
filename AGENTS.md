@@ -11,7 +11,7 @@ This file is the execution contract for human and AI developers working in the `
 
 StockWise is a responsive, cloud-based retail platform for SMEs. It covers organization-level product and supplier management; branch-level inventory, purchasing/receiving, POS, and sales; deterministic analytics and forecasting; and scheduled aggregate summaries through OpenRouter.
 
-The repository contains the **repository foundation and minimal web/API application shells**. The pnpm workspace root, code-quality/test baselines, comment-only environment contract, CI quality/build workflow, `apps/web` App Router shell, and `apps/api` Express transport shell exist. No API endpoint, database schema, active environment variable, domain feature, or infrastructure implementation exists. Do not treat later planned directories, commands, schemas, endpoints, or features as existing code.
+The repository contains the **repository foundation and minimal web/API application shells**. The pnpm workspace root, code-quality/test baselines, safe environment contract, CI quality/build workflow, `apps/web` App Router shell, `apps/api` Express transport shell, and a local PostgreSQL Docker Compose baseline exist. No API endpoint, database schema, Prisma implementation, domain feature, or production infrastructure implementation exists. Do not treat later planned directories, commands, schemas, endpoints, or features as existing code.
 
 ## 2. Read before changing anything
 
@@ -82,6 +82,7 @@ pnpm-lock.yaml
 .env.example
 .gitignore
 .gitattributes
+compose.yaml
 tsconfig.base.json
 tsconfig.json
 eslint.config.mjs
@@ -109,7 +110,7 @@ apps/api/src/server.ts
 apps/api/src/main.ts
 ```
 
-The web and API packages have separate strict Zod environment schemas. P1-M2-T04 defines the local path: the API binds to `127.0.0.1:3001`, and Next.js serves the browser at `http://localhost:3000` with a same-origin `/api/health` rewrite to the Express `/health` probe. There is no business endpoint, domain-module directory, Prisma schema, or Docker setup in this workspace yet.
+The web and API packages have separate strict Zod environment schemas. P1-M2-T04 defines the local path: the API binds to `127.0.0.1:3001`, and Next.js serves the browser at `http://localhost:3000` with a same-origin `/api/health` rewrite to the Express `/health` probe. P1-M3-T01 adds a local PostgreSQL Docker Compose baseline only. There is no business endpoint, domain-module directory, Prisma schema, or database implementation in this workspace yet.
 
 ### Approved physical boundaries
 
@@ -267,7 +268,19 @@ pnpm typecheck
 
 The first command installs every current workspace from the committed lockfile without permitting lockfile changes. The second lists the private `stockwise` root plus `@stockwise/api` and `@stockwise/web`. `pnpm build` builds every workspace package that exposes a build script. `pnpm dev:api` runs the TypeScript API entry with Node.js watch mode, and `pnpm start:api` serves the compiled API; both require `STOCKWISE_API_PORT` and bind only to `127.0.0.1`. `pnpm dev:web` and `pnpm start:web` use fixed port `3000`; Next.js loads the root `.env` when present and requires its server-only `STOCKWISE_API_ORIGIN` to configure the local health rewrite. `pnpm format` writes Prettier formatting for applicable non-generated, non-Markdown files; `pnpm format:check` checks the same scope without writing. `pnpm lint` runs the shared ESLint correctness rules plus Next.js Core Web Vitals rules for `apps/web`. `pnpm test` runs Vitest once and discovers root and workspace `*.test.ts`/`*.test.tsx` files; future cross-application tests under `tests/e2e` remain excluded for their dedicated runner. `pnpm typecheck` validates root tooling input, generates Next.js route types, and runs strict API/web package TypeScript validation.
 
-The web and API packages expose verified package-scoped `lint`, `test`, `typecheck`, and `build` scripts. The API package additionally exposes package-scoped `dev` and `start` scripts. No migration, database, or infrastructure commands exist yet.
+The web and API packages expose verified package-scoped `lint`, `test`, `typecheck`, and `build` scripts. The API package additionally exposes package-scoped `dev` and `start` scripts. No Prisma migration or schema command exists yet.
+
+For the local PostgreSQL development baseline, install Docker Desktop or Docker Engine with Docker Compose. Copy `.env.example` to `.env`, replace every `STOCKWISE_POSTGRES_*` placeholder with unique non-production local values, then use these verified commands:
+
+```powershell
+docker compose config --quiet
+docker compose up --detach postgres
+docker compose ps
+docker compose exec --no-TTY postgres psql --username <local-user> --dbname <local-database> --command "SELECT 1;"
+docker compose down
+```
+
+`compose.yaml` uses the fixed `postgres:16.11-alpine` image, exposes PostgreSQL only on `127.0.0.1:$STOCKWISE_POSTGRES_PORT`, and persists cluster data in the named `stockwise-postgres-data` volume. `docker compose down` removes the development container and network but preserves that volume; do not add `--volumes` unless local data deletion is explicitly intended. This is local development infrastructure only, not a production deployment. Docker Engine 29.7.2 and Docker Compose 5.4.0 validated the baseline on 2026-08-22.
 
 The Phase 1 foundation tasks collectively must establish exact root commands, strict TypeScript, linting, formatting, test baseline, safe environment examples, and verified documentation. Keep the tasks bounded as defined in `PROJECT_PLAN.md`.
 
@@ -287,6 +300,8 @@ The Phase 1 foundation tasks collectively must establish exact root commands, st
 
 `P1-M2-T04 — Web-to-API development path` established `STOCKWISE_API_PORT=3001` for the API loopback listener and server-only `STOCKWISE_API_ORIGIN=http://127.0.0.1:3001` for the Next.js rewrite. The browser requests same-origin `GET /api/health`; Next.js proxies it to Express `GET /health`. Express enables no CORS policy for this path and emits no cross-origin permission header. The web shell contains one narrow typed health client/view only; business REST APIs remain Express-owned under `/api/v1`. Frozen install, format-check, lint, strict typecheck, 24 tests, builds, dev/start HTTP proxy smokes, direct-origin header checks, and desktop-browser responsive smoke at 375px passed on 2026-08-22. It adds no business API, database, domain module, authentication, Docker, or infrastructure.
 
+`P1-M3-T01 — Local PostgreSQL and Docker setup` established `compose.yaml` with a development-only PostgreSQL 16.11 container, `pg_isready` healthcheck, loopback-only host port, and named persistent volume. It establishes only Docker-owned `STOCKWISE_POSTGRES_USER`, `STOCKWISE_POSTGRES_PASSWORD`, `STOCKWISE_POSTGRES_DATABASE`, and `STOCKWISE_POSTGRES_PORT` local configuration. Compose validation, clean-start health, loopback/connectivity smoke, restart persistence, and non-destructive teardown were verified on 2026-08-22. It adds no Prisma dependency, schema, migration, database table, API database access, production deployment, or test harness.
+
 Across the later foundation/application-shell tasks:
 
 1. `OQ-002` is resolved by `ADR-012`; preserve the App Router, `src/app`, Server Component default, and Express-owned business API boundary.
@@ -304,7 +319,7 @@ Across the later foundation/application-shell tasks:
 - Each process validates only its own environment with a process-owned Zod schema at startup. Separate strict empty Next.js and Express schemas and tests exist; there is no speculative shared root schema.
 - Local development values must be non-production and documented by the task that introduces the corresponding process or resource. Test values must identify isolated, disposable resources and must never target shared, staging, or production data.
 - Populated `.env` and `.env.*` files remain ignored. Only redacted example files may be committed. Never place real secrets, tokens, credentials, or production values in an example.
-- `P1-M2-T04` owns the verified local port/origin contract: `STOCKWISE_API_PORT=3001`, `STOCKWISE_API_ORIGIN=http://127.0.0.1:3001`, and fixed web port `3000`. Local PostgreSQL connection examples remain deferred to `P1-M3-T01`; authentication settings to the accepted `OQ-003` implementation; reporting/schedule/provider settings to `OQ-016`–`OQ-018` and Phase 7; AWS region/topology/secret-management settings to `OQ-015`/`OQ-020` and Phase 8.
+- `P1-M2-T04` owns the verified local port/origin contract: `STOCKWISE_API_PORT=3001`, `STOCKWISE_API_ORIGIN=http://127.0.0.1:3001`, and fixed web port `3000`. `P1-M3-T01` owns the Docker-only local PostgreSQL inputs `STOCKWISE_POSTGRES_USER`, `STOCKWISE_POSTGRES_PASSWORD`, `STOCKWISE_POSTGRES_DATABASE`, and `STOCKWISE_POSTGRES_PORT`; they are non-production values, are never browser configuration, and require a unique replacement in a populated local `.env`. The API-owned PostgreSQL connection URL remains deferred to P1-M3-T02 with Prisma. Authentication settings remain assigned to the accepted `OQ-003` implementation; reporting/schedule/provider settings to `OQ-016`–`OQ-018` and Phase 7; AWS region/topology/secret-management settings to `OQ-015`/`OQ-020` and Phase 8.
 
 P1-M1-T04 added no runtime validation before a process existed. P1-M2-T04 updates the web and API schemas with the only concrete local integration values; both schemas select only their owned input and reject missing, invalid, and unowned values. All remaining configuration stays assigned to later tasks or decisions.
 

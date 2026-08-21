@@ -1,0 +1,26 @@
+name: stockwise
+
+services:
+  postgres:
+    image: postgres:16.11-alpine
+    environment:
+      POSTGRES_DB: "${STOCKWISE_POSTGRES_DATABASE:?Set STOCKWISE_POSTGRES_DATABASE in .env}"
+      POSTGRES_PASSWORD: "${STOCKWISE_POSTGRES_PASSWORD:?Set STOCKWISE_POSTGRES_PASSWORD in .env}"
+      POSTGRES_USER: "${STOCKWISE_POSTGRES_USER:?Set STOCKWISE_POSTGRES_USER in .env}"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'pg_isready --username="$$POSTGRES_USER" --dbname="$$POSTGRES_DB"',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    ports:
+      - "127.0.0.1:${STOCKWISE_POSTGRES_PORT:?Set STOCKWISE_POSTGRES_PORT in .env}:5432"
+    volumes:
+      - stockwise-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  stockwise-postgres-data:
