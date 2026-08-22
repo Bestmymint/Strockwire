@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { loadTestDatabaseEnvironment } from "./database-environment.ts";
 import {
+  applyTestDatabaseMigrations,
   provisionTestDatabase,
   resetTestDatabase,
 } from "./database-harness.ts";
@@ -20,6 +21,7 @@ export default async function setupDatabaseTests(): Promise<
 
   const environment = loadTestDatabaseEnvironment();
   await provisionTestDatabase(environment);
+  await applyTestDatabaseMigrations(environment);
   await resetTestDatabase(environment);
 
   return async () => {

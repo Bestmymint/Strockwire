@@ -92,7 +92,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
 | [x] **P2-M1-T01 — Close identity/onboarding decisions** | Unblock identity implementation | Accepted session, email lifecycle, onboarding, invitation, and RBAC decisions; permission matrix and decision-boundary review | Phase 1 | Accepted decisions update build/data/API/use cases/ADR | Cross-document trace plus session/token, invitation, delegation, escalation, and last-owner decision-boundary review completed 2026-08-22 |
-| [ ] **P2-M1-T02 — Identity and tenancy schema** | Persist users, organizations, branches, memberships | Prisma models/constraints/indexes/migration for accepted fields only | T01, P1-M3 | Same-tenant relationships, multi-branch users, preserved actor history | Migration + uniqueness/FK/cross-tenant DB tests |
+| [x] **P2-M1-T02 — Identity and tenancy schema** | Persist users, organizations, branches, memberships | Prisma models/constraints/indexes/migration for accepted fields only | T01, P1-M3 | Same-tenant relationships, multi-branch users, preserved actor history | Two clean migrations, 12 schema/constraint tests, full 41-test suite, harness, quality/build/audit, catalog/diff review passed 2026-08-22 |
 | [ ] **P2-M1-T03 — Authorization policy foundation** | Centralize RBAC + branch scope | Typed permission vocabulary, trusted request context, policy tests; no endpoint wiring yet | T01, T02 | Organization/branch decisions evaluated in one policy layer | Permission matrix + escalation unit tests |
 
 ### Milestone 2.2 — Authentication
@@ -327,20 +327,20 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 ## 2. Next Codex task
 
-Phase 1 and the Phase 2 documentation decision gate are complete. The next planned implementation task is **P2-M1-T02 — Identity and tenancy schema**; this status update does not authorize starting it.
+Phase 1, the Phase 2 documentation decision gate, and P2-M1-T02 are complete. The next planned implementation task is **P2-M1-T03 — Authorization policy foundation**; this status update does not authorize starting it.
 
 Current-state constraints that the next task must preserve:
 
 - `OQ-001` is resolved by `ADR-011`: Node.js 24 LTS, pnpm 11.19.0, and native `apps/*`/`packages/*` workspaces.
 - The root contains pinned TypeScript, ESLint, Prettier, Vitest, and Next-specific lint tooling with verified `build`, `dev:api`, `dev:web`, `start:api`, `start:web`, `format`, `format:check`, `lint`, `test`, and `typecheck` scripts.
-- Vitest discovers root and workspace `*.test.ts`/`*.test.tsx` files, excludes future `tests/e2e` files, and currently runs the root smoke test plus web and API shell tests.
+- Vitest discovers root and workspace `*.test.ts`/`*.test.tsx` files, excludes future `tests/e2e` files, applies committed migrations to the guarded test database, and currently runs 41 tests including 12 identity/tenancy schema tests.
 - The root `.env.example` documents the active web/API loopback contract, redacted Docker-only `STOCKWISE_POSTGRES_*` placeholders, and API-only `DATABASE_URL`. `apps/web` and `apps/api` retain separate strict Zod environment schemas; the API validates `DATABASE_URL` as a PostgreSQL URL and the web schema does not accept it.
 - Web/API configuration ownership, client/server exposure boundaries, local/test rules, and later-task deferrals are documented in `AGENTS.md`.
 - `.github/workflows/ci.yml` reproduces the frozen install, format-check, lint, typecheck, test, and build gates for pushes and pull requests with read-only repository permission and immutable action pins.
 - `apps/web` contains the Next.js App Router root shell, Tailwind/shadcn baseline, TanStack Query provider, strict environment boundary, and one health-only client/view. It has no feature routes, Route Handlers, authentication, business API client, or product/domain behavior.
 - `OQ-002` is resolved by `ADR-012`: App Router under `src/app`, Server Components by default, justified Client Components only, deferred Route Groups, and Express-owned business REST APIs.
 - `OQ-003`–`OQ-006` and `OQ-022` are resolved by `ADR-013`–`ADR-016`: use opaque hash-only PostgreSQL sessions in HttpOnly cookies, provider-abstracted Resend email delivery, verified minimal onboarding, email-bound invitations, and fixed organization RBAC with branch assignments.
-- `apps/api` contains the Express app/server bootstrap, empty `/api/v1` boundary, root-level `/health` and `/ready` operational probes, safe transport middleware/errors, structured request telemetry, shutdown lifecycle, strict API environment boundary, and a lazy Prisma 7.9.1 PostgreSQL client. Its `prisma/` directory has only config/datasource/generator assets: no domain model, table, or migration exists.
+- `apps/api` contains the Express app/server bootstrap, empty `/api/v1` boundary, root-level `/health` and `/ready` operational probes, safe transport middleware/errors, structured request telemetry, shutdown lifecycle, strict API environment boundary, and a lazy Prisma 7.9.1 PostgreSQL client. Its `prisma/` directory now contains the reviewed P2-M1-T02 identity/tenancy models and initial migration only; no authentication/authorization service, endpoint, UI, or later-domain model exists.
 - The only web-to-API integration is the Next.js same-origin `/api/health` rewrite to loopback Express `/health`; Express CORS remains disabled. `compose.yaml` provides a local-only PostgreSQL 16.11 container with a loopback port, healthcheck, and named persistent volume. No domain code, analytics, AI, AWS resource, deployment, or release automation exists.
 - Git metadata is present, but P1-M1-T05 did not create a commit or perform any remote action.
 
@@ -349,9 +349,9 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P2-M1-T02 — Identity and tenancy schema
+Task: P2-M1-T03 — Authorization policy foundation
 
-Follow the exact task row and affected Source of Truth documents. Implement only the accepted identity/tenancy schema boundary; do not begin authentication endpoints, UI, or later Phase 2 tasks.
+Follow the exact task row and affected Source of Truth documents. Implement only the accepted typed authorization policy and trusted-scope foundation; do not begin authentication endpoints, UI, or later Phase 2 tasks.
 
 Preserve the repository-foundation, web/API-shell, health/readiness, web-to-API, environment-contract, and CI baselines. Keep work within the explicitly authorized local-data task; do not begin domain, analytics, AI, cloud, deployment, or release tasks, and do not commit anything without separate authorization.
 ```

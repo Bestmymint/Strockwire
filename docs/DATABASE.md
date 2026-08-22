@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1 logical data contract; Prisma foundation exists without models or migrations |
+| Status | Architecture Freeze v1 logical data contract; P2 identity/tenancy schema implemented |
 | Database | PostgreSQL |
 | ORM/migrations | Prisma |
 | Baseline | Architecture Freeze v1 |
@@ -16,19 +16,21 @@ Metric formulas belong to `docs/ANALYTICS.md`. HTTP payloads belong to `docs/API
 
 ### Prisma foundation
 
-`apps/api` owns Prisma configuration at `apps/api/prisma.config.ts`, the empty
-PostgreSQL provider schema at `apps/api/prisma/schema.prisma`, future generated
-migrations at `apps/api/prisma/migrations/`, and the ignored generated client at
-`apps/api/src/generated/prisma/`. P1-M3-T02 deliberately creates no model,
-table, migration, naming/mapping convention, or database business rule.
+`apps/api` owns Prisma configuration at `apps/api/prisma.config.ts`, the
+PostgreSQL schema at `apps/api/prisma/schema.prisma`, reviewed migrations at
+`apps/api/prisma/migrations/`, and the ignored generated client at
+`apps/api/src/generated/prisma/`. P1-M3-T02 established the empty foundation;
+P2-M1-T02 adds only the accepted identity and tenancy models and their initial
+forward migration.
 
 The API validates its required server-only `DATABASE_URL` before runtime use.
 Prisma CLI generation and schema validation work without a populated local URL;
 commands that access PostgreSQL, including future migrations, require that URL.
 Generated clients are regenerated locally and in quality commands, while
-migrations remain reviewable source files. A later authorized model task must
-select physical table/column naming and Prisma mappings consistently with this
-logical contract.
+migrations remain reviewable source files. P2-M1-T02 selects UUID primary keys,
+`snake_case` PostgreSQL table/column/constraint names through Prisma mappings,
+and millisecond-precision `TIMESTAMPTZ` UTC instants. Later model tasks must
+continue those physical conventions unless an accepted migration changes them.
 
 ### Database test harness
 
@@ -40,17 +42,45 @@ differ from `DATABASE_URL`; the harness validates those rules before it creates
 or resets anything. The local test role creates the disposable target database
 through its local `postgres` database when necessary.
 
-Each Vitest run provisions the target, then clears public-schema table data with
+Each Vitest run provisions the target, applies committed migrations with
+`prisma migrate deploy`, then clears public-schema table data with
 `TRUNCATE ... RESTART IDENTITY CASCADE` while preserving Prisma migration
 metadata and removes only the harness-owned `stockwise_test_harness` scratch
 schema. It repeats that cleanup during teardown. Test files run serially because
-they intentionally share one resettable target. Future authorized domain tests
-must apply their reviewed migrations to this target before exercising models;
-this foundation does not create or apply business migrations.
+they intentionally share one resettable target.
 
 Run `pnpm test` for the full suite or `pnpm test:db` for the focused harness.
 Both require a populated local `TEST_DATABASE_URL`; CI supplies an ephemeral
 PostgreSQL service and a test-only URL.
+
+### Implemented identity and tenancy schema
+
+P2-M1-T02 creates exactly these PostgreSQL-backed Prisma models:
+
+- `User`, `Organization`, `OrganizationMembership`, `Branch`, and
+  `BranchAssignment`
+- `Session`, `EmailVerificationToken`, and `PasswordResetToken`
+- `Invitation` and `InvitationBranchScope`
+
+Email identity is stored canonically as surrounding-whitespace-trimmed,
+lowercase text. The API implementation must perform that normalization before
+persistence; PostgreSQL rejects a non-canonical stored value and uniquely
+indexes the canonical `User.email`. `Invitation.invitedEmail` uses the same
+stored representation. Password and opaque-token columns store only hashes;
+there is no plaintext session, verification, reset, or invitation-token column.
+
+Statuses are deliberately limited to the accepted lifecycle boundary:
+`ACTIVE`/`DISABLED` for users and `ACTIVE`/`INACTIVE` for organizations,
+memberships, branches, and branch assignments. A matching deactivation
+timestamp is required for every inactive/disabled row. The schema adds no audit
+log, organization timezone, auth endpoint, provider, or later-domain field.
+
+The migration adds SQL checks and partial unique indexes that Prisma cannot
+express. They validate nonblank normalized identity/hash/name fields, lifecycle
+status/timestamp agreement, session expiry ordering, one-time-token state and
+expiry ordering, one open verification token per user, and one open invitation
+per organization/email. Expired open records must be marked revoked or replaced
+in the same transaction that creates their replacement.
 
 ## 2. Database-wide invariants
 
@@ -76,13 +106,15 @@ PostgreSQL service and a test-only URL.
 erDiagram
     USER ||--o{ ORGANIZATION_MEMBERSHIP : has
     ORGANIZATION ||--o{ ORGANIZATION_MEMBERSHIP : grants
-    USER ||--o{ BRANCH_ASSIGNMENT : has
+    ORGANIZATION_MEMBERSHIP ||--o{ BRANCH_ASSIGNMENT : grants
     BRANCH ||--o{ BRANCH_ASSIGNMENT : grants
     USER ||--o{ SESSION : has
     USER ||--o{ EMAIL_VERIFICATION_TOKEN : verifies
     USER ||--o{ PASSWORD_RESET_TOKEN : resets
     ORGANIZATION ||--o{ INVITATION : issues
     INVITATION }o--o| USER : accepted_by
+    INVITATION ||--o{ INVITATION_BRANCH_SCOPE : scopes
+    BRANCH ||--o{ INVITATION_BRANCH_SCOPE : included_in
 
     ORGANIZATION ||--o{ BRANCH : owns
     ORGANIZATION ||--o{ CATEGORY : owns
@@ -649,6 +681,40 @@ Acceptable techniques include:
 
 The chosen physical approach is an implementation detail, but the invariant is mandatory. Every read and write query must still include trusted organization/branch scope.
 
+P2-M1-T02 implements the identity/tenancy cases with composite foreign keys:
+
+- `BranchAssignment(organizationId, userId)` references the exact
+  `OrganizationMembership(organizationId, userId)`.
+- `BranchAssignment(branchId, organizationId)` references the exact
+  `Branch(id, organizationId)`.
+- `InvitationBranchScope(invitationId, organizationId)` and
+  `InvitationBranchScope(branchId, organizationId)` reference an invitation and
+  branch carrying the same organization.
+- Accepted invitations reference `User(id, email)` through
+  `(acceptedByUserId, invitedEmail)`, preventing cross-email account linking at
+  the relational boundary.
+
+The repeated `organizationId` values in the two scope tables are deliberate
+referential-integrity keys, not independently trusted tenant state. Application
+queries must still begin from authenticated organization membership.
+
+PostgreSQL directly enforces identity uniqueness, one membership per
+organization/user, one assignment per branch/user, branch-code uniqueness per
+organization, token-hash uniqueness, normalized email storage, the composite
+same-tenant relationships above, lifecycle/temporal checks, and restrictive
+foreign-key deletion.
+
+The later application transaction/policy layer must enforce invariants that
+cannot be represented safely by ordinary row constraints without duplicating
+role state or adding fragile cross-row triggers: every organization retains at
+least one active `OWNER`; branch-only active memberships have at least one
+active assignment; organization-wide roles do not derive access from assignment
+rows; membership deactivation/role changes update affected access atomically;
+organization onboarding creates its first branch and OWNER atomically; token
+expiry durations use the accepted 24-hour, 30-minute, and seven-day values; and
+invitation acceptance creates the membership/assignments and consumes the
+invitation atomically and idempotently.
+
 ## 6. Transaction contracts
 
 ### 6.1 Checkout
@@ -733,6 +799,12 @@ Every unique constraint required for correctness is mandatory even if no direct 
 - Corrections use explicit status transitions and/or compensating records after the corresponding rules are accepted.
 - User/organization deletion, anonymization, legal retention, analytics snapshot retention, and AI output retention require a policy before production (`OQ-020` and related security decisions).
 - Cascade deletion must never erase business history accidentally.
+- P2-M1-T02 uses `ON DELETE RESTRICT` and `ON UPDATE RESTRICT` for every
+  identity/tenancy foreign key. Lifecycle changes use statuses and timestamps;
+  physical user, organization, branch, membership, assignment, invitation,
+  session, and token deletion remains unavailable while referenced. A later
+  accepted retention/anonymization design must use a reviewed forward migration
+  rather than weakening these keys implicitly.
 
 ## 11. Migration rules
 

@@ -1,3 +1,7 @@
+import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
 import { Client } from "pg";
 
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
@@ -7,6 +11,12 @@ import {
   getTestDatabaseName,
   type TestDatabaseEnvironment,
 } from "./database-environment.ts";
+
+const execFileAsync = promisify(execFile);
+const apiRoot = fileURLToPath(new URL("../../", import.meta.url));
+const prismaCli = fileURLToPath(
+  new URL("../../node_modules/prisma/build/index.js", import.meta.url),
+);
 
 function quoteIdentifier(identifier: string): string {
   return `"${identifier.replaceAll('"', '""')}"`;
@@ -41,6 +51,26 @@ export async function provisionTestDatabase(
   } finally {
     await adminClient.end();
   }
+}
+
+/** Applies committed forward migrations to the guarded disposable test target. */
+export async function applyTestDatabaseMigrations(
+  environment: TestDatabaseEnvironment,
+): Promise<void> {
+  getTestDatabaseName(environment.TEST_DATABASE_URL);
+
+  await execFileAsync(
+    process.execPath,
+    [prismaCli, "migrate", "deploy", "--config", "prisma.config.ts"],
+    {
+      cwd: apiRoot,
+      env: {
+        ...process.env,
+        DATABASE_URL: environment.TEST_DATABASE_URL,
+      },
+      windowsHide: true,
+    },
+  );
 }
 
 /**
