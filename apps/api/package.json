@@ -12,7 +12,8 @@
     "prisma:migrate:dev": "prisma migrate dev --config prisma.config.ts",
     "prisma:validate": "prisma validate --config prisma.config.ts",
     "start": "node --env-file-if-exists=../../.env dist/main.js",
-    "test": "pnpm run prisma:generate && vitest run --config ../../vitest.config.mts src",
+    "test": "pnpm run prisma:generate && vitest run --config ../../vitest.config.mts apps/api/src",
+    "test:db": "pnpm run prisma:generate && vitest run --config ../../vitest.config.mts apps/api/src/test/database-harness.test.ts",
     "typecheck": "pnpm run prisma:generate && tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {

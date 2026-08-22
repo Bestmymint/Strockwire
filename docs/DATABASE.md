@@ -30,6 +30,28 @@ migrations remain reviewable source files. A later authorized model task must
 select physical table/column naming and Prisma mappings consistently with this
 logical contract.
 
+### Database test harness
+
+P1-M3-T03 adds API-owned test support under `apps/api/src/test/` without adding
+a Prisma model, business table, or migration. Database tests use the separate,
+server-only `TEST_DATABASE_URL`, never the API runtime `DATABASE_URL`. The test
+URL must be PostgreSQL, loopback-only, name a database ending in `_test`, and
+differ from `DATABASE_URL`; the harness validates those rules before it creates
+or resets anything. The local test role creates the disposable target database
+through its local `postgres` database when necessary.
+
+Each Vitest run provisions the target, then clears public-schema table data with
+`TRUNCATE ... RESTART IDENTITY CASCADE` while preserving Prisma migration
+metadata and removes only the harness-owned `stockwise_test_harness` scratch
+schema. It repeats that cleanup during teardown. Test files run serially because
+they intentionally share one resettable target. Future authorized domain tests
+must apply their reviewed migrations to this target before exercising models;
+this foundation does not create or apply business migrations.
+
+Run `pnpm test` for the full suite or `pnpm test:db` for the focused harness.
+Both require a populated local `TEST_DATABASE_URL`; CI supplies an ephemeral
+PostgreSQL service and a test-only URL.
+
 ## 2. Database-wide invariants
 
 1. PostgreSQL is the only primary system of record.

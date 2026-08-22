@@ -1,0 +1,112 @@
+import { Client } from "pg";
+
+import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
+import { createPrismaClient } from "../prisma/client.ts";
+import {
+  getTestDatabaseAdminUrl,
+  getTestDatabaseName,
+  type TestDatabaseEnvironment,
+} from "./database-environment.ts";
+
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
+
+export function createTestPrismaClient(
+  environment: TestDatabaseEnvironment,
+): PrismaClient {
+  return createPrismaClient({ DATABASE_URL: environment.TEST_DATABASE_URL });
+}
+
+export async function provisionTestDatabase(
+  environment: TestDatabaseEnvironment,
+): Promise<void> {
+  const databaseName = getTestDatabaseName(environment.TEST_DATABASE_URL);
+  const adminClient = new Client({
+    connectionString: getTestDatabaseAdminUrl(environment.TEST_DATABASE_URL),
+  });
+
+  try {
+    await adminClient.connect();
+    const result = await adminClient.query<{ exists: boolean }>(
+      "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1) AS exists",
+      [databaseName],
+    );
+
+    if (result.rows[0]?.exists !== true) {
+      await adminClient.query(
+        `CREATE DATABASE ${quoteIdentifier(databaseName)}`,
+      );
+    }
+  } finally {
+    await adminClient.end();
+  }
+}
+
+/**
+ * Clears only the disposable test database's public tables and removes the
+ * harness-owned scratch schema. The URL guard runs before any destructive
+ * statement is issued, while future Prisma migration metadata stays intact.
+ */
+export async function resetTestDatabase(
+  environment: TestDatabaseEnvironment,
+): Promise<void> {
+  getTestDatabaseName(environment.TEST_DATABASE_URL);
+  const testClient = new Client({
+    connectionString: environment.TEST_DATABASE_URL,
+  });
+
+  try {
+    await testClient.connect();
+    await testClient.query(
+      "DROP SCHEMA IF EXISTS stockwise_test_harness CASCADE",
+    );
+    await testClient.query(`
+      DO $$
+      DECLARE
+        tableList text;
+      BEGIN
+        SELECT string_agg(format('%I.%I', schemaname, tablename), ', ')
+        INTO tableList
+        FROM pg_tables
+        WHERE schemaname = 'public' AND tablename <> '_prisma_migrations';
+
+        IF tableList IS NOT NULL THEN
+          EXECUTE 'TRUNCATE TABLE ' || tableList || ' RESTART IDENTITY CASCADE';
+        END IF;
+      END $$;
+    `);
+  } finally {
+    await testClient.end();
+  }
+}
+
+class RollbackSignal {
+  readonly value = undefined;
+}
+
+type TestPrismaTransaction = Prisma.TransactionClient;
+
+/** Runs a test callback in a transaction that is always rolled back. */
+export async function withRollbackTransaction<T>(
+  prisma: PrismaClient,
+  callback: (transaction: TestPrismaTransaction) => Promise<T>,
+): Promise<T> {
+  const rollback = new RollbackSignal();
+  let outcome: { value: T } | undefined;
+
+  try {
+    await prisma.$transaction(async (transaction) => {
+      outcome = { value: await callback(transaction) };
+      throw rollback;
+    });
+  } catch (error: unknown) {
+    if (error === rollback && outcome !== undefined) {
+      return outcome.value;
+    }
+
+    throw error;
+  }
+
+  throw new Error("Rollback transaction unexpectedly committed.");
+}

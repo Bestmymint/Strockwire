@@ -83,7 +83,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 | --- | --- | --- | --- | --- | --- |
 | [x] **P1-M3-T01 — Local PostgreSQL and Docker setup** | Provide reproducible disposable development database | Docker configuration, healthcheck, volumes, safe local credentials/examples | P1-M1-T01, P1-M1-T04 | Documented start/stop; no production credentials; data target explicit | Compose validation, clean-start health, loopback/connectivity, restart persistence, and non-destructive teardown passed 2026-08-22 |
 | [x] **P1-M3-T02 — Prisma foundation** | Establish safe schema/migration workflow | Initialize Prisma for PostgreSQL, generated client location, empty/foundation migration policy, scripts | P1-M1-T02, T01 | Prisma client generation, validation, disposable migration no-op, and PostgreSQL smoke passed; `docs/DATABASE.md` records the no-model foundation convention | Generate/validate/migrate and `SELECT 1` on disposable DB passed 2026-08-22 |
-| [ ] **P1-M3-T03 — Database test harness** | Enable real integration/concurrency tests | Isolated test database/schema, reset strategy restricted to disposable target, transaction helpers | T01, T02 | Repeatable parallel-safe test setup; production URL guard | Run repeated DB smoke and target-safety tests |
+| [x] **P1-M3-T03 — Database test harness** | Enable real integration/concurrency tests | Isolated test database/schema, reset strategy restricted to disposable target, transaction helpers | T01, T02 | Repeatable parallel-safe test setup; production URL guard | Repeated PostgreSQL/Prisma smoke, target-safety, cleanup, rollback, full quality/build/audit checks, and temporary-environment cleanup passed 2026-08-22 |
 
 ## Phase 2 — Identity, organizations, and branches
 
@@ -327,7 +327,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 ## 2. Next Codex task
 
-The next implementation task is **P1-M3-T03 — Database test harness**. This status update does not authorize starting it.
+Phase 1 is complete. The next planned implementation task is **P2-M1-T01 — Close identity/onboarding decisions**; this status update does not authorize starting it.
 
 Current-state constraints that the next task must preserve:
 
@@ -348,9 +348,9 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P1-M3-T03 — Database test harness
+Task: P2-M1-T01 — Close identity/onboarding decisions
 
-Follow the exact task row and affected Source of Truth documents. Preserve the existing safe web-to-API health path and operational probe semantics.
+Follow the exact task row and affected Source of Truth documents. Do not implement identity/domain schema or authentication until the required Open Questions are accepted.
 
 Preserve the repository-foundation, web/API-shell, health/readiness, web-to-API, environment-contract, and CI baselines. Keep work within the explicitly authorized local-data task; do not begin domain, analytics, AI, cloud, deployment, or release tasks, and do not commit anything without separate authorization.
 ```
