@@ -35,14 +35,14 @@ Repository/tooling work, application shells, and other unrelated foundation work
 
 At minimum, enforce these gates:
 
-- Identity/onboarding/authorization: `OQ-003`, `OQ-005`, `OQ-022`
+- Identity/onboarding/authorization decisions are accepted in `ADR-013`–`ADR-016`; implementation must follow their session, email, onboarding, invitation, and RBAC boundaries.
 - Inventory and quantity mutations: `OQ-007`, `OQ-023`
-- POS/sales monetary behavior: `OQ-007`, `OQ-008`, `OQ-010`, `OQ-022`, `OQ-023`
+- POS/sales monetary behavior: `OQ-007`, `OQ-008`, `OQ-010`, `OQ-023`, plus the accepted RBAC baseline in `ADR-016`
 - Refund/void behavior: `OQ-009` in addition to the sales decisions
 - Purchasing/receiving costing behavior: `OQ-007`, `OQ-010`, `OQ-023`
 - Analytics and forecasting: `OQ-011`, `OQ-012`; plus any metric-specific dependency documented in `docs/ANALYTICS.md`
 
-The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER`. These names do not grant permissions by themselves. `OQ-022` remains open for the exact organization/branch permission matrix, delegation, membership administration, operational actions, cost/margin visibility, organization-wide analytics, and last-owner governance.
+The accepted MVP roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER`. Authorization is fixed, deny-by-default RBAC from `ADR-016` and `BUILD_SPEC.md` section 8: a user has one organization role per organization; `OWNER`/`ADMIN` have organization-wide branch access; the remaining roles need explicit branch assignments. The Express API, not the frontend, is the security boundary. At least one OWNER must remain; refund/void authority remains open in `OQ-009`.
 
 Cloud/operations questions such as `OQ-015`, `OQ-017`–`OQ-020` remain phase-specific and do not block Repository Foundation or unrelated domain work.
 
@@ -213,7 +213,7 @@ These rules are accepted; exact formatter/linter configuration is part of Reposi
 ## 11. Security rules
 
 - Hash passwords with Argon2. Never log, return, or persist plaintext passwords.
-- Do not invent token storage or refresh behavior; `OQ-003` blocks authentication implementation.
+- Browser authentication uses only the `ADR-013` opaque, hash-only PostgreSQL session in an HttpOnly host-only `SameSite=Lax` cookie (`Secure` in production). Do not add JWT browser authentication, web-storage tokens, or refresh-token flows.
 - Apply rate limiting/abuse controls to authentication and other sensitive endpoints.
 - Prevent horizontal and vertical privilege escalation with organization, branch, and role checks.
 - Use generic not-found/forbidden behavior that does not reveal another tenant's data.
@@ -325,7 +325,7 @@ Across the later foundation/application-shell tasks:
 - Each process validates only its own environment with a process-owned Zod schema at startup. Separate strict empty Next.js and Express schemas and tests exist; there is no speculative shared root schema.
 - Local development values must be non-production and documented by the task that introduces the corresponding process or resource. Test values must identify isolated, disposable resources and must never target shared, staging, or production data.
 - Populated `.env` and `.env.*` files remain ignored. Only redacted example files may be committed. Never place real secrets, tokens, credentials, or production values in an example.
-- `P1-M2-T04` owns the verified local port/origin contract: `STOCKWISE_API_PORT=3001`, `STOCKWISE_API_ORIGIN=http://127.0.0.1:3001`, and fixed web port `3000`. `P1-M3-T01` owns the Docker-only local PostgreSQL inputs `STOCKWISE_POSTGRES_USER`, `STOCKWISE_POSTGRES_PASSWORD`, `STOCKWISE_POSTGRES_DATABASE`, and `STOCKWISE_POSTGRES_PORT`; they are non-production values, are never browser configuration, and require a unique replacement in a populated local `.env`. `P1-M3-T02` owns the API-only `DATABASE_URL`, which connects to that loopback database, is PostgreSQL-scheme validated by the API Zod boundary, and must never be web or `NEXT_PUBLIC_` configuration. P1-M3-T03 owns the server-only `TEST_DATABASE_URL`; the test harness accepts only an isolated loopback `*_test` target that differs from `DATABASE_URL`, and this value is never web configuration. Authentication settings remain assigned to the accepted `OQ-003` implementation; reporting/schedule/provider settings to `OQ-016`–`OQ-018` and Phase 7; AWS region/topology/secret-management settings to `OQ-015`/`OQ-020` and Phase 8.
+- `P1-M2-T04` owns the verified local port/origin contract: `STOCKWISE_API_PORT=3001`, `STOCKWISE_API_ORIGIN=http://127.0.0.1:3001`, and fixed web port `3000`. `P1-M3-T01` owns the Docker-only local PostgreSQL inputs `STOCKWISE_POSTGRES_USER`, `STOCKWISE_POSTGRES_PASSWORD`, `STOCKWISE_POSTGRES_DATABASE`, and `STOCKWISE_POSTGRES_PORT`; they are non-production values, are never browser configuration, and require a unique replacement in a populated local `.env`. `P1-M3-T02` owns the API-only `DATABASE_URL`, which connects to that loopback database, is PostgreSQL-scheme validated by the API Zod boundary, and must never be web or `NEXT_PUBLIC_` configuration. P1-M3-T03 owns the server-only `TEST_DATABASE_URL`; the test harness accepts only an isolated loopback `*_test` target that differs from `DATABASE_URL`, and this value is never web configuration. Authentication/email settings are assigned to the accepted `ADR-013`–`ADR-015` implementation; reporting/schedule/provider settings to `OQ-016`–`OQ-018` and Phase 7; AWS region/topology/secret-management settings to `OQ-015`/`OQ-020` and Phase 8.
 
 P1-M1-T04 added no runtime validation before a process existed. P1-M2-T04 updates the web and API schemas with the only concrete local integration values; both schemas select only their owned input and reject missing, invalid, and unowned values. P1-M3-T03 adds a distinct test-only environment boundary for the database harness. All remaining configuration stays assigned to later tasks or decisions.
 

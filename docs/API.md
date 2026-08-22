@@ -106,15 +106,17 @@ The project must choose one consistent boundary between `409` and `422` during A
 
 ### 3.5 Authentication
 
-The transport and browser storage of authenticated state are **Blocked by `OQ-003`**. Until accepted, this contract uses these semantic labels:
+Browser authentication uses opaque server-side PostgreSQL sessions. The API sets the cryptographically random session token only in an HttpOnly, host-only cookie with `SameSite=Lax` and `Secure` in production; PostgreSQL stores only its cryptographic hash. The browser does not receive a JWT or refresh token and must not use `localStorage` or `sessionStorage` for authentication. Session idle and absolute timeouts are configurable (24 hours and seven days as the baseline), and the API validates expiry, revocation, account status, membership, and authorization on every protected request.
+
+This contract uses these semantic labels:
 
 - **Public:** no authenticated state required, but abuse protection may apply.
-- **Authenticated:** valid accepted session/token required.
+- **Authenticated:** valid opaque server-side session required.
 - **Organization-scoped:** authenticated membership plus role permission.
 - **Branch-scoped:** authenticated organization membership/relationship, allowed branch, and role permission.
 - **System:** least-privilege scheduled job or internal operational identity; not an end-user API.
 
-Do not lock in bearer headers, cookies, refresh endpoints, CSRF behavior, or token response fields before `OQ-003`.
+Successful authentication rotates the session. Logout revokes the current session; an authenticated user can revoke all of their sessions. Password reset also revokes all user sessions. State-changing cookie-authenticated endpoints must receive implementation-time cross-site-request protections without creating a second credential transport.
 
 ### 3.6 Authorization and scoping
 
@@ -179,7 +181,7 @@ These are semantic fields, not final generated TypeScript types.
 }
 ```
 
-The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER`. `OQ-022` does not reopen those names; it blocks the exact organization/branch permission matrix, delegation, membership administration, operational permissions, cost/margin visibility, organization-wide analytics access, and governance rules. Resource status/lifecycle enums remain governed by their relevant open decisions.
+The accepted fixed RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER`. Each user has one organization role. `OWNER`/`ADMIN` have organization-wide branch access; the other roles require explicit branch assignments. Express enforces the capability and governance matrix in `BUILD_SPEC.md` section 8, including deny-by-default and the last-OWNER invariant. Resource status/lifecycle enums remain governed by their relevant open decisions.
 
 ### `Product`
 
@@ -235,11 +237,16 @@ therefore the sole browser path for the health check.
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `POST /auth/register` | Public | Email, password, accepted registration fields | Next-step/account-safe result governed by `OQ-003`–`OQ-005` | Invalid/duplicate/rate limit/provider failure | Blocked `OQ-004`, `OQ-005` |
-| `POST /auth/login` | Public | Email, password | Authenticated state and safe user context governed by `OQ-003` | Generic invalid credentials, disabled/unverified, rate limit | Blocked `OQ-003`, `OQ-004` |
-| `POST /auth/logout` | Authenticated/idempotent | Revocation scope governed by `OQ-003` | Revocation result | Invalid/expired state; dependency failure | Blocked `OQ-003` |
-| `GET /me` | Authenticated | None | Safe profile and onboarding status | Authentication required | Blocked field details `OQ-005` |
-| `PATCH /me/profile` | Authenticated | Accepted editable profile fields | Updated safe profile | Validation, stale/conflict | Blocked `OQ-005` |
+| `POST /auth/register` | Public | Email, password | Account-safe verification-next-step result; no organization created | Invalid/duplicate/rate limit/provider failure | Planned after identity foundation |
+| `POST /auth/login` | Public | Email, password | Sets rotated opaque session cookie and returns safe user context | Generic invalid credentials, disabled/unverified, rate limit | Planned after identity foundation |
+| `POST /auth/logout` | Authenticated/idempotent | None | Revokes current session and clears its cookie | Invalid/expired state; dependency failure | Planned after identity foundation |
+| `POST /auth/logout-all` | Authenticated | None | Revokes all sessions for current user and clears current cookie | Authentication/dependency failure | Planned after identity foundation |
+| `POST /auth/verify-email` | Public | Opaque verification token | Account-safe verification result | Expired/used/invalid token; provider failure | Planned after identity foundation |
+| `POST /auth/verification-resend` | Public | Email/account-safe request | Non-disclosing delivery result; replaces active token when applicable | Rate limit/provider failure | Planned after identity foundation |
+| `POST /auth/forgot-password` | Public | Email | Non-disclosing delivery result | Rate limit/provider failure | Planned after identity foundation |
+| `POST /auth/reset-password` | Public | Opaque reset token, new password | Account-safe reset result; revokes all sessions | Expired/used/invalid token; validation | Planned after identity foundation |
+| `GET /me` | Authenticated | None | Safe profile and onboarding status | Authentication required | Planned after identity foundation |
+| `PATCH /me/profile` | Authenticated | Required display name; optional phone | Updated safe profile | Validation, stale/conflict | Planned after identity foundation |
 | `GET /me/organizations` | Authenticated | Pagination if needed | Accessible organization summaries | Authentication required | Planned |
 | `GET /organizations/{organizationId}/branches` | Organization-scoped | Filters/pagination | Accessible branch summaries | Not found/forbidden safely | Planned |
 
@@ -250,19 +257,22 @@ There are no Google OAuth endpoints in the MVP contract.
 - Do not return password hashes or credential metadata.
 - Do not reveal account existence through materially different messages/timing where practical.
 - Apply rate limiting and security telemetry without logging submitted passwords.
-- Session/cookie/CSRF/refresh contracts are added only after `OQ-003` closes.
+- Do not return raw session, verification, reset, or invitation tokens in persisted resources, logs, or general response payloads.
+- Verification, reset, and invitation delivery use the provider abstraction. Local/test adapters are non-delivery; production uses the Resend adapter.
+- Forgot-password and resend responses are account-safe and non-disclosing. Verification and reset tokens are single-use and expiry-bound; successful reset revokes every user session.
 
 ## 7. Organization, branch, and membership endpoints
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `POST /organizations` | Authenticated incomplete/onboarding account | Accepted organization and first-branch fields | Organization/branch context | Duplicate submission, invalid fields | Blocked `OQ-005` |
+| `POST /organizations` | Authenticated verified account without organization onboarding | Organization name; initial branch name; optional branch phone/address | Atomically created organization, initial branch, and OWNER context | Duplicate submission, invalid fields | Planned after identity foundation |
 | `GET /organizations/{organizationId}` | Organization-scoped | None | Organization detail allowed to role | Safe not-found/forbidden | Planned |
 | `PATCH /organizations/{organizationId}` | Organization admin | Editable fields | Updated organization | Validation/state/stale conflict | Blocked field/permission details |
-| `POST /organizations/{organizationId}/branches` | Organization admin | Code, name, accepted fields | Created branch | Duplicate code, invalid state | Blocked `OQ-005`, `OQ-022` |
-| `GET /organizations/{organizationId}/members` | Organization admin | Cursor/filter | Members and branch scopes | Invalid cursor, forbidden | Blocked `OQ-022` |
-| `POST /organizations/{organizationId}/invitations` | Organization admin | Email, role, branch assignments | Invitation state | Duplicate/role escalation/provider failure | Blocked `OQ-006`, `OQ-022` |
-| `PATCH /organizations/{organizationId}/members/{userId}` | Organization admin | Role/status/branch assignments | Updated membership | Last-owner/role escalation/stale state | Blocked `OQ-006`, `OQ-022` |
+| `POST /organizations/{organizationId}/branches` | `OWNER` or `ADMIN` | Code, name; optional phone/address | Created branch | Duplicate code, invalid state | Planned after identity foundation |
+| `GET /organizations/{organizationId}/members` | `OWNER` or `ADMIN` | Cursor/filter | Members and branch scopes | Invalid cursor, forbidden | Planned after identity foundation |
+| `POST /organizations/{organizationId}/invitations` | `OWNER` for OWNER invitations; `OWNER`/`ADMIN` for non-owner invitations | Invited email, role, branch assignments | Account-safe invitation state | Duplicate/role escalation/provider failure | Planned after identity foundation |
+| `POST /invitations/accept` | Authenticated verified invited email | Opaque invitation token | Transactional, idempotent membership and branch-assignment result | Expired/used/invalid/mismatched token | Planned after identity foundation |
+| `PATCH /organizations/{organizationId}/members/{userId}` | `OWNER` for OWNER changes; `OWNER`/`ADMIN` for non-owner changes | Role/status/branch assignments | Updated membership | Last-owner/role escalation/stale state | Planned after identity foundation |
 
 No endpoint may accept an arbitrary `organizationId` in the body as ownership truth.
 
@@ -296,7 +306,7 @@ Create/update validation:
 | `GET /organizations/{organizationId}/branches/{branchId}/inventory` | Branch inventory read | Cursor, product/category/status/stock filters | Product + current balance page | Invalid filter, forbidden branch | Planned; analytic filters blocked `OQ-011` |
 | `GET /organizations/{organizationId}/branches/{branchId}/inventory/{productId}` | Branch inventory read | None | Current balance and product summary | Safe not-found/cross-tenant | Planned |
 | `GET /organizations/{organizationId}/branches/{branchId}/inventory/{productId}/transactions` | Branch inventory read | Cursor, type/date filters | Stable ledger page | Invalid range/cursor | Planned |
-| `POST /organizations/{organizationId}/branches/{branchId}/inventory/adjustments` | Branch stock adjust | `Idempotency-Key`; product, signed quantity, reason | Movement + new balance | Invalid/zero, insufficient stock, duplicate/conflict | Blocked `OQ-007`, `OQ-019`, `OQ-022`, `OQ-023` |
+| `POST /organizations/{organizationId}/branches/{branchId}/inventory/adjustments` | Branch stock adjust | `Idempotency-Key`; product, signed quantity, reason | Movement + new balance | Invalid/zero, insufficient stock, duplicate/conflict | Blocked `OQ-007`, `OQ-019`, `OQ-023`; authorization follows `ADR-016` |
 
 Adjustment request must not contain an authoritative resulting balance. The server applies a delta within one transaction.
 
@@ -378,7 +388,7 @@ period=<canonical selector derived from OQ-011 and OQ-016>
 | --- | --- | --- | --- | --- | --- |
 | `GET /organizations/{organizationId}/analytics/sales` | Analytics read | Scope + canonical period + optional dimensions | Accepted sales metrics/trends | Non-comparable/insufficient/stale/inaccessible | Blocked `OQ-011`, `OQ-016` |
 | `GET /organizations/{organizationId}/analytics/inventory` | Analytics read | Scope + period/cutoff + optional dimensions | Coverage/movement/risk metrics | Insufficient/negative/unknown thresholds | Blocked `OQ-007`, `OQ-011`, `OQ-012` |
-| `GET /organizations/{organizationId}/analytics/branches` | Organization analytics read | Period + authorized branch set/filter | Comparable branch metrics | Unauthorized branch/non-comparable period | Blocked `OQ-011`, `OQ-016`, `OQ-022` |
+| `GET /organizations/{organizationId}/analytics/branches` | Organization analytics read | Period + authorized branch set/filter | Comparable branch metrics | Unauthorized branch/non-comparable period | Blocked `OQ-011`, `OQ-016`; authorization follows `ADR-016` |
 | `GET /organizations/{organizationId}/analytics/forecast` | Forecast read | Scope + product/category + horizon | Versioned forecast + data status | Unsupported horizon/insufficient data | Blocked `OQ-012` |
 | `GET /organizations/{organizationId}/analytics/reorder-recommendations` | Reorder read | Scope + horizon/filter | Inputs + deterministic recommendations | Missing lead time/forecast/cost/unit | Blocked `OQ-010`, `OQ-011`, `OQ-012`, `OQ-021`, `OQ-023` |
 
@@ -440,12 +450,12 @@ Every endpoint implemented must cover:
 
 High-risk commands additionally require database-backed atomicity and idempotency tests.
 
-## 17. Blocking questions by API area
+## 17. Decision references by API area
 
 Canonical definitions live in `BUILD_SPEC.md`:
 
-- Auth endpoints: `OQ-003`, `OQ-004`, `OQ-005`, `OQ-006`
-- Role/permission exposure: `OQ-022`
+- Auth/session: `ADR-013`; verification/reset/invitations: `ADR-014`; onboarding: `ADR-015`
+- Role/permission exposure: `ADR-016`
 - Product payload: `OQ-010`, `OQ-014`, `OQ-023`
 - Inventory adjustment: `OQ-007`, `OQ-019`, `OQ-023`
 - Purchasing/receiving: `OQ-010`, `OQ-021`, `OQ-023`

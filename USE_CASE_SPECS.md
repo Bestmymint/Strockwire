@@ -24,13 +24,13 @@ Global rules for every protected use case:
 4. Cross-tenant resources are not disclosed.
 5. All writes record sufficient actor, time, and source context for traceability.
 
-The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER`. Exact permissions are not implied by these names and remain governed by `OQ-022`.
+The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER`. One organization role is assigned per user/organization; `OWNER`/`ADMIN` are organization-wide and the remaining roles require explicit branch assignments. The API enforces the capability and governance baseline in `BUILD_SPEC.md` section 8; frontend checks are UX only.
 
 ## 2. Identity, organization, and access
 
 ### UC-IAM-001 — Register with email and password
 
-- **Status:** Blocked by `OQ-004`, `OQ-005`
+- **Status:** Ready after identity foundation
 - **Actor:** New user
 - **Preconditions:** The email is not already registered under the accepted normalization rule; the service is available.
 - **Trigger:** The user submits the email/password registration form.
@@ -39,8 +39,8 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   2. The API validates email and password requirements.
   3. The API normalizes the email and checks uniqueness without leaking account details.
   4. The API hashes the password with Argon2.
-  5. The API creates the user in the initial status defined by email-verification policy.
-  6. The API returns the next required step, such as verification or profile completion; authenticated state depends on `OQ-003`/`OQ-004`.
+  5. The API creates the user in an email-unverified status and sends verification through the provider abstraction.
+  6. The API returns an account-safe verification next step; registration alone does not create authenticated state, organization access, or branch access.
 - **Alternative flows:** A previously incomplete account follows the accepted recovery/resume path; a verified existing user is directed to sign in without revealing sensitive state.
 - **Error cases:** Invalid email/password; duplicate normalized email; rate limit; database conflict; hashing failure; unavailable email provider; request retry. No plaintext password or internal error is logged/returned.
 - **Business rules:** Email/password is the only MVP sign-up method; Google login is future. Passwords are never stored before hashing. Duplicate requests must not create multiple accounts.
@@ -50,7 +50,7 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-IAM-002 — Sign in with email and password
 
-- **Status:** Blocked by `OQ-003`, `OQ-004`
+- **Status:** Ready after identity foundation
 - **Actor:** Registered user
 - **Preconditions:** An account exists and is permitted to authenticate under verification/status policy.
 - **Trigger:** The user submits email and password.
@@ -59,56 +59,56 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   2. It locates the account using non-disclosing behavior.
   3. It verifies the Argon2 password hash.
   4. It checks account status/verification rules.
-  5. It creates authenticated state using the accepted token/session strategy.
+  5. It rotates an opaque server-side session and sets its HttpOnly cookie.
   6. It returns safe user context and accessible organization/branch options.
-- **Alternative flows:** If profile/onboarding is incomplete, authentication may succeed but the next permitted route is limited according to `OQ-005`.
+- **Alternative flows:** A verified account with incomplete profile/onboarding can authenticate but is limited to the next required setup route. Disabled or deauthorized users lose access when authorization is evaluated.
 - **Error cases:** Wrong email/password; unverified/disabled account; rate limit; expired/revoked state; database unavailable. Credential failure must not disclose whether an email exists.
-- **Business rules:** Branch selection is not embedded as permanent user ownership. Reauthentication/revocation behavior follows `OQ-003`.
+- **Business rules:** Branch selection is not embedded as permanent user ownership. The browser never receives a JWT/refresh token or writes auth state to web storage; only the session hash is stored server-side.
 - **Authorization:** Public endpoint with rate limiting; returned scopes come only from active memberships.
 - **Expected result:** A valid user obtains authenticated state; invalid attempts have no side effect beyond safe security telemetry.
 - **Acceptance criteria:** Generic credential error; rate-limit tests; secret-safe logs; only authorized memberships returned; strategy-specific security tests pass.
 
 ### UC-IAM-003 — Sign out
 
-- **Status:** Blocked by `OQ-003`
+- **Status:** Ready after identity foundation
 - **Actor:** Authenticated user
 - **Preconditions:** The user has authenticated state.
 - **Trigger:** The user selects sign out or the client invokes the logout action.
 - **Main flow:**
   1. The API validates the current authenticated state.
-  2. It revokes/destroys refresh/session state according to `OQ-003`.
-  3. The client clears only the credential state it is responsible for.
+  2. It revokes the current opaque session.
+  3. The client receives the cleared session cookie; an explicit all-session action revokes every session for the user.
   4. Protected requests with the invalidated state fail.
 - **Alternative flows:** An already expired/revoked session returns an idempotent successful result where safe.
 - **Error cases:** Network interruption; session store unavailable; replayed logout; malformed credential. The client must not claim server-side revocation if it did not occur.
-- **Business rules:** Sign-out scope—current device versus all devices—must match the accepted session strategy.
+- **Business rules:** Ordinary sign-out revokes the current session only. User-wide session revocation is separately supported; password reset also revokes every user session.
 - **Authorization:** Authenticated or safely idempotent for an already invalid session.
-- **Expected result:** The accepted session/token state can no longer access protected resources.
-- **Acceptance criteria:** Revocation semantics tested; cookie/token cleanup follows `OQ-003`; repeated logout is safe; no other user's sessions are affected.
+- **Expected result:** The revoked opaque session can no longer access protected resources.
+- **Acceptance criteria:** Current/all-session revocation, expiry, and cookie cleanup are tested; repeated logout is safe; no other user's sessions are affected.
 
 ### UC-IAM-004 — Complete profile and organization onboarding
 
-- **Status:** Blocked by `OQ-005`
+- **Status:** Ready after identity foundation
 - **Actor:** Authenticated user with incomplete onboarding
 - **Preconditions:** User may authenticate but has not completed required profile/organization setup.
 - **Trigger:** The user submits the onboarding form.
 - **Main flow:**
-  1. The API validates finalized profile and organization fields.
+  1. The API validates required display name, organization name, and initial branch name; profile/branch phone and branch address are optional.
   2. It creates/updates the profile.
   3. It creates the organization and owner membership if that is the accepted flow.
   4. It creates the first branch if required.
   5. All related records commit atomically where partial onboarding would be invalid.
   6. The API returns the next permitted application context.
-- **Alternative flows:** Joining by invitation is handled only after `OQ-006`; retry returns/resumes one logical onboarding result.
+- **Alternative flows:** Joining by invitation uses UC-IAM-006 instead of creating a new organization; retry returns/resumes one logical onboarding result.
 - **Error cases:** Invalid/missing fields; duplicate branch code; account already onboarded; invitation invalid; transaction failure; concurrent duplicate submission.
-- **Business rules:** Codex must not invent required personal/business fields. Onboarding must not create duplicate organizations on retry.
+- **Business rules:** Profile photo, date of birth, gender, tax ID, company registration number, organization website/logo, and billing details are not MVP onboarding fields. Onboarding must not create duplicate organizations on retry.
 - **Authorization:** Authenticated incomplete account; cannot alter another account or organization.
 - **Expected result:** A consistent user/organization/branch context is established, or nothing is partially created.
 - **Acceptance criteria:** Atomicity/idempotency tests; required fields exactly match decision; owner permission created correctly; no cross-user modification.
 
 ### UC-IAM-005 — Switch active branch
 
-- **Status:** Ready after identity/authorization foundation; token persistence details depend on `OQ-003`
+- **Status:** Ready after identity/authorization foundation
 - **Actor:** Authenticated organization member
 - **Preconditions:** The user has access to at least one active branch.
 - **Trigger:** The user chooses a branch from the branch switcher or an authorized organization aggregate.
@@ -118,7 +118,7 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   3. Every subsequent branch-scoped request names that candidate branch.
   4. The API verifies current membership and branch ownership on every request.
   5. The UI invalidates/refetches branch-dependent TanStack Query data.
-- **Alternative flows:** Organization-wide view is available only to a role permitted by `OQ-022`; the active branch may be restored locally but is revalidated.
+- **Alternative flows:** Organization-wide view is available to `OWNER`/`ADMIN`; the active branch may be restored locally as navigation context but is revalidated.
 - **Error cases:** Branch inactive; access revoked; branch from another organization; stale cached selection; network failure. The UI falls back to an allowed selection and shows a safe message.
 - **Business rules:** Selection is navigation context, not authorization. One user can access multiple branches without separate accounts.
 - **Authorization:** Active organization/branch membership and action permission.
@@ -127,23 +127,23 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-IAM-006 — Manage membership and branch assignment
 
-- **Status:** Blocked by `OQ-006`, `OQ-022`
+- **Status:** Ready after identity foundation
 - **Actor:** Owner or authorized administrator
 - **Preconditions:** Actor has membership-management permission in the organization.
 - **Trigger:** Actor invites/adds a member, changes role/branch assignment, or deactivates membership.
-- **Main flow:** Validate target and role; verify actor's grant authority; create/update membership; record actor/context; revoke newly invalid access; return current member view.
-- **Alternative flows:** Existing user versus new invite; organization-wide versus branch-only assignment.
+- **Main flow:** Validate target email, role, and branch scope; verify the actor's grant authority; issue/reissue the invitation or update membership; record actor/context; revoke newly invalid access; return current member view. Acceptance authenticates and verifies the invited email, then atomically and idempotently creates the organization membership and required branch assignments.
+- **Alternative flows:** An existing user must authenticate as the invited verified email; a new user registers and verifies that same email before acceptance. Changed role/branch scope revokes and replaces the pending invitation.
 - **Error cases:** Duplicate invite/membership; target/branch from another tenant; role escalation beyond actor; removal of the last required owner; expired invite; concurrent update.
-- **Business rules:** Exact permission matrix and invitation lifecycle must be accepted first. Historical actor references are preserved after deactivation.
-- **Authorization:** Server-side grant/delegate rules; no user may grant permissions they do not control.
+- **Business rules:** Invitations are email-bound, hash-only, single-use opaque tokens that expire in seven days; reissue invalidates the prior active invite. No automatic account creation or naive cross-email account linking occurs. Historical actor references are preserved after deactivation.
+- **Authorization:** `OWNER` manages owners and OWNER-only ownership actions; `OWNER`/`ADMIN` manage non-owner memberships. No user may grant permissions they do not control, and at least one OWNER must remain.
 - **Expected result:** Membership accurately reflects the accepted role and branch scope without orphaning governance.
-- **Acceptance criteria:** Horizontal/vertical escalation tests; duplicates safe; revoked branch access immediately denied; last-owner invariant tested if accepted.
+- **Acceptance criteria:** Horizontal/vertical escalation tests; duplicates safe; revoked branch access immediately denied; last-owner invariant tested.
 
 ### UC-BR-001 — Manage branches
 
-- **Status:** Blocked by `OQ-005`, `OQ-022`
-- **Actor:** `OWNER`, `ADMIN`, or another accepted MVP role only if the final permission matrix grants branch-management permission
-- **Preconditions:** The actor is authenticated, belongs to the active organization, and has the permission finalized by `OQ-022`; required branch fields are finalized by `OQ-005`.
+- **Status:** Ready after identity foundation
+- **Actor:** `OWNER` or `ADMIN`
+- **Preconditions:** The actor is authenticated, belongs to the active organization, and has branch-management permission; branch name is required and phone/address are optional.
 - **Trigger:** The actor creates a branch or submits an update/deactivation for an existing branch.
 - **Main flow:**
   1. The API derives the organization from trusted authenticated membership and validates the candidate organization/branch identifiers.
@@ -155,7 +155,7 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 - **Alternative flows:** The first branch may be created atomically during onboarding under UC-IAM-004; reactivation or a restriction on deactivating the last active branch follows the finalized onboarding/governance rules rather than an invented default.
 - **Error cases:** Missing/invalid fields; duplicate branch code; inaccessible or cross-tenant branch; unauthorized role; inactive organization; stale/concurrent update; deactivation blocked by an accepted governance rule; database failure.
 - **Business rules:** A branch belongs to exactly one organization and cannot be moved between tenants after creation. Deactivation must not hard-delete or rewrite historical branch operational records. Client `organizationId`/`branchId` is never authorization proof.
-- **Authorization:** Exact create/update/deactivate and governance permissions are blocked by `OQ-022`.
+- **Authorization:** `OWNER`/`ADMIN` only; `BRANCH_MANAGER` cannot create/delete branches or manage organization-wide settings.
 - **Expected result:** One organization-scoped branch is created or safely updated/deactivated, or no mutation occurs.
 - **Acceptance criteria:** Organization ownership, duplicate, permission, cross-tenant, stale-update, deactivation-history, and first/last-branch governance tests cover the accepted rules.
 
@@ -177,7 +177,7 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 - **Alternative flows:** Deactivate/reactivate a product according to lifecycle rules; omit optional barcode/category.
 - **Error cases:** Invalid decimal/quantity/unit; duplicate SKU/barcode; category from another tenant; stale update conflict; product referenced by history; database failure.
 - **Business rules:** Product is organization-level. Branch price overrides must not be added until `OQ-014`. Updating catalog data never rewrites historical sale/receipt snapshots.
-- **Authorization:** Organization catalog permission; branch-only role behavior follows `OQ-022`.
+- **Authorization:** Product create/edit is allowed to `OWNER`, `ADMIN`, `BRANCH_MANAGER`, and `INVENTORY_STAFF` in their allowed scope; product deactivation excludes `INVENTORY_STAFF`.
 - **Expected result:** One valid organization product is stored without cross-tenant references.
 - **Acceptance criteria:** Validation, uniqueness, tenant, immutable-history, and unauthorized-role tests pass.
 
@@ -185,8 +185,8 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-CAT-003 — Manage categories
 
-- **Status:** Blocked by `OQ-022`, `OQ-024`
-- **Actor:** An accepted MVP role with catalog-management permission after `OQ-022` is finalized
+- **Status:** Blocked by `OQ-024`
+- **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` in allowed scope
 - **Preconditions:** The actor is authenticated in an active organization and has category-management permission.
 - **Trigger:** The actor creates, updates, or deactivates an organization category.
 - **Main flow:**
@@ -198,7 +198,7 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 - **Alternative flows:** Products may remain uncategorized if the accepted catalog rules allow it; any category merge, reassignment, reactivation, or deletion behavior must first be accepted under `OQ-024`.
 - **Error cases:** Invalid/missing name; duplicate according to the accepted normalization rule; category from another organization; unauthorized role; stale update; referenced category operation not permitted; database failure.
 - **Business rules:** Category is organization-scoped. This use case does not define normalization, duplicate-name, hard-deletion, merge, or reassignment policy; `OQ-024` owns those decisions. Deactivation must not silently break product references or rewrite historical sales/receipt data.
-- **Authorization:** Exact role-to-permission behavior is blocked by `OQ-022`.
+- **Authorization:** Create/edit follows catalog permission; deactivation is limited to `OWNER`, `ADMIN`, and `BRANCH_MANAGER`.
 - **Expected result:** One valid organization category is created or safely updated/deactivated, or no mutation occurs.
 - **Acceptance criteria:** Tenant, permission, accepted normalization/duplicate, product-reference, deactivation/history, stale-update, and failure tests pass.
 
@@ -222,7 +222,7 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-INV-002 — Adjust branch stock
 
-- **Status:** Blocked by `OQ-007`, `OQ-022`, `OQ-023` and audit scope `OQ-019`
+- **Status:** Blocked by `OQ-007`, `OQ-023` and audit scope `OQ-019`
 - **Actor:** Authorized inventory staff/manager
 - **Preconditions:** Product and branch are active and in the same organization; actor has adjustment permission.
 - **Trigger:** Actor submits signed adjustment quantity and required reason.
@@ -244,8 +244,8 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-SUP-001 — Manage suppliers
 
-- **Status:** Blocked by `OQ-022`, `OQ-024`
-- **Actor:** An accepted MVP role with supplier-management permission after `OQ-022` is finalized
+- **Status:** Blocked by `OQ-024`
+- **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` in allowed scope
 - **Preconditions:** The actor is authenticated in an active organization and has supplier-management permission.
 - **Trigger:** The actor creates, updates, or deactivates an organization supplier.
 - **Main flow:**
@@ -257,7 +257,7 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 - **Alternative flows:** Reactivation, supplier merge, or replacement is allowed only if `OQ-024` later defines it; inactive suppliers remain readable in historical Purchase Orders.
 - **Error cases:** Invalid/missing fields; duplicate according to accepted normalization; cross-tenant supplier; unauthorized role; stale update; attempted unsafe deletion of a referenced supplier; database failure.
 - **Business rules:** Supplier is organization-scoped. A supplier referenced by purchasing history must not be hard-deleted or rewritten to alter historical Purchase Orders/receipts. `OQ-024` owns duplicate, normalization, deactivation, and deletion policy.
-- **Authorization:** Exact create/update/deactivate permissions are blocked by `OQ-022`.
+- **Authorization:** Supplier create/edit is allowed to `OWNER`, `ADMIN`, `BRANCH_MANAGER`, and `INVENTORY_STAFF`; deactivation follows the applicable accepted lifecycle and role policy.
 - **Expected result:** One valid organization supplier is created or safely updated/deactivated, or no mutation occurs.
 - **Acceptance criteria:** Tenant, permission, accepted duplicate/normalization, stale-update, deactivation/history, unsafe-delete, and failure tests pass.
 
@@ -327,7 +327,7 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 - **Preconditions:** At least authenticated access; requested scope is allowed.
 - **Trigger:** Actor searches/browses sales or opens a sale/receipt.
 - **Main flow:** Validate filters and scope; query paginated branch sales; load one allowed sale with immutable line/payment snapshots; render a browser-printable receipt.
-- **Alternative flows:** Cashier may be limited to own/recent branch sales according to `OQ-022`; organization role may query authorized multi-branch history.
+- **Alternative flows:** `CASHIER` sees assigned-branch sales history as required for cashier operations; `OWNER`/`ADMIN` may query organization-wide history and `BRANCH_MANAGER` assigned-branch history.
 - **Error cases:** Invalid range/cursor; inaccessible sale; revoked branch; missing historical optional product; database failure. Inaccessible and nonexistent records use safe behavior.
 - **Business rules:** Historical names/prices/costs come from sale snapshots, not current product values. Receipt never exposes hidden cost to a role without permission.
 - **Authorization:** Sales-read/receipt permission at resource branch; cost/margin fields need separate permission.
@@ -353,7 +353,7 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 ### UC-AN-001 — View sales and inventory analytics
 
 - **Status:** Blocked by `OQ-011`, `OQ-016`; framework ready after analytics definitions close
-- **Actor:** Authorized manager/admin/owner and any other role granted analytics permission
+- **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` within the accepted analytics scope
 - **Preconditions:** Actor has access to requested branch or aggregate; relevant operational data exists or an explicit empty state can be returned.
 - **Trigger:** Actor opens dashboard or changes period/scope.
 - **Main flow:**
@@ -365,21 +365,21 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 - **Alternative flows:** Organization aggregate uses only authorized branches; snapshot is served when valid; insufficient history returns explicit status rather than fabricated zero/trend.
 - **Error cases:** Invalid/non-comparable period; inaccessible branch; missing timezone decision; stale/incompatible snapshot; calculation failure; database timeout.
 - **Business rules:** No OpenRouter call occurs. No formula is defined in UI/API code outside the analytics contract.
-- **Authorization:** Analytics-read permission for every included branch; cost/margin visibility may require separate permission.
+- **Authorization:** `OWNER`/`ADMIN` have organization-wide analytics, `BRANCH_MANAGER` assigned-branch analytics, `INVENTORY_STAFF` inventory-relevant analytics only, and `CASHIER` none. Cost/margin visibility remains limited to data expressly permitted for the role.
 - **Expected result:** Reproducible, correctly scoped deterministic analytics or an explicit unavailable state.
 - **Acceptance criteria:** Fixed-fixture formula tests; period boundary tests; cross-tenant/branch aggregation tests; zero/partial/insufficient cases; accessible responsive chart alternatives.
 
 ### UC-AN-002 — View forecast and reorder recommendation
 
 - **Status:** Blocked by `OQ-007`, `OQ-010`, `OQ-011`, `OQ-012`, `OQ-021`, `OQ-023`
-- **Actor:** Authorized owner/manager/inventory staff
+- **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` within the accepted forecast/reorder scope
 - **Preconditions:** Forecasting V1 and input definitions are accepted; actor has scope access.
 - **Trigger:** Actor opens forecast/replenishment view.
 - **Main flow:** Resolve scope/horizon; load accepted history/current/incoming data; calculate versioned forecast; apply deterministic reorder formula; return estimate, recommendation, inputs, data status, and limitations.
 - **Alternative flows:** Cold start/insufficient history returns baseline or no recommendation exactly as `OQ-012` decides; product/category/branch aggregation discloses grain.
 - **Error cases:** Missing/incomplete data; invalid horizon; inactive product; unavailable lead time; negative stock; stale forecast; calculation failure.
 - **Business rules:** OpenRouter does not produce values. Recommendation does not automatically create a purchase order. Model/version and uncertainty/data status are visible.
-- **Authorization:** Forecast/reorder-read permission for requested branches; cost-sensitive inputs filtered by permission.
+- **Authorization:** `OWNER`/`ADMIN` may access organization-wide forecast/reorder results; `BRANCH_MANAGER`/`INVENTORY_STAFF` are limited to assigned branches; `CASHIER` has no access. Cost-sensitive inputs are filtered by permission.
 - **Expected result:** A reproducible system-calculated estimate/recommendation or explicit insufficient-data result.
 - **Acceptance criteria:** Backtest fixture; named baseline comparison; deterministic repeat; no-data/zero-demand cases; formula input traceability; authorization tests.
 
@@ -415,7 +415,7 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 - **Alternative flows:** No report, failed latest attempt, insufficient data, or stale last success each has a distinct state; deterministic analytics remain linked/available.
 - **Error cases:** Inaccessible scope; malformed stored content; report/snapshot version mismatch; database unavailable. No on-demand OpenRouter call is made as fallback.
 - **Business rules:** Numerical truth remains the analytics snapshot. UI must label AI text as summary and avoid presenting it as a guarantee.
-- **Authorization:** Same analytics scope required for the linked snapshot/report.
+- **Authorization:** `OWNER`/`ADMIN` may access organization-wide summaries and `BRANCH_MANAGER` assigned-branch summaries; `INVENTORY_STAFF` and `CASHIER` have no access.
 - **Expected result:** Safe cached insight display or explicit unavailable/stale state.
 - **Acceptance criteria:** Zero provider calls on reads; branch/tenant isolation; stale/failure UI; metadata visible; content cannot inject active HTML/script.
 
@@ -439,6 +439,6 @@ The accepted MVP role names are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 - **Preconditions/trigger/main flow:** Not accepted.
 - **Alternative/error cases:** Effective dates, fallback to organization price, overlapping overrides, receipt snapshot, and actor permission require explicit rules.
 - **Business rules:** Until accepted, product selling price is organization-level and no branch override table/API/UI is implied.
-- **Authorization:** To be defined by `OQ-022` if feature is included.
+- **Authorization:** A future branch-price-override feature requires its own accepted scope/authorization decision; the current RBAC baseline does not authorize an unimplemented feature.
 - **Expected result:** No implementation until accepted.
 - **Acceptance criteria:** To be added with the decision.

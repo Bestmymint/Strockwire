@@ -50,7 +50,7 @@ Completing checks makes work ready for commit; it does not authorize a commit, p
 | --- | --- | --- | --- | --- | --- |
 | [x] **P0-M2-T01 — Register decision gates** | Prevent unresolved choices from leaking into code | Map `OQ-001`–`OQ-024` to affected tasks/contracts | P0-M1-T10 | Every referenced OQ has one canonical definition and implementation blockers are explicit | Definition/reference scan completed |
 | [x] **P0-M2-T02 — Establish change protocol** | Prevent silent requirement drift | Record OQ/ADR/affected-document/plan update workflow | P0-M1-T10 | Future decisions have one owner and update path; implementers must stop at product/architecture ambiguity | Manual workflow trace completed |
-| [ ] **P0-M2-T03 — Identity/onboarding/authorization gate** | Finalize rules before identity-domain implementation | Resolve `OQ-003`, `OQ-005`, `OQ-022` for authenticated state, onboarding, and the accepted MVP roles | Before affected Phase 2 implementation | Decisions accepted; build/data/API/use cases/ADR and permission matrix updated consistently | Auth flow, tenant/branch, delegation, escalation, and last-owner scenario review |
+| [x] **P0-M2-T03 — Identity/onboarding/authorization gate** | Finalize rules before identity-domain implementation | Recorded accepted `OQ-003`–`OQ-006` and `OQ-022` rules for sessions, email lifecycle, onboarding, invitations, and fixed RBAC | Before affected Phase 2 implementation | Decisions accepted; build/data/API/use cases/ADR and permission matrix updated consistently | Cross-document trace plus session/token, invitation, delegation, escalation, and last-owner decision-boundary review completed 2026-08-22 |
 | [ ] **P0-M2-T04 — Inventory/purchasing/sales gate** | Finalize stock, money, cost, and quantity rules before affected operations | Resolve `OQ-007`, `OQ-008`, `OQ-010`, `OQ-023`; resolve `OQ-009` before refund/void | Before affected Phase 3–5 implementation | Worked examples and affected contracts agree; no domain rule remains implicit | Stock, decimal, costing, checkout, receiving, refund/void boundary scenarios |
 | [ ] **P0-M2-T05 — Analytics/forecast gate** | Finalize numerical truth before analytics/forecast implementation | Resolve `OQ-011`, then `OQ-012`; preserve TypeScript/SQL calculation and summary-only LLM boundary | Before affected Phase 6 implementation | Every implemented metric/forecast/reorder rule has one accepted definition/version | Hand-calculated fixtures, time-boundary review, backtest design and leakage review |
 
@@ -91,7 +91,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
-| [ ] **P2-M1-T01 — Close identity/onboarding decisions** | Unblock identity implementation | `OQ-003`–`OQ-006`, `OQ-022`; permission matrix and threat review | Phase 1 | Accepted decisions update build/data/API/use cases/ADR | Cross-doc trace; abuse-case review |
+| [x] **P2-M1-T01 — Close identity/onboarding decisions** | Unblock identity implementation | Accepted session, email lifecycle, onboarding, invitation, and RBAC decisions; permission matrix and decision-boundary review | Phase 1 | Accepted decisions update build/data/API/use cases/ADR | Cross-document trace plus session/token, invitation, delegation, escalation, and last-owner decision-boundary review completed 2026-08-22 |
 | [ ] **P2-M1-T02 — Identity and tenancy schema** | Persist users, organizations, branches, memberships | Prisma models/constraints/indexes/migration for accepted fields only | T01, P1-M3 | Same-tenant relationships, multi-branch users, preserved actor history | Migration + uniqueness/FK/cross-tenant DB tests |
 | [ ] **P2-M1-T03 — Authorization policy foundation** | Centralize RBAC + branch scope | Typed permission vocabulary, trusted request context, policy tests; no endpoint wiring yet | T01, T02 | Organization/branch decisions evaluated in one policy layer | Permission matrix + escalation unit tests |
 
@@ -100,17 +100,17 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
 | [ ] **P2-M2-T01 — Registration and Argon2** | Create secure email/password accounts | Validation, normalization, hashing, duplicate/rate limit behavior | P2-M1, P1-M2-T02 | No plaintext exposure; accepted verification/next step | API/unit/integration + duplicate/rate/security tests |
-| [ ] **P2-M2-T02 — Login and authenticated context** | Establish accepted auth state | Credential verification, session/token creation, middleware, safe user context | T01, `OQ-003` | Protected request resolves actor safely | Auth lifecycle, expiry/revocation, invalid credential tests |
-| [ ] **P2-M2-T03 — Logout and credential recovery** | End/recover access safely | Logout semantics; verification/reset only as accepted | T02, `OQ-003`, `OQ-004` | Revocation matches decision; provider failures safe | Replay/expiry/provider/security tests |
+| [ ] **P2-M2-T02 — Login and authenticated context** | Establish accepted auth state | Credential verification, opaque-session creation/rotation, middleware, safe user context | T01 | Protected request resolves actor safely | Auth lifecycle, idle/absolute expiry, revocation, invalid credential tests |
+| [ ] **P2-M2-T03 — Logout and credential recovery** | End/recover access safely | Current/all-session logout, verification/reset through provider abstraction | T02 | Revocation matches accepted decision; provider failures safe | Replay/expiry/provider/security tests |
 | [ ] **P2-M2-T04 — Authentication UI** | Provide accessible auth flows | Registration/login/logout/verification/reset states only as accepted | T01–T03, web shell | Responsive, accessible, safe error UI | Component/integration/E2E happy and failure paths |
 
 ### Milestone 2.3 — Onboarding and access management
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
-| [ ] **P2-M3-T01 — Profile and first organization onboarding** | Establish first usable tenant/branch | Accepted profile, organization, first branch, owner role; idempotent atomic flow | P2-M2, `OQ-005` | No partial/duplicate onboarding | API/DB/E2E invalid/retry/concurrency tests |
+| [ ] **P2-M3-T01 — Profile and first organization onboarding** | Establish first usable tenant/branch | Required display name, organization, first branch, OWNER role; optional phone/address; idempotent atomic flow | P2-M2 | No partial/duplicate onboarding | API/DB/E2E invalid/retry/concurrency tests |
 | [ ] **P2-M3-T02 — Branch management and switcher** | Support multiple branches per user | Branch CRUD allowed by policy; accessible list; frontend context switch/cache invalidation | T01, authorization policy | Server revalidates every branch; no stale cross-branch UI | API/security/UI/E2E revocation and switch tests |
-| [ ] **P2-M3-T03 — Membership invitation/assignment** | Manage staff scope | Accepted invite, role, branch assignment, deactivate flow | P2-M2, `OQ-006`, `OQ-022` | No privilege delegation/escalation violation | Matrix, duplicate, expiry, last-owner, cross-tenant tests |
+| [ ] **P2-M3-T03 — Membership invitation/assignment** | Manage staff scope | Email-bound hash-only invite, role, branch assignment, deactivate flow | P2-M2 | No privilege delegation/escalation violation | Matrix, duplicate, expiry, last-owner, cross-tenant tests |
 
 ## Phase 3 — Products and inventory
 
@@ -327,7 +327,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 ## 2. Next Codex task
 
-Phase 1 is complete. The next planned implementation task is **P2-M1-T01 — Close identity/onboarding decisions**; this status update does not authorize starting it.
+Phase 1 and the Phase 2 documentation decision gate are complete. The next planned implementation task is **P2-M1-T02 — Identity and tenancy schema**; this status update does not authorize starting it.
 
 Current-state constraints that the next task must preserve:
 
@@ -339,6 +339,7 @@ Current-state constraints that the next task must preserve:
 - `.github/workflows/ci.yml` reproduces the frozen install, format-check, lint, typecheck, test, and build gates for pushes and pull requests with read-only repository permission and immutable action pins.
 - `apps/web` contains the Next.js App Router root shell, Tailwind/shadcn baseline, TanStack Query provider, strict environment boundary, and one health-only client/view. It has no feature routes, Route Handlers, authentication, business API client, or product/domain behavior.
 - `OQ-002` is resolved by `ADR-012`: App Router under `src/app`, Server Components by default, justified Client Components only, deferred Route Groups, and Express-owned business REST APIs.
+- `OQ-003`–`OQ-006` and `OQ-022` are resolved by `ADR-013`–`ADR-016`: use opaque hash-only PostgreSQL sessions in HttpOnly cookies, provider-abstracted Resend email delivery, verified minimal onboarding, email-bound invitations, and fixed organization RBAC with branch assignments.
 - `apps/api` contains the Express app/server bootstrap, empty `/api/v1` boundary, root-level `/health` and `/ready` operational probes, safe transport middleware/errors, structured request telemetry, shutdown lifecycle, strict API environment boundary, and a lazy Prisma 7.9.1 PostgreSQL client. Its `prisma/` directory has only config/datasource/generator assets: no domain model, table, or migration exists.
 - The only web-to-API integration is the Next.js same-origin `/api/health` rewrite to loopback Express `/health`; Express CORS remains disabled. `compose.yaml` provides a local-only PostgreSQL 16.11 container with a loopback port, healthcheck, and named persistent volume. No domain code, analytics, AI, AWS resource, deployment, or release automation exists.
 - Git metadata is present, but P1-M1-T05 did not create a commit or perform any remote action.
@@ -348,9 +349,9 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P2-M1-T01 — Close identity/onboarding decisions
+Task: P2-M1-T02 — Identity and tenancy schema
 
-Follow the exact task row and affected Source of Truth documents. Do not implement identity/domain schema or authentication until the required Open Questions are accepted.
+Follow the exact task row and affected Source of Truth documents. Implement only the accepted identity/tenancy schema boundary; do not begin authentication endpoints, UI, or later Phase 2 tasks.
 
 Preserve the repository-foundation, web/API-shell, health/readiness, web-to-API, environment-contract, and CI baselines. Keep work within the explicitly authorized local-data task; do not begin domain, analytics, AI, cloud, deployment, or release tasks, and do not commit anything without separate authorization.
 ```

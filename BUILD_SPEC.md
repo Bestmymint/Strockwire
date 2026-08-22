@@ -111,7 +111,22 @@ The accepted authorization model is RBAC plus branch scope. A single user accoun
 | `INVENTORY_STAFF` | Assigned branches | Products as permitted, purchasing, receiving, stock operations |
 | `CASHIER` | Assigned branches | POS checkout and permitted sales-history actions |
 
-These five role names are the accepted MVP role baseline and must not be renamed casually. They do not define the complete authorization policy or authorize an action by themselves. `OQ-022` remains open for the exact organization-level and branch-level permissions, delegation, membership administration, product management, stock adjustment, purchasing/receiving, checkout, refund/void, cost/margin visibility, organization-wide analytics, and last-owner governance. Server-side policy must check organization membership, branch assignment, role, action, and resource ownership.
+These five role names are the accepted MVP RBAC policy and must not be renamed casually. Each user has one organization role per organization; `OWNER` and `ADMIN` have organization-wide branch access, while `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER` require explicit branch assignments and may be assigned to multiple branches. A user may hold different organization roles in different organizations. Server-side policy must deny by default and check organization membership, required branch assignment, role, action, and resource ownership; frontend checks are UX only.
+
+The MVP permission baseline is:
+
+| Capability | Authorized roles and scope |
+| --- | --- |
+| Product/category view; inventory view | All roles, within allowed organization/branch scope |
+| Product/category create or edit; supplier create or edit; stock adjustment; purchase orders/receiving | `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`; branch-only roles are limited to assigned branches |
+| Product deactivate | `OWNER`, `ADMIN`, `BRANCH_MANAGER`; branch managers are limited to assigned branches |
+| POS/checkout | `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `CASHIER`; branch-only roles are limited to assigned branches |
+| Sales history | `OWNER`/`ADMIN` organization-wide; `BRANCH_MANAGER` and `CASHIER` in their assigned-branch scope as required for operations |
+| Analytics | `OWNER`/`ADMIN` organization-wide; `BRANCH_MANAGER` assigned branches; `INVENTORY_STAFF` inventory-relevant analytics only; `CASHIER` none |
+| Forecast/reorder | `OWNER`/`ADMIN` organization-wide; `BRANCH_MANAGER`/`INVENTORY_STAFF` assigned branches; `CASHIER` none |
+| AI business summaries | `OWNER`/`ADMIN` organization-wide; `BRANCH_MANAGER` assigned branches; `INVENTORY_STAFF`/`CASHIER` none |
+
+`OWNER` has full organization operational access, manages owners, and performs OWNER-only ownership actions. `ADMIN` manages branches and non-owner memberships but cannot promote to OWNER, demote/remove an OWNER, transfer ownership, or perform OWNER-only destructive ownership actions. `BRANCH_MANAGER` cannot manage organization settings, create/delete branches, or administer users/roles. `INVENTORY_STAFF` cannot check out, administer employees, access broad analytics, or view management AI summaries. `CASHIER` cannot edit products, adjust stock, manage purchasing/suppliers, access analytics/forecasting/AI insights, or administer employees. At least one OWNER must always remain; an OWNER cannot remove, demote, or leave if that would leave no OWNER. Refund/void permission remains unresolved in `OQ-009`.
 
 ## 9. Tenant and operational model
 
@@ -133,14 +148,17 @@ These five role names are the accepted MVP role baseline and must not be renamed
 - Register and sign in with email and password.
 - Hash passwords with Argon2; never store plaintext or reversible passwords.
 - Complete the required user profile after registration.
-- Create or join an organization according to the finalized onboarding flow.
+- Create a new organization through the accepted onboarding flow or join one through an accepted invitation.
 - Create and manage branches with authorized roles.
 - Assign users to organization and branch scopes.
 - Switch active branch without signing in again.
 - View an allowed organization-level aggregate when the role permits it.
-- Sign out according to the selected token/session strategy.
+- Use opaque server-side sessions backed by PostgreSQL: a cryptographically random browser token is stored only in an HttpOnly cookie and only its cryptographic hash is stored in the database.
+- Verify email/password accounts, support safe password recovery, and deliver production mail through the Resend-backed email-provider abstraction.
+- Invite employees by email with an expiring, single-use invitation that establishes the accepted organization role and branch scope atomically.
+- Sign out by revoking the current session; support revoking all sessions for a user.
 
-Google login is a future feature. Email verification, token/session strategy, reset-password provider, onboarding fields, and invitation details are open questions.
+Google login is a future feature. No JWT browser authentication, browser token storage in `localStorage`/`sessionStorage`, refresh-token flow, automatic invitation account creation, or naive cross-email account linking is part of the MVP.
 
 ### 10.2 Product catalog
 
@@ -238,6 +256,11 @@ Identifiers below are stable references for plans, use cases, tests, and APIs.
 - **FR-IAM-003:** The system shall authorize every business operation by organization membership, branch scope where applicable, and role permission.
 - **FR-IAM-004:** One user shall be able to access multiple authorized branches using one account.
 - **FR-IAM-005:** A user shall not access a tenant, branch, or aggregate outside their authorization scope.
+- **FR-IAM-006:** Browser authentication shall use a cryptographically random opaque session token in an HttpOnly cookie; PostgreSQL stores only its hash and the API authorizes every protected request server-side.
+- **FR-IAM-007:** Sessions shall rotate on successful authentication, expire after configurable 24-hour idle and seven-day absolute baselines, and be revocable individually or for all user sessions.
+- **FR-IAM-008:** Email/password accounts shall verify email before access; verification, reset, and invitation tokens shall be opaque, cryptographically random, hashed at rest, single-use, and expiry-bound.
+- **FR-IAM-009:** New-organization onboarding shall require display name, organization name, and initial branch name, create the creator's `OWNER` membership atomically, and collect only the approved optional profile/branch phone and branch-address fields.
+- **FR-IAM-010:** Invitations shall be email-bound, require authentication and verified ownership of the invited email before acceptance, and create the organization membership and branch assignments atomically and idempotently.
 
 ### Catalog and inventory
 
@@ -370,11 +393,12 @@ These decisions are mandatory gates before the affected domain implementation:
 
 | Affected domain | Required accepted decisions before implementation |
 | --- | --- |
-| Authentication and authenticated state | `OQ-003` |
-| Profile and organization/first-branch onboarding | `OQ-005` |
-| Authorization policies for accepted MVP roles | `OQ-022` |
+| Authentication and authenticated state | `ADR-013` (`OQ-003` resolved) |
+| Email verification, password reset, and invitations | `ADR-014` (`OQ-004`, `OQ-006` resolved) |
+| Profile and organization/first-branch onboarding | `ADR-015` (`OQ-005` resolved) |
+| Authorization policies for accepted MVP roles | `ADR-016` (`OQ-022` resolved) |
 | Inventory mutations and stock availability | `OQ-007`, `OQ-023` |
-| POS checkout and sales monetary truth | `OQ-007`, `OQ-008`, `OQ-010`, `OQ-022`, `OQ-023` |
+| POS checkout and sales monetary truth | `OQ-007`, `OQ-008`, `OQ-010`, `OQ-023` plus the accepted RBAC baseline in `ADR-016` |
 | Refund and void | `OQ-009` plus the applicable sales decisions |
 | Purchasing/receiving cost and quantity behavior | `OQ-007`, `OQ-010`, `OQ-023` |
 | Analytics definitions | `OQ-011` |
@@ -392,15 +416,16 @@ This is the canonical list. Other documents reference these IDs and must not red
 | --- | --- | --- |
 | **OQ-001** | Use a native pnpm workspace on Node.js 24 LTS. Runtime applications use `apps/web` and `apps/api`; deliberately shared internal packages may use `packages/*` only when justified. Use one root lockfile and no monorepo orchestration framework until a measured need exists. | `ADR-011` |
 | **OQ-002** | Use the Next.js App Router with the `src/app` directory convention. React Server Components are the default; use Client Components only for required client-side behavior. Route Groups may be added later only for implemented routes. StockWise business REST APIs remain in Express and must not be implemented as Next.js Route Handlers. | `ADR-012` |
+| **OQ-003** | Use opaque PostgreSQL-backed server-side sessions. Send a cryptographically random session token only in an HttpOnly, host-only, `SameSite=Lax` cookie (`Secure` in production); store only its cryptographic hash. Do not use browser JWTs, `localStorage`/`sessionStorage`, or refresh tokens. Rotate on successful authentication, revoke current or all user sessions, enforce server-side authorization, and make idle/absolute timeouts configurable (24 hours/7 days baseline). | `ADR-013` |
+| **OQ-004** | Require email verification for email/password accounts. Use a Resend production adapter behind an email-provider abstraction and non-delivery/test adapters locally and in tests. Verification and reset tokens are opaque, cryptographically random, hash-only, single-use tokens with 24-hour and 30-minute expiry respectively; resend replaces the active verification token; reset revokes all sessions; forgot-password responses are non-disclosing. | `ADR-014` |
+| **OQ-005** | Require email, password, and verification; require display name, organization name, and initial branch name. Phone is optional for the platform profile and initial branch; branch address is optional. The creator becomes `OWNER`. User identity is platform-level; access derives from memberships. Invitations use their own flow. The listed photo, personal, tax, registration, website, logo, and billing fields are not required in MVP onboarding. | `ADR-015` |
+| **OQ-006** | Use email-bound organization invitations carrying the intended role and branch scope. Their opaque, cryptographically random, hash-only token is single-use and expires in seven days; reissue invalidates the active invite. The invited email must authenticate and verify before transactional, idempotent acceptance creates membership and branch assignments. No automatic account creation or naive cross-email linking. Changed scope requires a replacement invitation. | `ADR-014` |
+| **OQ-022** | Use fixed, deny-by-default RBAC with one organization role per user/organization and explicit branch assignments for branch-only roles. `OWNER`/`ADMIN` are organization-wide; `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER` are assigned-branch roles. The role, governance, delegation, capability, analytics, forecast, and AI-summary baseline in section 8 is authoritative; refund/void remains `OQ-009`. | `ADR-016` |
 
 ### Open Questions
 
 | ID | Question | Blocks | Priority |
 | --- | --- | --- | --- |
-| **OQ-003** | What access-token/session and refresh/revocation strategy will be used, and where will browser credentials be stored? | Authentication/API security | Critical |
-| **OQ-004** | Is email verification required, and which provider handles verification and password reset? | Authentication | High |
-| **OQ-005** | What user profile and organization onboarding fields are required, and when is an account considered complete? | Onboarding/data model | High |
-| **OQ-006** | What is the employee invitation and membership-acceptance flow? | User management | Medium |
 | **OQ-007** | Is negative stock forbidden, allowed by permission, or allowed with warning? | Inventory, receiving, POS | Critical |
 | **OQ-008** | Which payment methods, payment states, tax/VAT, discounts, and receipt-number rules are in the MVP? | POS/sales | Critical |
 | **OQ-009** | What are the exact void, refund, partial-refund, time-limit, approval, and stock-reversal rules? | Sales reversal | Critical |
@@ -416,7 +441,6 @@ This is the canonical list. Other documents reference these IDs and must not red
 | **OQ-019** | Is a durable audit-log feature required in MVP or only production hardening? | Security/compliance | Medium |
 | **OQ-020** | What measurable performance, availability, recovery, browser-support, and data-retention targets define production readiness? | Hardening/load tests | Medium |
 | **OQ-021** | Does purchasing support partial receiving, over-receiving, cancellation after partial receipt, and supplier returns in MVP? | Purchasing/receiving | High |
-| **OQ-022** | For the accepted MVP roles `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER`, what are the exact organization/branch permissions, delegation and membership-administration rules, operational permissions, cost/margin visibility, organization-wide analytics access, and last-owner governance rules? | Authorization | Critical |
 | **OQ-023** | Which units of measure are supported in MVP, may quantities be fractional, and what database/API precision and rounding apply to quantities? | Catalog, inventory, purchasing, sales, analytics | Critical |
 | **OQ-024** | What normalization, duplicate-name, deactivation, and deletion rules apply to categories, suppliers, and other catalog master data? | Catalog and suppliers | Medium |
 

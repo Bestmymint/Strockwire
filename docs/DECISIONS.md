@@ -123,7 +123,7 @@ Organization (tenant)
 - `user.branchId` alone is an invalid complete membership model.
 - Cross-tenant references must be prevented by scoped queries and data constraints.
 - Organization analytics can aggregate only authorized branches.
-- The exact permission matrix remains `OQ-022`.
+- The fixed MVP RBAC and branch-assignment rules are defined by `ADR-016`.
 
 ## ADR-004 — Use PostgreSQL with Prisma
 
@@ -294,7 +294,7 @@ Use JSON REST endpoints under `/api/v1`, validated with Zod and protected by ser
 
 - Use consistent success/error envelopes, pagination, status/error mapping, and idempotency.
 - Breaking contract changes require deliberate versioning/migration.
-- Exact authentication transport remains `OQ-003` and must not be inferred from REST.
+- Browser authentication uses the opaque-session and cookie contract in `ADR-013`; REST endpoints must not expose a bearer or refresh-token alternative.
 
 ## ADR-009 — Use an AWS baseline without fixing the exact hosting topology yet
 
@@ -372,7 +372,7 @@ Implement email/password authentication for MVP and hash passwords with Argon2. 
 ### Consequences
 
 - Password storage, abuse prevention, verification/reset, and session security are StockWise responsibilities.
-- `OQ-003`–`OQ-006` must close before authentication implementation.
+- Session, verification/reset, onboarding, and invitation implementation must follow `ADR-013`–`ADR-015` rather than introducing a second identity flow.
 - Future Google login must map to the same profile/onboarding/membership model and requires a new accepted decision/update.
 
 ## ADR-011 — Use a native pnpm workspace monorepo
@@ -462,6 +462,142 @@ StockWise core and business REST APIs remain in the Express backend under `/api/
 - Route Groups are added only with the routes that need them.
 - Next.js Route Handlers must not host StockWise business APIs; any future framework-specific handler needs a separately justified non-business purpose and review against the Express boundary.
 - `OQ-002` is resolved and no longer blocks `P1-M2-T01`.
+
+## ADR-013 — Use opaque PostgreSQL-backed browser sessions
+
+- **Date:** 2026-08-22
+- **Status:** Accepted
+- **Type:** Security and application architecture
+
+### Context
+
+The MVP needs browser authentication that supports immediate revocation, disabled-user access loss, and a future deployment without a separate session infrastructure dependency. JWT browser authentication, browser token storage, and refresh-token flows would add exposure and lifecycle complexity without a current need.
+
+### Alternatives considered
+
+1. Browser JWT with refresh token
+2. Opaque server-side session backed by PostgreSQL
+3. Hosted identity/session service
+
+### Decision
+
+Use opaque server-side sessions backed by PostgreSQL for MVP. Generate a cryptographically random session token, send it only in an HttpOnly cookie, and persist only its cryptographic hash with the user, issue/last-use, idle/absolute expiry, and revocation state. The cookie is host-only (no `Domain` attribute), `SameSite=Lax`, and `Secure` in production. The idle-timeout baseline is 24 hours and the absolute-timeout baseline is seven days; both remain configuration values.
+
+Do not use JWT for browser authentication, store tokens in `localStorage` or `sessionStorage`, or add a refresh-token flow. Rotate the session on successful authentication, revoke the current session on logout, support revoking every session for a user, and resolve authorization server-side on every protected request. Disabled or deauthorized users lose access when their request is evaluated.
+
+### Why selected
+
+- PostgreSQL is already the accepted durable system of record and makes revocation queryable for the MVP.
+- Hash-only session-token storage limits the impact of a session-record disclosure.
+- Opaque sessions make rotation, logout, all-session revocation, and membership/status revalidation direct.
+
+### Consequences
+
+- The identity schema must add an appropriately indexed, hash-only session record and expiry/revocation checks.
+- Cookie-based state-changing endpoints need implementation-time cross-site-request protections; this ADR does not authorize an alternate credential transport.
+- The API and web client must never return or persist a browser bearer token.
+
+## ADR-014 — Use a provider-abstracted Resend email lifecycle
+
+- **Date:** 2026-08-22
+- **Status:** Accepted
+- **Type:** Security and integration architecture
+
+### Context
+
+Email/password accounts require verification, safe password recovery, and invitation delivery. Production delivery must be replaceable without coupling identity-domain behavior to a specific provider, while local development and automated tests must not deliver real email.
+
+### Alternatives considered
+
+1. Direct Resend calls from identity use cases
+2. Resend behind an email-provider abstraction with non-delivery/test adapters
+3. AWS SES immediately
+
+### Decision
+
+Use Resend as the MVP production email adapter behind an email-provider abstraction. Local development and automated tests use non-delivery/test adapters. AWS SES may replace the production adapter later without changing identity-domain behavior.
+
+Email verification, password reset, and invitations use opaque cryptographically random tokens whose cryptographic hash alone is stored. They are single use and expire after 24 hours, 30 minutes, and seven days respectively. Resending verification or reissuing an invitation invalidates the prior active token. Forgot-password responses never reveal whether an account exists; a successful reset revokes all existing sessions.
+
+### Why selected
+
+- The abstraction prevents provider concerns from leaking into identity rules.
+- Hash-only, single-use, expiry-bound tokens limit replay and database-disclosure risk.
+- Non-delivery adapters make local and automated verification deterministic and safe.
+
+### Consequences
+
+- Identity-domain code depends on the provider interface, never a Resend SDK directly.
+- Token records require secure lookup, expiry, consumption, and replacement semantics.
+- Provider failures must produce safe, non-disclosing responses and must be tested.
+
+## ADR-015 — Require verified, minimal onboarding and invitation-led joining
+
+- **Date:** 2026-08-22
+- **Status:** Accepted
+- **Type:** Product and data model
+
+### Context
+
+The MVP needs enough information to identify a platform user and create a first operational tenant without collecting speculative personal, legal, or billing data. New users and invited employees have different entry paths.
+
+### Alternatives considered
+
+1. Require broad personal, company, and billing registration data
+2. Minimal verified registration plus organization/first-branch onboarding
+3. Automatically create an organization for every registration or invitation
+
+### Decision
+
+Registration requires email, password, and email verification. The platform profile requires `displayName`; profile phone is optional. New-organization onboarding requires organization name and an initial branch name; branch phone and address are optional. The creator becomes `OWNER` in the atomic onboarding result.
+
+User identity is platform-level. A user does not carry `branchId` as its complete access model; organization and branch access derive from memberships. Invited users do not automatically create an organization or account: they register/authenticate as the invited email, verify it, then use the invitation acceptance flow. Profile photo, date of birth, gender, tax ID, company registration number, organization website/logo, and billing details are not required for MVP onboarding.
+
+### Why selected
+
+- It collects only the fields needed for a usable retail tenant and accountable user.
+- It preserves multi-organization and multi-branch access without account duplication.
+- It avoids accidental tenant creation and cross-email identity linking for invitations.
+
+### Consequences
+
+- Schema and API work must distinguish platform profile, organization, branch, and membership data.
+- New-organization onboarding must create the organization, first branch, and OWNER membership atomically and idempotently.
+- Future collection of excluded fields needs a scoped product/data decision.
+
+## ADR-016 — Use fixed organization RBAC with explicit branch assignments
+
+- **Date:** 2026-08-22
+- **Status:** Accepted
+- **Type:** Authorization architecture
+
+### Context
+
+StockWise needs an MVP authorization model that prevents tenant and branch escalation while remaining understandable for small retailers. The prior accepted role names did not define their capability, delegation, or governance semantics.
+
+### Alternatives considered
+
+1. Custom roles and per-user permissions
+2. Fixed RBAC with one organization role plus branch assignments
+3. One branch role stored directly on each user
+
+### Decision
+
+Use fixed, deny-by-default RBAC: `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER`. Each user has one role per organization and may have different roles in different organizations. `OWNER` and `ADMIN` have organization-wide branch access. `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER` require explicit assignments and may be assigned to multiple branches. Express enforces authorization; frontend checks are UX only.
+
+The authoritative capability, role-governance, analytics, forecast, and AI-summary baseline is in `BUILD_SPEC.md` section 8. An OWNER manages owners and OWNER-only ownership actions; an ADMIN manages branches and non-owner memberships but cannot perform OWNER-only ownership changes. At least one OWNER must remain. Refund/void authority remains unresolved in `OQ-009`.
+
+### Why selected
+
+- Fixed roles and one organization role give a testable, reviewable MVP policy.
+- Explicit branch assignments scope operational staff without duplicating accounts.
+- Keeping refund/void outside the matrix preserves the unresolved sales-reversal decision boundary.
+
+### Consequences
+
+- The identity schema uses an organization-role membership plus role-less branch assignments; it must not model competing branch roles for a user.
+- Policy tests must cover deny-by-default, tenant/branch isolation, delegation, last-owner protection, and immediate loss of access after deauthorization.
+- Custom roles, direct user permissions, and any refund/void grants need a future accepted decision.
 
 ## 2. Explicitly superseded planning directions
 

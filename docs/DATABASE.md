@@ -67,6 +67,8 @@ PostgreSQL service and a test-only URL.
 11. Retried creates and scheduled jobs use stable idempotency keys/uniqueness constraints.
 12. Application validation never substitutes for database constraints.
 13. No hard deletion of completed operational history or inventory ledger entries is allowed.
+14. Browser sessions and one-time identity tokens persist only cryptographic token hashes; raw session, verification, reset, and invitation tokens are never stored.
+15. Every organization has at least one active `OWNER`; one organization role belongs to each user/organization membership, while branch access for branch-only roles is represented by assignments.
 
 ## 3. Conceptual relationship model
 
@@ -74,8 +76,13 @@ PostgreSQL service and a test-only URL.
 erDiagram
     USER ||--o{ ORGANIZATION_MEMBERSHIP : has
     ORGANIZATION ||--o{ ORGANIZATION_MEMBERSHIP : grants
-    USER ||--o{ BRANCH_MEMBERSHIP : has
-    BRANCH ||--o{ BRANCH_MEMBERSHIP : grants
+    USER ||--o{ BRANCH_ASSIGNMENT : has
+    BRANCH ||--o{ BRANCH_ASSIGNMENT : grants
+    USER ||--o{ SESSION : has
+    USER ||--o{ EMAIL_VERIFICATION_TOKEN : verifies
+    USER ||--o{ PASSWORD_RESET_TOKEN : resets
+    ORGANIZATION ||--o{ INVITATION : issues
+    INVITATION }o--o| USER : accepted_by
 
     ORGANIZATION ||--o{ BRANCH : owns
     ORGANIZATION ||--o{ CATEGORY : owns
@@ -126,9 +133,9 @@ Required logical attributes:
 - Normalized email
 - Argon2 password hash for MVP email/password identity
 - Account status
-- Profile attributes accepted by `OQ-005`
+- Required display name and optional phone
 - Created/updated timestamps
-- Credential/security timestamps needed by `OQ-003` and `OQ-004`
+- Credential/security timestamps needed for verification, reset, session revocation, and account deauthorization
 
 Constraints and indexes:
 
@@ -138,7 +145,7 @@ Constraints and indexes:
 
 Lifecycle:
 
-- Registration creates an account according to verification/onboarding decisions.
+- Registration creates an email/password account that must verify its email before access.
 - Deactivation must preserve historical actor references.
 - Physical deletion/anonymization and retention require an accepted policy.
 
@@ -161,7 +168,7 @@ Constraints and indexes:
 
 Lifecycle:
 
-- Created through the finalized onboarding flow.
+- Created through the accepted onboarding flow.
 - Suspension/deactivation must deny new operational writes while preserving history.
 - Deletion and retention are unresolved and must not become cascade deletion of operational history.
 
@@ -175,7 +182,8 @@ Required logical attributes:
 - User identifier
 - Organization-scoped role
 - Membership status
-- Invitation/acceptance metadata after `OQ-006`
+- One organization role: `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, or `CASHIER`
+- Active/inactive lifecycle and historical invitation/acceptance metadata
 - Created/updated timestamps
 
 Constraints and indexes:
@@ -183,7 +191,7 @@ Constraints and indexes:
 - Unique `(organization, user)` active membership identity.
 - Index by user for accessible-organization lookup.
 - Index by organization for member administration.
-- Role names use the accepted MVP baseline: `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER`. Their exact organization-level use, delegation, and permissions remain governed by `OQ-022`.
+- Exactly one organization role applies to a user within an organization. `OWNER`/`ADMIN` are organization-wide; `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER` additionally require branch assignments. The application transaction/policy layer preserves at least one active `OWNER` and prevents unauthorized role delegation.
 
 #### `Branch`
 
@@ -195,7 +203,7 @@ Required logical attributes:
 - Stable identifier
 - Branch code
 - Display name
-- Contact/address fields accepted for onboarding/branch management
+- Required display name; optional phone and address
 - Branch status
 - Created/updated timestamps
 
@@ -205,25 +213,74 @@ Constraints and indexes:
 - Branch organization ownership is immutable after operational records exist.
 - A branch cannot reference another organization.
 
-#### `BranchMembership`
+#### `BranchAssignment`
 
-Purpose: grants one user an explicit role at one branch.
+Purpose: grants a user with a branch-only organization role access to one explicit branch.
 
 Required logical attributes:
 
 - Branch identifier
 - User identifier
-- Branch-scoped role
 - Membership status
 - Created/updated timestamps
 
 Constraints and indexes:
 
-- Unique `(branch, user)` active membership identity unless `OQ-022` accepts multiple simultaneous roles.
+- Unique `(branch, user)` active assignment identity.
 - Index by user for branch switching.
 - Index by branch for administration.
-- The user must also have the required relationship to the branch's organization according to the accepted membership model.
-- Branch role names come from the accepted MVP baseline; exact permission semantics and whether multiple simultaneous roles are allowed remain governed by `OQ-022`.
+- The user's active organization membership must belong to the branch's organization and have a branch-only role. `OWNER`/`ADMIN` do not need assignments for branch access.
+
+#### `Session`
+
+Purpose: server-side browser-authentication state for one user session.
+
+Required logical attributes:
+
+- User identifier
+- Cryptographic hash of the opaque session token, unique for lookup
+- Issued, last-used, idle-expiry, and absolute-expiry timestamps
+- Revoked timestamp/reason where applicable
+- Created/updated timestamps
+
+Constraints and lifecycle:
+
+- The raw token is never persisted. A session is valid only while unrevoked, its user is enabled/authorized, and neither expiry has passed.
+- Successful authentication creates a rotated session. Logout revokes the current session; password reset and user-wide revocation revoke all sessions for the user.
+- Index active-session lookup by token hash and user-wide revocation/query paths by user and expiry/revocation state.
+
+#### `EmailVerificationToken` and `PasswordResetToken`
+
+Purpose: single-use proof for email verification and password recovery.
+
+Required logical attributes:
+
+- User identifier
+- Cryptographic token hash, unique for lookup
+- Issued, expiry, consumed, and replacement/revocation timestamps
+- Created/updated timestamps
+
+Constraints and lifecycle:
+
+- Raw tokens are never persisted. Verification tokens expire after 24 hours; reset tokens expire after 30 minutes.
+- Each token is single-use. Resending verification replaces and invalidates the prior active verification token. A successful reset revokes all sessions.
+
+#### `Invitation`
+
+Purpose: email-bound, organization-scoped invitation that records the intended membership role and branch scope before acceptance.
+
+Required logical attributes:
+
+- Organization identifier, normalized invited email, intended organization role, and intended branch assignments
+- Cryptographic invitation-token hash, unique for lookup
+- Issued, expiry, consumed, revoked/replaced, and accepted-by-user timestamps
+- Created/updated timestamps
+
+Constraints and lifecycle:
+
+- Raw tokens are never persisted. Invitations are single-use, expire after seven days, and reissue/replacement invalidates the prior active invitation.
+- Acceptance requires authentication and verified ownership of the invited email. The membership and branch assignments are created atomically and idempotently.
+- A changed intended role or branch scope revokes the old invitation and creates a replacement; no automatic account creation or cross-email linking occurs.
 
 ### 4.2 Catalog
 
@@ -710,10 +767,6 @@ At minimum, database-backed tests must cover:
 
 The canonical definitions live in `BUILD_SPEC.md`:
 
-- `OQ-003` authentication state storage/revocation affects credential/session records.
-- `OQ-004` verification/reset affects identity state.
-- `OQ-005` onboarding fields affect user/organization/branch columns.
-- `OQ-006` invitation flow affects membership state.
 - `OQ-007` negative stock affects balance constraints.
 - `OQ-008` payment, tax, discount, and numbering affect sales/payment fields.
 - `OQ-009` reversal rules affect lifecycle/linkage.
@@ -728,6 +781,5 @@ The canonical definitions live in `BUILD_SPEC.md`:
 - `OQ-019` audit scope affects operational support records.
 - `OQ-020` retention/recovery targets affect lifecycle.
 - `OQ-021` receiving behavior affects purchase state and quantities.
-- `OQ-022` permissions affect role representation.
 - `OQ-023` quantity units and precision affect every stock/sale/purchase quantity.
 - `OQ-024` catalog/supplier normalization and lifecycle affect master-data constraints.

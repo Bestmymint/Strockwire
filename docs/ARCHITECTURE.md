@@ -105,7 +105,7 @@ The backend is one deployable application divided by business capability. Module
 | --- | --- | --- |
 | Next.js web | Responsive UI, navigation, accessibility, local interaction state, TanStack Query server state, render charts, send validated user intent | Establish trusted tenant scope, calculate authoritative price/totals, mutate stock directly, call OpenRouter |
 | Express API edge | Route `/api/v1`, authenticate, validate with Zod, authorize, invoke use cases, map errors, emit request telemetry | Contain domain calculations in controllers, trust client totals/scope |
-| Identity and access | Email/password identity, Argon2 verification, session/token behavior after `OQ-003`, organization membership, branch assignment, RBAC policy | Infer access from client-provided IDs |
+| Identity and access | Email/password identity, Argon2 verification, opaque PostgreSQL-backed sessions, provider-abstracted verification/reset/invitation email, organization membership, branch assignment, fixed RBAC policy | Infer access from client-provided IDs or couple auth-domain behavior directly to Resend |
 | Organizations and branches | Tenant lifecycle, branch lifecycle, active/allowed scope resolution | Own product, sale, or inventory business rules |
 | Catalog | Organization products/categories, SKU/barcode rules, status and current price data | Hold branch inventory as `product.stock`; rewrite sale history |
 | Inventory | Branch balances, append-oriented ledger, adjustments, stock availability, movement history | Change balances without ledger records; decide `OQ-007` itself |
@@ -168,12 +168,12 @@ Path/query/body fields select a candidate resource; they never grant access. Cro
 
 1. The client sends credentials over TLS.
 2. The API validates the request and verifies the Argon2 password hash.
-3. The selected strategy from `OQ-003` creates authenticated state.
-4. For each protected request, the API resolves the actor and membership from trusted authenticated state.
+3. The API rotates a cryptographically random opaque session, sends it only in an HttpOnly cookie, and stores only its hash in PostgreSQL.
+4. For each protected request, the API resolves the actor, account status, membership, and branch assignment from trusted session state.
 5. If a branch is selected, the API verifies that it belongs to the active organization and that the actor has branch or organization permission.
 6. The client receives only accessible organizations/branches and permissible actions.
 
-Token transport, refresh, revocation, and browser storage are intentionally not specified until `OQ-003` is accepted.
+The browser never receives a JWT or refresh token and never stores an auth token in `localStorage` or `sessionStorage`. Session expiry/revocation, including disabled or deauthorized actors, is evaluated server-side. The cookie is host-only, `SameSite=Lax`, and `Secure` in production; configurable timeout baselines are 24 hours idle and seven days absolute.
 
 ### 6.2 Purchase receiving
 
@@ -373,6 +373,9 @@ The final design must decide public/private subnets, ingress, Next.js hosting mo
 - Queries are scoped as a defense-in-depth control, not only filtered after retrieval.
 - Sensitive endpoints use rate limits and safe error behavior.
 - Passwords use Argon2 and never leave the identity boundary in plaintext.
+- Browser sessions are opaque, hash-only PostgreSQL records carried in HttpOnly cookies; no browser JWT or refresh-token flow exists.
+- Email verification, reset, and invitation delivery are routed through the email-provider abstraction; Resend is the production adapter and local/test adapters do not deliver mail.
+- Verification, reset, and invitation tokens are opaque, hash-only, single-use, and expiry-bound. Successful reset revokes all sessions; authorization/session checks deny disabled or deauthorized users.
 - Secrets stay in an approved secret mechanism and never in repository, images, logs, client bundles, or prompts.
 - RDS is not publicly exposed in the intended production design.
 - External calls use timeouts, bounded retries, validation, and circuit/budget safeguards appropriate to `OQ-018`.
@@ -410,7 +413,6 @@ Scale in measured stages:
 
 This document does not answer the following canonical questions from `BUILD_SPEC.md`:
 
-- `OQ-003` token/session strategy
 - `OQ-007` negative stock
 - `OQ-008` payment/tax/discount/receipt rules
 - `OQ-009` refund/void rules
@@ -424,7 +426,6 @@ This document does not answer the following canonical questions from `BUILD_SPEC
 - `OQ-018` OpenRouter model/fallback/budget
 - `OQ-020` production targets
 - `OQ-021` receiving lifecycle
-- `OQ-022` permission matrix
 - `OQ-024` catalog/supplier normalization and lifecycle
 
 Implementation touching one of these areas must stop at its accepted boundary until the referenced question is resolved and all affected documents are updated.
