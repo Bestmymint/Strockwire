@@ -5,13 +5,13 @@ This file is the execution contract for human and AI developers working in the `
 | Field | Value |
 | --- | --- |
 | Documentation baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-24 |
+| Last updated | 2026-08-25 |
 
 ## 1. Project overview
 
 StockWise is a responsive, cloud-based retail platform for SMEs. It covers organization-level product and supplier management; branch-level inventory, purchasing/receiving, POS, and sales; deterministic analytics and forecasting; and scheduled aggregate summaries through OpenRouter.
 
-The repository contains the **repository foundation, web/API application shells, identity/tenancy schema and policy, completed authentication lifecycle/UI, first-organization onboarding, branch management/URL context switching, and invitation/membership access management through P2-M3-T03**. The pnpm workspace root, quality/test/CI/environment baselines, local PostgreSQL/Prisma foundation, centralized typed RBAC policy, Argon2 registration/login, opaque hash-only sessions/authenticated context, logout, verification/recovery/invitation email lifecycle, responsive authentication/onboarding/access-management UI, atomic replay-safe profile/first-organization/`MAIN`-branch onboarding, policy-authorized branch lifecycle, effective access context, cache-isolated URL switcher, email-bound invitation acceptance, full-replacement membership scope, and last-owner serialization exist. No later retail domain implementation/table, dashboard, generic audit system, or production infrastructure implementation exists. Do not treat later planned directories, commands, schemas, endpoints, or features as existing code.
+The repository contains the **repository foundation, web/API application shells, identity/tenancy schema and policy, completed authentication lifecycle/UI, first-organization onboarding, branch management/URL context switching, invitation/membership access management through P2-M3-T03, and the P3-M1-T01 catalog/quantity decision gate**. The pnpm workspace root, quality/test/CI/environment baselines, local PostgreSQL/Prisma foundation, centralized typed RBAC policy, Argon2 registration/login, opaque hash-only sessions/authenticated context, logout, verification/recovery/invitation email lifecycle, responsive authentication/onboarding/access-management UI, atomic replay-safe profile/first-organization/`MAIN`-branch onboarding, policy-authorized branch lifecycle, effective access context, cache-isolated URL switcher, email-bound invitation acceptance, full-replacement membership scope, and last-owner serialization exist. `ADR-022` fixes organization-level catalog base pricing, units/quantity precision, and product/category lifecycle; it adds no retail-domain schema or implementation. No later retail domain implementation/table, dashboard, generic audit system, or production infrastructure implementation exists. Do not treat later planned directories, commands, schemas, endpoints, or features as existing code.
 
 ## 2. Read before changing anything
 
@@ -36,10 +36,10 @@ Repository/tooling work, application shells, and other unrelated foundation work
 At minimum, enforce these gates:
 
 - Identity/onboarding/authorization decisions are accepted in `ADR-013`–`ADR-021`; implementation must follow their session, email, onboarding, invitation, registration-security, RBAC, branch-context, and membership-lifecycle boundaries.
-- Inventory and quantity mutations: `OQ-007`, `OQ-023`
-- POS/sales monetary behavior: `OQ-007`, `OQ-008`, `OQ-010`, `OQ-023`, plus the accepted RBAC baseline in `ADR-016`
+- Inventory mutations: `OQ-007`; quantity representation is accepted by `ADR-022`
+- POS/sales monetary behavior: `OQ-007`, `OQ-008`, `OQ-010`, plus the accepted RBAC baseline in `ADR-016`
 - Refund/void behavior: `OQ-009` in addition to the sales decisions
-- Purchasing/receiving costing behavior: `OQ-007`, `OQ-010`, `OQ-023`
+- Purchasing/receiving costing behavior: `OQ-007`, `OQ-010`; quantity representation is accepted by `ADR-022`
 - Analytics and forecasting: `OQ-011`, `OQ-012`; plus any metric-specific dependency documented in `docs/ANALYTICS.md`
 
 The accepted MVP roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER`. Authorization is fixed, deny-by-default RBAC from `ADR-016` and `BUILD_SPEC.md` section 8: a user has one organization role per organization; `OWNER`/`ADMIN` have organization-wide branch access; the remaining roles need explicit branch assignments. The Express API, not the frontend, is the security boundary. At least one OWNER must remain; refund/void authority remains open in `OQ-009`.

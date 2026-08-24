@@ -5,7 +5,7 @@
 | Project | StockWise |
 | Plan baseline | Architecture Freeze v1 |
 | Repository state | Repository foundation plus verified minimal Next.js web and Express API shells |
-| Last updated | 2026-08-24 |
+| Last updated | 2026-08-25 |
 
 ## 1. Plan rules
 
@@ -51,7 +51,7 @@ Completing checks makes work ready for commit; it does not authorize a commit, p
 | [x] **P0-M2-T01 — Register decision gates** | Prevent unresolved choices from leaking into code | Map `OQ-001`–`OQ-024` to affected tasks/contracts | P0-M1-T10 | Every referenced OQ has one canonical definition and implementation blockers are explicit | Definition/reference scan completed |
 | [x] **P0-M2-T02 — Establish change protocol** | Prevent silent requirement drift | Record OQ/ADR/affected-document/plan update workflow | P0-M1-T10 | Future decisions have one owner and update path; implementers must stop at product/architecture ambiguity | Manual workflow trace completed |
 | [x] **P0-M2-T03 — Identity/onboarding/authorization gate** | Finalize rules before identity-domain implementation | Recorded accepted `OQ-003`–`OQ-006` and `OQ-022` rules for sessions, email lifecycle, onboarding, invitations, and fixed RBAC | Before affected Phase 2 implementation | Decisions accepted; build/data/API/use cases/ADR and permission matrix updated consistently | Cross-document trace plus session/token, invitation, delegation, escalation, and last-owner decision-boundary review completed 2026-08-22 |
-| [ ] **P0-M2-T04 — Inventory/purchasing/sales gate** | Finalize stock, money, cost, and quantity rules before affected operations | Resolve `OQ-007`, `OQ-008`, `OQ-010`, `OQ-023`; resolve `OQ-009` before refund/void | Before affected Phase 3–5 implementation | Worked examples and affected contracts agree; no domain rule remains implicit | Stock, decimal, costing, checkout, receiving, refund/void boundary scenarios |
+| [ ] **P0-M2-T04 — Inventory/purchasing/sales gate** | Finalize stock, money, and cost rules before affected operations | Resolve `OQ-007`, `OQ-008`, `OQ-010`; `OQ-023` is accepted by `ADR-022`; resolve `OQ-009` before refund/void | Before affected inventory, purchasing, and sales implementation | Worked examples and affected contracts agree; no domain rule remains implicit | Stock, decimal, costing, checkout, receiving, refund/void boundary scenarios |
 | [ ] **P0-M2-T05 — Analytics/forecast gate** | Finalize numerical truth before analytics/forecast implementation | Resolve `OQ-011`, then `OQ-012`; preserve TypeScript/SQL calculation and summary-only LLM boundary | Before affected Phase 6 implementation | Every implemented metric/forecast/reorder rule has one accepted definition/version | Hand-calculated fixtures, time-boundary review, backtest design and leakage review |
 
 The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, application shells, or unrelated work. Each gate blocks only the affected business-domain implementation. Cloud/operations questions such as `OQ-015`, `OQ-017`–`OQ-020` remain open until their relevant phases.
@@ -118,8 +118,8 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
-| [ ] **P3-M1-T01 — Close catalog/quantity decisions** | Unblock catalog and inventory representation | `OQ-014`, `OQ-023`, `OQ-024`; product units/precision, branch price MVP, master-data normalization/lifecycle | Phase 2 foundation | Accepted docs/ADR/API/data updates | Cross-doc and decimal/unit/lifecycle examples |
-| [ ] **P3-M1-T02 — Category and product schema** | Persist organization catalog safely | Models, uniqueness, statuses, same-tenant category relation, migration | T01 | SKU/barcode tenant constraints; no branch stock field | DB/migration/duplicate/cross-tenant tests |
+| [x] **P3-M1-T01 — Close catalog/quantity decisions** | Unblock catalog and inventory representation | Accepted `OQ-014`, `OQ-023`, and `OQ-024`: organization base price only, unit/quantity precision, and catalog normalization/lifecycle | Phase 2 foundation | `ADR-022` and affected build/API/data/use-case/architecture documents record accepted boundaries; `OQ-008`, `OQ-010`, and `OQ-011` remain open | Cross-document, decimal/unit/lifecycle, and plan-dependency review completed 2026-08-25 |
+| [ ] **P3-M1-T02 — Category and product schema** | Persist organization catalog safely | Models, uniqueness, statuses, same-tenant category relation, organization-level `basePrice`, accepted units, and migration; no cost/valuation field or branch-price model | T01 | SKU/barcode tenant constraints; no branch stock, cost/valuation, or branch-price field | DB/migration/duplicate/cross-tenant tests |
 | [ ] **P3-M1-T03 — Catalog API** | Manage/search catalog | Category/product list/create/read/update/deactivate, cursor search, Zod | T02, authorization | Historical references preserved; safe errors | API integration/security/pagination tests |
 | [ ] **P3-M1-T04 — Catalog UI** | Provide responsive catalog management | Lists/search/forms/status/empty/error states | T03 | Accessible PC/tablet/phone behavior | Component/integration/E2E + accessibility |
 
@@ -147,7 +147,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
 | [ ] **P4-M1-T01 — Close costing and receiving decisions** | Unblock historical cost and receipt lifecycle | `OQ-010`, `OQ-021`; partial/over receipt, returns, cost/rounding | Phase 3 | All affected documents and ADR updated | Worked examples and state-transition review |
-| [ ] **P4-M1-T02 — Supplier model/API/UI** | Manage organization suppliers | Schema/migration, scoped CRUD/deactivation, responsive UI | Phase 2, T01, `OQ-024` | Same-tenant scope; history-safe deactivate | DB/API/UI/security tests |
+| [ ] **P4-M1-T02 — Supplier model/API/UI** | Manage organization suppliers | Schema/migration, scoped CRUD/deactivation, responsive UI | Phase 2, P3-M1-T01, T01 | Same-tenant scope; history-safe deactivate | DB/API/UI/security tests |
 
 ### Milestone 4.2 — Purchase orders
 
@@ -327,7 +327,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 ## 2. Next Codex task
 
-Phase 1, the Phase 2 documentation decision gate, Milestone 2.1, Milestone 2.2, and Milestone 2.3 through **P2-M3-T03 — Membership invitation/assignment** are complete. The next planned task is **P3-M1-T01 — Close catalog/quantity decisions**; this status update does not authorize starting it.
+Phase 1, the Phase 2 documentation decision gate, Milestone 2.1, Milestone 2.2, Milestone 2.3 through **P2-M3-T03 — Membership invitation/assignment**, and **P3-M1-T01 — Close catalog/quantity decisions** are complete. The next planned task is **P3-M1-T02 — Category and product schema**; this status update does not authorize starting it.
 
 Current-state constraints that the next task must preserve:
 
@@ -349,9 +349,9 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P3-M1-T01 — Close catalog/quantity decisions
+Task: P3-M1-T02 — Category and product schema
 
-Follow the exact task row and affected Source of Truth documents. Preserve completed identity, tenancy, authentication, onboarding, branch, invitation, membership, access-context, tenant-integrity, centralized RBAC, and cache-isolation contracts. Close only the catalog/quantity decisions assigned to P3-M1-T01 and update the decision gate before any affected domain implementation. Do not invent answers to `OQ-014`, `OQ-023`, or `OQ-024`.
+Follow the exact task row and affected Source of Truth documents. Preserve completed identity, tenancy, authentication, onboarding, branch, invitation, membership, access-context, tenant-integrity, centralized RBAC, cache-isolation, and `ADR-022` catalog contracts. Implement no cost/valuation field or branch-price override model; `OQ-010` remains open.
 
 Preserve the repository-foundation, web/API-shell, health/readiness, web-to-API, environment-contract, and CI baselines. Keep work within the explicitly authorized local-data task; do not begin domain, analytics, AI, cloud, deployment, or release tasks, and do not commit anything without separate authorization.
 ```

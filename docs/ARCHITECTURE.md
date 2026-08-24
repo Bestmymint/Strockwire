@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | Architecture Freeze v1; accepted logical architecture; minimal web/API shells implemented |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-24 |
+| Last updated | 2026-08-25 |
 
 ## 1. Scope and authority
 
@@ -107,7 +107,7 @@ The backend is one deployable application divided by business capability. Module
 | Express API edge | Route `/api/v1`, authenticate, validate with Zod, authorize, invoke use cases, map errors, emit request telemetry | Contain domain calculations in controllers, trust client totals/scope |
 | Identity and access | Email/password identity, Argon2 verification, opaque PostgreSQL-backed sessions, provider-abstracted verification/reset/invitation email, organization membership, branch assignment, fixed RBAC policy | Infer access from client-provided IDs or couple auth-domain behavior directly to Resend |
 | Organizations and branches | Tenant lifecycle, branch lifecycle, active/allowed scope resolution | Own product, sale, or inventory business rules |
-| Catalog | Organization products/categories, SKU/barcode rules, status and current price data | Hold branch inventory as `product.stock`; rewrite sale history |
+| Catalog | Organization products/categories, SKU/barcode rules, accepted master-data lifecycle, one immutable base unit, and organization-level base price data | Hold branch inventory as `product.stock`, cost/valuation authority, branch-price overrides, or rewrite sale history |
 | Inventory | Branch balances, append-oriented ledger, adjustments, stock availability, movement history | Change balances without ledger records; decide `OQ-007` itself |
 | Suppliers and purchasing | Organization suppliers, branch-targeted purchase orders, receipt lifecycle | Update inventory outside an atomic receiving use case |
 | POS and sales | Server-side cart validation, checkout, immutable line snapshots, payment records, history, receipt views, reversal after rules are accepted | Trust prices/totals from browser; commit a partial checkout |
@@ -551,13 +551,11 @@ This document does not answer the following canonical questions from `BUILD_SPEC
 - `OQ-010` costing model
 - `OQ-012` forecasting V1
 - `OQ-013` stock transfer MVP
-- `OQ-014` branch price override
 - `OQ-015` exact production hosting
 - `OQ-016` timezone
 - `OQ-017` schedule timing
 - `OQ-018` OpenRouter model/fallback/budget
 - `OQ-020` production targets
 - `OQ-021` receiving lifecycle
-- `OQ-024` catalog/supplier normalization and lifecycle
 
 Implementation touching one of these areas must stop at its accepted boundary until the referenced question is resolved and all affected documents are updated.

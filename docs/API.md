@@ -6,7 +6,7 @@
 | Base path | `/api/v1` |
 | Style | JSON REST |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-24 |
+| Last updated | 2026-08-25 |
 
 ## 1. Scope and authority
 
@@ -194,14 +194,14 @@ The accepted fixed RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY
   "barcode": "8850000000000",
   "name": "Coke 325 ml",
   "unit": "piece",
-  "sellingPrice": "20.00",
+  "basePrice": "20.00",
   "status": "active",
   "createdAt": "ISO-8601",
   "updatedAt": "ISO-8601"
 }
 ```
 
-Cost and branch override fields remain blocked by `OQ-010`/`OQ-014`.
+`basePrice` is the required organization-level configured amount shared by every branch. It is a non-negative decimal string with at most four fractional digits; inputs with greater scale are rejected rather than rounded. It does not define sales tax, discounts, currency, receipt totals, payment behavior, or transaction rounding, which remain blocked by `OQ-008`. Cost/valuation fields remain blocked by `OQ-010`; branch overrides are out of MVP scope by `ADR-022`.
 
 ## 5. Health and service endpoints
 
@@ -604,21 +604,22 @@ All paths are organization-scoped because catalog resources belong to an organiz
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
 | `GET /organizations/{organizationId}/categories` | Catalog read | Cursor/search/status | Categories | Invalid cursor/filter | Planned |
-| `POST /organizations/{organizationId}/categories` | Catalog write | Name, description/status as accepted | Category | Duplicate/normalization behavior governed by `OQ-024` | Blocked `OQ-024` |
-| `PATCH /organizations/{organizationId}/categories/{categoryId}` | Catalog write | Editable fields | Category | Cross-tenant ref, stale state | Planned |
+| `POST /organizations/{organizationId}/categories` | Catalog write | Trimmed display name, optional description/status | Category | Duplicate normalized key | Planned |
+| `PATCH /organizations/{organizationId}/categories/{categoryId}` | Catalog write | Editable fields and exact prior `updatedAt` | Category | Cross-tenant ref, inactive assignment, `CATEGORY_STALE` | Planned |
 | `GET /organizations/{organizationId}/products` | Catalog read | Cursor, query, SKU/barcode/category/status | Products | Invalid filters/cursor | Planned |
-| `POST /organizations/{organizationId}/products` | Catalog write | Product fields | Product | Duplicate SKU/barcode, invalid category/decimal | Blocked `OQ-010`, `OQ-014`, `OQ-023`, `OQ-024` |
+| `POST /organizations/{organizationId}/products` | Catalog write | Accepted product fields excluding cost/valuation | Product | Duplicate SKU/barcode, invalid category/unit/decimal | Planned |
 | `GET /organizations/{organizationId}/products/{productId}` | Catalog read | None | Product | Safe not-found | Planned |
-| `PATCH /organizations/{organizationId}/products/{productId}` | Catalog write | Editable fields and concurrency token if selected | Product | Duplicate/stale/history constraints | Blocked `OQ-010`, `OQ-014`, `OQ-023`, `OQ-024` |
+| `PATCH /organizations/{organizationId}/products/{productId}` | Catalog write | Editable fields and exact prior `updatedAt`; unit excluded | Product | Duplicate, `PRODUCT_STALE`, inactive category, history constraints | Planned |
 
 Create/update validation:
 
-- SKU required and unique within organization after normalization.
-- Barcode optional and unique within organization when present.
-- Category must belong to the same organization.
-- Selling price is a non-negative canonical decimal according to accepted pricing rules.
-- Product status and fractional quantity/unit behavior follow `OQ-023`.
-- Client cannot create branch price data until `OQ-014` accepts the feature.
+- SKU is required, canonicalized by trim/NFKC/uppercase, matches `^[A-Z0-9][A-Z0-9._-]{0,63}$`, and is unique within organization.
+- Barcode is optional; trim it, map blank to null, reject control characters and values longer than 128, and enforce exact trimmed uniqueness within organization when present.
+- Category must belong to the same organization and be active for a new assignment. Categories are flat and a product may be uncategorized.
+- `basePrice` is a non-negative decimal string with scale at most 4; reject rather than round excess scale. Its target persistence representation is `DECIMAL(19,4)`, but its catalog boundary does not resolve `OQ-008` transaction rounding.
+- `unit` is one immutable base unit: `EA`, `PACK`, `BOX`, `KG`, `G`, `L`, `ML`, `M`, or `CM`. Quantity strings target `DECIMAL(18,4)`; `EA`, `PACK`, and `BOX` must be mathematically integral, while all other units permit at most four fractional digits. No unit conversion exists in MVP.
+- Product and Category mutations carry the exact prior millisecond UTC `updatedAt`; stale writes return `PRODUCT_STALE` or `CATEGORY_STALE`.
+- No client can create branch-price data. Cost, valuation, COGS, and authoritative purchasing-cost behavior remain blocked by `OQ-010`.
 
 ## 9. Inventory endpoints
 
@@ -627,7 +628,7 @@ Create/update validation:
 | `GET /organizations/{organizationId}/branches/{branchId}/inventory` | Branch inventory read | Cursor, product/category/status/stock filters | Product + current balance page | Invalid filter, forbidden branch | Planned; analytic filters blocked `OQ-011` |
 | `GET /organizations/{organizationId}/branches/{branchId}/inventory/{productId}` | Branch inventory read | None | Current balance and product summary | Safe not-found/cross-tenant | Planned |
 | `GET /organizations/{organizationId}/branches/{branchId}/inventory/{productId}/transactions` | Branch inventory read | Cursor, type/date filters | Stable ledger page | Invalid range/cursor | Planned |
-| `POST /organizations/{organizationId}/branches/{branchId}/inventory/adjustments` | Branch stock adjust | `Idempotency-Key`; product, signed quantity, reason | Movement + new balance | Invalid/zero, insufficient stock, duplicate/conflict | Blocked `OQ-007`, `OQ-019`, `OQ-023`; authorization follows `ADR-016` |
+| `POST /organizations/{organizationId}/branches/{branchId}/inventory/adjustments` | Branch stock adjust | `Idempotency-Key`; product, signed quantity, reason | Movement + new balance | Invalid/zero, insufficient stock, duplicate/conflict | Blocked `OQ-007`, `OQ-019`; quantity validation follows `ADR-022` |
 
 Adjustment request must not contain an authoritative resulting balance. The server applies a delta within one transaction.
 
@@ -640,19 +641,19 @@ No transfer endpoint exists until `OQ-013` is accepted.
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
 | `GET /organizations/{organizationId}/suppliers` | Purchasing read | Cursor/search/status | Suppliers | Invalid cursor/filter | Planned |
-| `POST /organizations/{organizationId}/suppliers` | Purchasing write | Accepted supplier fields | Supplier | Validation/duplicate/lifecycle policy | Blocked `OQ-024` |
+| `POST /organizations/{organizationId}/suppliers` | Purchasing write | Supplier fields assigned to purchasing scope | Supplier | Validation/duplicate/lifecycle policy | Sequenced for P4 |
 | `GET /organizations/{organizationId}/suppliers/{supplierId}` | Purchasing read | None | Supplier | Safe not-found | Planned |
-| `PATCH /organizations/{organizationId}/suppliers/{supplierId}` | Purchasing write | Editable fields | Supplier | Stale/inactive/history rules | Blocked `OQ-024` |
+| `PATCH /organizations/{organizationId}/suppliers/{supplierId}` | Purchasing write | Editable fields | Supplier | Stale/inactive/history rules | Sequenced for P4 |
 
 ### Purchase orders and receipts
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
 | `GET /organizations/{organizationId}/branches/{branchId}/purchase-orders` | Branch purchasing read | Cursor/status/date/supplier | Purchase order summaries | Invalid range/cursor | Blocked lifecycle details `OQ-021` |
-| `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders` | Branch purchasing write | Supplier, lines, quantities, expected costs | Purchase order | Cross-tenant refs, invalid/duplicate lines/cost | Blocked `OQ-010`, `OQ-021`, `OQ-023` |
+| `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders` | Branch purchasing write | Supplier, lines, quantities, expected costs | Purchase order | Cross-tenant refs, invalid/duplicate lines/cost | Blocked `OQ-010`, `OQ-021`; quantity validation follows `ADR-022` |
 | `GET /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}` | Branch purchasing read | None | Order, snapshots, receipt summary | Safe not-found | Blocked lifecycle representation |
 | `PATCH /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}` | Branch purchasing write | Editable fields/state version | Purchase order | Non-editable/stale/state conflict | Blocked `OQ-021` |
-| `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}/receipts` | Branch receiving | `Idempotency-Key`; received lines/actual cost | Completed receipt + balance effects | State/quantity/cost/idempotency/concurrency | Blocked `OQ-007`, `OQ-010`, `OQ-021`, `OQ-023` |
+| `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}/receipts` | Branch receiving | `Idempotency-Key`; received lines/actual cost | Completed receipt + balance effects | State/quantity/cost/idempotency/concurrency | Blocked `OQ-007`, `OQ-010`, `OQ-021`; quantity validation follows `ADR-022` |
 
 Receipt creation is an atomic command. It does not expose a sequence of public endpoints for separately creating a receipt and then mutating stock.
 
@@ -661,7 +662,7 @@ Receipt creation is an atomic command. It does not expose a sequence of public e
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
 | `GET /organizations/{organizationId}/branches/{branchId}/pos/products` | Branch checkout | Query/barcode/cursor | Sellable product summaries with current server price/availability indicator | Invalid query, forbidden branch | Planned; exact availability/price blocked |
-| `POST /organizations/{organizationId}/branches/{branchId}/sales` | Branch checkout | `Idempotency-Key`; cart lines and payment intent | Completed sale + receipt representation | Price/state/stock/payment/idempotency/concurrency | Blocked `OQ-007`, `OQ-008`, `OQ-010`, `OQ-023` |
+| `POST /organizations/{organizationId}/branches/{branchId}/sales` | Branch checkout | `Idempotency-Key`; cart lines and payment intent | Completed sale + receipt representation | Price/state/stock/payment/idempotency/concurrency | Blocked `OQ-007`, `OQ-008`, `OQ-010`; quantity validation follows `ADR-022` |
 | `GET /organizations/{organizationId}/branches/{branchId}/sales` | Branch sales read | Cursor/date/user/status filters | Sale summaries | Invalid range/cursor | Planned; statuses blocked `OQ-009` |
 | `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}` | Branch sales read | None | Sale, immutable lines, permitted payment data | Safe not-found | Planned |
 | `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}/receipt` | Branch receipt read | Format/locale if accepted | Receipt view data; not arbitrary HTML from server | Safe not-found/forbidden | Blocked format/numbering `OQ-008` |
@@ -686,7 +687,7 @@ Conceptual checkout request:
 Rules:
 
 - Client may show an estimate but server reloads product status/price and computes every authoritative total.
-- Quantity, method, tax, discount, tender/change, split payments, and rounding are finalized by `OQ-008`/`OQ-023`.
+- Quantity representation follows `ADR-022`; payment method, tax, discount, tender/change, split payments, and transaction rounding remain `OQ-008`.
 - Response uses immutable sale snapshot values.
 - OpenRouter is never called in checkout.
 
@@ -711,7 +712,7 @@ period=<canonical selector derived from OQ-011 and OQ-016>
 | `GET /organizations/{organizationId}/analytics/inventory` | Analytics read | Scope + period/cutoff + optional dimensions | Coverage/movement/risk metrics | Insufficient/negative/unknown thresholds | Blocked `OQ-007`, `OQ-011`, `OQ-012` |
 | `GET /organizations/{organizationId}/analytics/branches` | Organization analytics read | Period + authorized branch set/filter | Comparable branch metrics | Unauthorized branch/non-comparable period | Blocked `OQ-011`, `OQ-016`; authorization follows `ADR-016` |
 | `GET /organizations/{organizationId}/analytics/forecast` | Forecast read | Scope + product/category + horizon | Versioned forecast + data status | Unsupported horizon/insufficient data | Blocked `OQ-012` |
-| `GET /organizations/{organizationId}/analytics/reorder-recommendations` | Reorder read | Scope + horizon/filter | Inputs + deterministic recommendations | Missing lead time/forecast/cost/unit | Blocked `OQ-010`, `OQ-011`, `OQ-012`, `OQ-021`, `OQ-023` |
+| `GET /organizations/{organizationId}/analytics/reorder-recommendations` | Reorder read | Scope + horizon/filter | Inputs + deterministic recommendations | Missing lead time/forecast/cost/unit | Blocked `OQ-010`, `OQ-011`, `OQ-012`, `OQ-021`; quantity representation follows `ADR-022` |
 
 Analytics error/null semantics:
 
@@ -798,12 +799,12 @@ Canonical definitions live in `BUILD_SPEC.md`:
 
 - Auth/session: `ADR-013`; verification/reset token/provider behavior: `ADR-014`; onboarding: `ADR-015`; invitation/member access lifecycle: `ADR-021`
 - Role/permission exposure: `ADR-016`
-- Product payload: `OQ-010`, `OQ-014`, `OQ-023`
-- Inventory adjustment: `OQ-007`, `OQ-019`, `OQ-023`
-- Purchasing/receiving: `OQ-010`, `OQ-021`, `OQ-023`
-- Checkout/receipt/payment: `OQ-007`, `OQ-008`, `OQ-010`, `OQ-023`
+- Product payload: `ADR-022`; cost/valuation remains `OQ-010`, sales monetary behavior remains `OQ-008`
+- Inventory adjustment: `OQ-007`, `OQ-019`; quantity representation is `ADR-022`
+- Purchasing/receiving: `OQ-010`, `OQ-021`; quantity representation is `ADR-022`
+- Checkout/receipt/payment: `OQ-007`, `OQ-008`, `OQ-010`; quantity representation is `ADR-022`
 - Void/refund: `OQ-009`
 - Analytics/forecast: `OQ-011`, `OQ-012`, `OQ-016`
 - AI scheduling/provider: `OQ-017`, `OQ-018`
 - Hosting, S3, operational exposure: `OQ-015`, `OQ-020`
-- Catalog/supplier normalization and lifecycle: `OQ-024`
+- Catalog normalization and lifecycle: `ADR-022`; supplier implementation remains sequenced for P4

@@ -7,7 +7,7 @@
 | Repository | `stockwise` pnpm workspace monorepo |
 | Baseline | Architecture Freeze v1 |
 | Status | Repository foundation and minimal web/API shells implemented; domain implementation gated by explicit decisions |
-| Last updated | 2026-08-24 |
+| Last updated | 2026-08-25 |
 
 ## 1. Purpose and source-of-truth map
 
@@ -197,12 +197,12 @@ Google login is a future feature. No JWT browser authentication, browser token s
 ### 10.2 Product catalog
 
 - Manage organization-level categories and products.
-- Store SKU, optional barcode, name, description, unit, product status, selling price, and the data needed by the selected costing model.
+- Store SKU, optional barcode, name, description, one immutable base unit, product status, and one organization-level base selling price. Cost, valuation, and COGS fields are excluded until `OQ-010` is accepted.
 - Enforce organization-scoped SKU and barcode uniqueness rules.
 - Search and filter products for management and POS use.
 - Preserve past sale snapshots when current product details change.
 
-Branch-level price overrides are an open question. Until decided, no endpoint or schema may imply support for them.
+Branch-level price overrides are out of MVP scope. Every branch uses the Product's organization-level base selling price; a catalog-price change affects future operations only, and future sale items must snapshot the actual unit price used at sale time.
 
 ### 10.3 Branch inventory
 
@@ -347,6 +347,9 @@ multi-instance, production DoS, and long-term telemetry controls remain open in
 
 - **FR-CAT-001:** Products and categories shall be scoped to one organization.
 - **FR-CAT-002:** SKU and barcode constraints shall be enforced within the owning organization according to `docs/DATABASE.md`.
+- **FR-CAT-003:** A Product shall use exactly one immutable MVP base unit from the accepted vocabulary; quantity input is a decimal string with accepted precision and is rejected rather than rounded when invalid.
+- **FR-CAT-004:** A Product shall have one organization-level non-negative base price represented by a decimal string with at most four fractional digits; it is not a branch-price override or final sales-transaction rounding rule.
+- **FR-CAT-005:** Product and Category mutations shall use exact `updatedAt` optimistic concurrency and preserve historical references through lifecycle status rather than hard deletion.
 - **FR-INV-001:** Stock shall be represented by both a current balance and traceable inventory transactions.
 - **FR-INV-002:** Every balance mutation shall have a corresponding ledger entry created atomically.
 - **FR-INV-003:** Inventory shall be scoped to a branch.
@@ -478,10 +481,11 @@ These decisions are mandatory gates before the affected domain implementation:
 | Email verification, password reset, and invitations | `ADR-014`, `ADR-021` (`OQ-004`, `OQ-006` resolved) |
 | Profile and organization/first-branch onboarding | `ADR-015` (`OQ-005` resolved) |
 | Authorization policies for accepted MVP roles | `ADR-016` (`OQ-022` resolved) |
-| Inventory mutations and stock availability | `OQ-007`, `OQ-023` |
-| POS checkout and sales monetary truth | `OQ-007`, `OQ-008`, `OQ-010`, `OQ-023` plus the accepted RBAC baseline in `ADR-016` |
+| Catalog schema and management API | `ADR-022` (`OQ-014`, `OQ-023`, `OQ-024` resolved); cost/valuation is excluded pending `OQ-010` |
+| Inventory mutations and stock availability | `OQ-007` plus the accepted quantity contract in `ADR-022` |
+| POS checkout and sales monetary truth | `OQ-007`, `OQ-008`, `OQ-010` plus `ADR-016` and the accepted quantity contract in `ADR-022` |
 | Refund and void | `OQ-009` plus the applicable sales decisions |
-| Purchasing/receiving cost and quantity behavior | `OQ-007`, `OQ-010`, `OQ-023` |
+| Purchasing/receiving cost behavior | `OQ-007`, `OQ-010` plus the accepted quantity contract in `ADR-022` |
 | Analytics definitions | `OQ-011` |
 | Forecasting V1 and reorder recommendation | `OQ-011`, `OQ-012` plus accepted costing/quantity inputs where used |
 
@@ -502,6 +506,9 @@ This is the canonical list. Other documents reference these IDs and must not red
 | **OQ-005** | Registration accepts only email and password. The platform profile later requires display name, so `User.displayName` remains nullable until profile/onboarding; no placeholder is derived from email. New-organization onboarding requires display name, organization name, and initial branch name. Phone is optional for the platform profile and initial branch; branch address is optional. The creator becomes `OWNER`; the server assigns initial branch code `MAIN`. One persisted per-user provenance row provides request-hash replay and concurrency identity; zero memberships are required when that row does not exist. User identity is platform-level; access derives from memberships. Invitations use their own flow. | `ADR-015`, `ADR-017`, `ADR-019` |
 | **OQ-006** | Use email-bound organization invitations carrying the intended role and branch scope. Their opaque, cryptographically random, hash-only token is single-use for access creation and expires in seven days; reissue invalidates the active invite. The invited email must authenticate and verify before transactional acceptance creates membership, branch assignments, source provenance, and a bounded access event. Same-actor replay returns the existing result without mutation. Existing membership of any status blocks invitation. Full-replacement edits/reactivation use exact optimistic versions; deactivation preserves assignment configuration but immediately removes effective access. No automatic account creation or naive cross-email linking. | `ADR-014`, `ADR-021` |
 | **OQ-022** | Use fixed, deny-by-default RBAC with one organization role per user/organization and explicit branch assignments for branch-only roles. `OWNER`/`ADMIN` are organization-wide; `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER` are assigned-branch roles. The role, governance, delegation, capability, analytics, forecast, and AI-summary baseline in section 8 is authoritative; refund/void remains `OQ-009`. | `ADR-016` |
+| **OQ-014** | Branch-level price overrides are out of MVP scope. Each Product has one organization-level required non-negative `basePrice`; its API representation is a decimal string with scale at most 4 and its target persistence representation is `DECIMAL(19,4)`. Inputs with more than four fractional digits are rejected, never rounded. All branches use that base price for future operations, while future sale items snapshot the actual unit price used. Tax, discount, receipt-total, payment, currency, and sales-transaction rounding remain open in `OQ-008`. | `ADR-022` |
+| **OQ-023** | Each Product has exactly one immutable base unit: `EA`, `PACK`, `BOX`, `KG`, `G`, `L`, `ML`, `M`, or `CM`. `EA`, `PACK`, and `BOX` are integer-only; the other units allow up to four fractional digits. Quantity APIs use decimal strings and persistence targets `DECIMAL(18,4)`; values with excess precision are rejected, never rounded. There is no unit conversion, pack-size conversion, or separate purchasing/selling UOM in MVP. Positive requested business-operation quantities must be greater than zero; signed ledger semantics remain owned by inventory work. | `ADR-022` |
+| **OQ-024** | Product display names are trimmed, nonblank, Unicode-preserving, and may duplicate within an organization. SKU is the required organization business identifier and is canonicalized by trim, Unicode NFKC, then uppercase; it must match `^[A-Z0-9][A-Z0-9._-]{0,63}$` and is unique per organization. Barcode is optional, trimmed with blank mapped to null, exact-match unique when non-null, control-character-free, and at most 128 characters. Categories are flat; their nullable product relation allows uncategorized products. Category identity is a per-organization unique NFKC/trim/collapsed-Unicode-whitespace/lowercase key while display names retain trimmed presentation. Product and Category use `ACTIVE`/`INACTIVE`, allow reactivation, prohibit hard-delete endpoints, and use exact `updatedAt` optimistic concurrency (`PRODUCT_STALE`/`CATEGORY_STALE`). Inactive categories remain referenced but cannot be newly assigned; no merge or bulk reassignment exists. | `ADR-022` |
 
 ### Open Questions
 
@@ -514,7 +521,6 @@ This is the canonical list. Other documents reference these IDs and must not red
 | **OQ-011** | Which exact analytics thresholds, comparison windows, inclusions/exclusions, and completed-sale state are accepted? | Analytics | Critical |
 | **OQ-012** | What is Forecasting V1, including horizon, granularity, baseline algorithm, minimum data, cold-start behavior, seasonality, and evaluation metric? | Forecast and reorder | Critical |
 | **OQ-013** | Is inter-branch stock transfer part of the MVP, and what is its in-transit lifecycle? | Inventory | High |
-| **OQ-014** | Are branch-level price overrides part of the MVP? | Catalog/POS/data model | High |
 | **OQ-015** | What are the exact production hosting topology, region, ingress, secret-management, IaC, availability, backup, and cost targets? | Cloud deployment | High |
 | **OQ-016** | Does each organization choose a timezone, or is reporting fixed to `Asia/Bangkok`? How are DST and late transactions handled? | Database, analytics, schedules | High |
 | **OQ-017** | At what local times do daily, weekly, monthly, and yearly jobs run, and how are retries/catch-up handled? | AI scheduler | Medium |
@@ -522,8 +528,6 @@ This is the canonical list. Other documents reference these IDs and must not red
 | **OQ-019** | Is a durable audit-log feature required in MVP or only production hardening? | Security/compliance | Medium |
 | **OQ-020** | Beyond the accepted narrow process-local registration, login, verification-resend, and password-reset-request limiters, what distributed/IP-aware/global/provider-wide abuse controls, proxy trust, multi-instance coordination, production DoS controls, long-term abuse telemetry, measurable performance, availability, recovery, browser-support, and data-retention targets define production readiness? | Hardening/load tests | Medium |
 | **OQ-021** | Does purchasing support partial receiving, over-receiving, cancellation after partial receipt, and supplier returns in MVP? | Purchasing/receiving | High |
-| **OQ-023** | Which units of measure are supported in MVP, may quantities be fractional, and what database/API precision and rounding apply to quantities? | Catalog, inventory, purchasing, sales, analytics | Critical |
-| **OQ-024** | What normalization, duplicate-name, deactivation, and deletion rules apply to categories, suppliers, and other catalog master data? | Catalog and suppliers | Medium |
 
 ## 17. MVP completion boundary
 

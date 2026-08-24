@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | Accepted decision history |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-24 |
+| Last updated | 2026-08-25 |
 
 ## 1. Log rules
 
@@ -913,6 +913,62 @@ and never enter browser storage, logs, list payloads, or UI text.
   well as server-side authorization.
 - Ownership transfer, generic audit, invitation-specific rate limiting, and
   distributed/provider abuse controls remain outside T03.
+
+## ADR-022 — Fix organization catalog price, unit, and lifecycle boundaries
+
+- **Date:** 2026-08-25
+- **Status:** Accepted
+- **Type:** Catalog/data-model architecture
+
+### Context
+
+The catalog schema needs a stable organization-level price, base-unit, normalization, and lifecycle boundary before it can safely persist Products and Categories. Branch-specific pricing, quantity conversion, and product cost would otherwise cause speculative schema/API work and blur later sales, inventory, and purchasing decisions.
+
+### Alternatives considered
+
+1. Branch-specific current prices and effective-dated overrides in MVP
+2. Multiple purchasing/selling units with automatic conversions
+3. A single organization base price and one immutable base unit per Product, with later cost and transaction rules deferred
+
+### Decision
+
+Use option 3. Branch-level price overrides are out of MVP scope. A Product has one required organization-level non-negative `basePrice`, represented in APIs as a decimal string at scale at most four and targeted to `DECIMAL(19,4)` persistence. Excess scale is invalid rather than rounded. This configured catalog price affects future operations only; future sale items snapshot the unit price actually used. `OQ-008` remains open for tax, discount, currency, receipt/payment behavior, and transaction rounding.
+
+Each Product stores exactly one immutable base unit from `EA`, `PACK`, `BOX`, `KG`, `G`, `L`, `ML`, `M`, or `CM`. `EA`, `PACK`, and `BOX` are integer-only. The others permit up to four fractional digits. Quantity APIs are decimal strings, target `DECIMAL(18,4)`, reject excess precision rather than rounding, and require positive values when an operation requests a positive amount. MVP has no unit, pack-size, or purchasing/selling-UOM conversion. Signed inventory-ledger semantics remain for inventory work; derived analytics rounding remains `OQ-011`.
+
+Product names are trimmed, nonblank, Unicode-preserving, and non-unique. SKU is canonical trim/NFKC/uppercase, must match `^[A-Z0-9][A-Z0-9._-]{0,63}$`, and is unique within an organization. Barcode is optional, trimmed, blank-to-null, control-character-free, at most 128 characters, and exact-match unique within an organization when present. Categories are flat with a nullable product relation. Their display names are trimmed/nonblank while an NFKC/trim/collapsed-Unicode-whitespace/lowercase key is unique within an organization.
+
+Products and Categories use `ACTIVE`/`INACTIVE`, may reactivate, and have no hard-delete endpoint. An inactive category retains references but cannot receive a new product assignment; it does not deactivate or silently reassign products. Product reassignment to another active category or null is explicit. Category merge/bulk reassignment is excluded. Category and Product mutations use exact `updatedAt` optimistic concurrency and return `CATEGORY_STALE` or `PRODUCT_STALE` on stale state.
+
+Product has no authoritative cost, average-cost, COGS, or inventory-valuation field. `OQ-010` remains open and governs later receiving valuation, inventory valuation, COGS, and authoritative purchasing-cost behavior.
+
+### Worked boundary examples
+
+| Input or state | Result |
+| --- | --- |
+| Base price `"60"`, `"60.5"`, or `"60.1234"` | Accepted as an organization-level configured amount for every branch. |
+| Base price `"60.12345"` or `"-1"` | Rejected; catalog input never rounds and base price is non-negative. |
+| `EA` quantity `"3"` or `"3.0"` | Accepted; canonical integral output is `"3"`. |
+| `EA` quantity `"3.5"` or `BOX` quantity `"1.25"` | Rejected because the unit is integer-only. |
+| `KG` quantity `"0.125"` or `"0.1234"` | Accepted. `KG` quantity `"0.12345"` is rejected rather than rounded. |
+| SKU `" abc-01 "` and `"Abc-01"` in one organization | Both canonicalize to `ABC-01`; the second write conflicts. |
+| Barcode `" ABC-01 "` and `"ABC-01"` in one organization | Both store as the same exact trimmed value; the second write conflicts. |
+| Categories `"Food"`, `" food "`, and `"FOOD"` in one organization | All have the same normalized identity; only one may exist. |
+| An inactive Category referenced by active Products | References remain and products remain active, but the category cannot be assigned to another product until reactivated. |
+| Product deactivation or base-price edit | Existing historical records remain unchanged; a later sale snapshots the unit price actually used. |
+| Cost, average cost, COGS, or inventory valuation on Product | Not modeled in P3-M1-T02; authority remains blocked by `OQ-010`. |
+
+### Why selected
+
+- One base price and one base unit fit the MVP without introducing conversion, time-effective pricing, or costing machinery.
+- Database-enforced organization uniqueness and explicit lifecycle rules protect catalog identity and historical references.
+- Deferring transaction pricing and costing keeps unresolved sales/purchasing behavior from becoming accidental catalog truth.
+
+### Consequences
+
+- P3-M1-T02 may model Category and Product with accepted base price, unit, normalization, lifecycle, and tenant constraints, but without cost/valuation or branch-price fields.
+- Future inventory, purchasing, sales, and analytics implementations must consume the accepted unit precision while retaining their own unresolved stock, cost, transaction-rounding, and metric rules.
+- A post-MVP branch-price feature requires a new accepted decision, schema/API/UI scope, and sale-price snapshot compatibility review.
 
 ## 2. Explicitly superseded planning directions
 

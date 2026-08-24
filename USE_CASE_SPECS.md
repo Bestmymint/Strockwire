@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | Behavioral Source of Truth; Architecture Freeze v1 with explicit blockers |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-24 |
+| Last updated | 2026-08-25 |
 
 ## 1. How to use this document
 
@@ -194,20 +194,20 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-CAT-001 — Create or update a product
 
-- **Status:** Blocked by `OQ-010`, `OQ-014`, `OQ-023`, `OQ-024`
+- **Status:** Ready for catalog implementation; cost/valuation remains excluded pending `OQ-010`
 - **Actor:** Authorized owner/admin/inventory staff
 - **Preconditions:** Actor has catalog permission in the organization; referenced category is accessible and active as required.
 - **Trigger:** Actor submits product details.
 - **Main flow:**
-  1. Validate fields and normalize SKU/barcode.
+  1. Validate the accepted base price, immutable base unit, name, SKU, barcode, and optional category; normalize SKU and barcode exactly as `ADR-022` requires.
   2. Derive organization from trusted context.
   3. Verify category belongs to that organization.
   4. Enforce organization-scoped SKU and optional barcode uniqueness.
   5. Create/update current catalog data.
   6. Return a safe product representation.
-- **Alternative flows:** Deactivate/reactivate a product according to lifecycle rules; omit optional barcode/category.
-- **Error cases:** Invalid decimal/quantity/unit; duplicate SKU/barcode; category from another tenant; stale update conflict; product referenced by history; database failure.
-- **Business rules:** Product is organization-level. Branch price overrides must not be added until `OQ-014`. Updating catalog data never rewrites historical sale/receipt snapshots.
+- **Alternative flows:** Deactivate/reactivate a product; omit optional barcode/category; explicitly reassign to an active category or null. Unit is immutable after creation.
+- **Error cases:** Invalid or excess-scale base price/quantity; fractional integer-only quantity; unsupported unit; duplicate SKU/barcode; inactive/cross-tenant category; stale update (`PRODUCT_STALE`); product referenced by history; database failure.
+- **Business rules:** Product is organization-level with one base price shared by every branch; no branch-price override exists in MVP. Base price accepts at most four decimal places and is rejected rather than rounded. Product has no authoritative cost, average-cost, COGS, or valuation field before `OQ-010`. Updating catalog data never rewrites historical sale/receipt snapshots.
 - **Authorization:** Product create/edit is allowed to `OWNER`, `ADMIN`, `BRANCH_MANAGER`, and `INVENTORY_STAFF` in their allowed scope; product deactivation excludes `INVENTORY_STAFF`.
 - **Expected result:** One valid organization product is stored without cross-tenant references.
 - **Acceptance criteria:** Validation, uniqueness, tenant, immutable-history, and unauthorized-role tests pass.
@@ -216,19 +216,19 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-CAT-003 — Manage categories
 
-- **Status:** Blocked by `OQ-024`
+- **Status:** Ready for catalog implementation
 - **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` in allowed scope
 - **Preconditions:** The actor is authenticated in an active organization and has category-management permission.
 - **Trigger:** The actor creates, updates, or deactivates an organization category.
 - **Main flow:**
   1. The API derives the organization from trusted membership and validates the requested fields.
-  2. It applies only the normalization/duplicate rules accepted through `OQ-024`.
+  2. It stores a trimmed display name and enforces the accepted normalized category identity key within the organization.
   3. For update/deactivation, it loads the category inside the same organization and checks current state.
   4. It creates or updates/deactivates the category while preserving valid product references and history.
   5. It returns the current category representation.
-- **Alternative flows:** Products may remain uncategorized if the accepted catalog rules allow it; any category merge, reassignment, reactivation, or deletion behavior must first be accepted under `OQ-024`.
-- **Error cases:** Invalid/missing name; duplicate according to the accepted normalization rule; category from another organization; unauthorized role; stale update; referenced category operation not permitted; database failure.
-- **Business rules:** Category is organization-scoped. This use case does not define normalization, duplicate-name, hard-deletion, merge, or reassignment policy; `OQ-024` owns those decisions. Deactivation must not silently break product references or rewrite historical sales/receipt data.
+- **Alternative flows:** Products may remain uncategorized; an inactive category may be reactivated. Explicit product reassignment to another active category or null occurs through product editing only.
+- **Error cases:** Invalid/missing name; duplicate normalized key; category from another organization; unauthorized role; stale update (`CATEGORY_STALE`); attempted assignment of an inactive category; database failure.
+- **Business rules:** Category is flat and organization-scoped. It is never hard-deleted or merged in MVP. Deactivation preserves product references, does not deactivate products, and never silently reassigns them; inactive categories cannot receive new assignments.
 - **Authorization:** Create/edit follows catalog permission; deactivation is limited to `OWNER`, `ADMIN`, and `BRANCH_MANAGER`.
 - **Expected result:** One valid organization category is created or safely updated/deactivated, or no mutation occurs.
 - **Acceptance criteria:** Tenant, permission, accepted normalization/duplicate, product-reference, deactivation/history, stale-update, and failure tests pass.
@@ -253,7 +253,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-INV-002 — Adjust branch stock
 
-- **Status:** Blocked by `OQ-007`, `OQ-023` and audit scope `OQ-019`
+- **Status:** Blocked by `OQ-007` and audit scope `OQ-019`; quantity validation follows `ADR-022`
 - **Actor:** Authorized inventory staff/manager
 - **Preconditions:** Product and branch are active and in the same organization; actor has adjustment permission.
 - **Trigger:** Actor submits signed adjustment quantity and required reason.
@@ -275,26 +275,26 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-SUP-001 — Manage suppliers
 
-- **Status:** Blocked by `OQ-024`
+- **Status:** Sequenced for P4; supplier-specific behavior remains outside P3-M1-T01
 - **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` in allowed scope
 - **Preconditions:** The actor is authenticated in an active organization and has supplier-management permission.
 - **Trigger:** The actor creates, updates, or deactivates an organization supplier.
 - **Main flow:**
   1. The API derives the organization from trusted membership and validates accepted supplier fields.
-  2. It applies only normalization/duplicate rules accepted through `OQ-024`.
+  2. It applies the supplier contract assigned to the purchasing milestone; P3-M1-T01 does not implement or extend supplier behavior.
   3. For update/deactivation, it loads the supplier within the same organization and verifies current state.
   4. It creates or updates/deactivates the supplier while retaining all Purchase Order and receipt references.
   5. It returns the current supplier representation.
-- **Alternative flows:** Reactivation, supplier merge, or replacement is allowed only if `OQ-024` later defines it; inactive suppliers remain readable in historical Purchase Orders.
+- **Alternative flows:** Supplier reactivation, merge, or replacement is assigned to the purchasing milestone; inactive suppliers remain readable in historical Purchase Orders.
 - **Error cases:** Invalid/missing fields; duplicate according to accepted normalization; cross-tenant supplier; unauthorized role; stale update; attempted unsafe deletion of a referenced supplier; database failure.
-- **Business rules:** Supplier is organization-scoped. A supplier referenced by purchasing history must not be hard-deleted or rewritten to alter historical Purchase Orders/receipts. `OQ-024` owns duplicate, normalization, deactivation, and deletion policy.
+- **Business rules:** Supplier is organization-scoped. A supplier referenced by purchasing history must not be hard-deleted or rewritten to alter historical Purchase Orders/receipts. Supplier CRUD is not part of P3-M1-T01.
 - **Authorization:** Supplier create/edit is allowed to `OWNER`, `ADMIN`, `BRANCH_MANAGER`, and `INVENTORY_STAFF`; deactivation follows the applicable accepted lifecycle and role policy.
 - **Expected result:** One valid organization supplier is created or safely updated/deactivated, or no mutation occurs.
 - **Acceptance criteria:** Tenant, permission, accepted duplicate/normalization, stale-update, deactivation/history, unsafe-delete, and failure tests pass.
 
 ### UC-PUR-001 — Create or edit a purchase order
 
-- **Status:** Blocked in detail by `OQ-010`, `OQ-021`, `OQ-023`, `OQ-024`
+- **Status:** Blocked in detail by `OQ-010` and `OQ-021`; product quantity validation follows `ADR-022`
 - **Actor:** Authorized inventory/purchasing user
 - **Preconditions:** Supplier, products, and target branch are active and belong to the same organization.
 - **Trigger:** Actor saves a new purchase order or edits an editable one.
@@ -308,7 +308,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-PUR-002 — Receive a purchase order into branch stock
 
-- **Status:** Blocked by `OQ-007`, `OQ-010`, `OQ-021`, `OQ-023`
+- **Status:** Blocked by `OQ-007`, `OQ-010`, and `OQ-021`; quantity validation follows `ADR-022`
 - **Actor:** Authorized receiving/inventory user
 - **Preconditions:** Purchase order is in an accepted receivable state for the actor's branch.
 - **Trigger:** Actor submits received quantities and actual costs with an idempotency key.
@@ -332,7 +332,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-SALE-001 — Complete POS checkout
 
-- **Status:** Blocked by `OQ-007`, `OQ-008`, `OQ-010`, `OQ-023`
+- **Status:** Blocked by `OQ-007`, `OQ-008`, and `OQ-010`; quantity validation follows `ADR-022`
 - **Actor:** Authorized cashier/manager
 - **Preconditions:** Actor has checkout permission for an active branch; cart has at least one active same-organization product.
 - **Trigger:** Actor submits cart and payment intent with an idempotency key.
@@ -402,7 +402,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-AN-002 — View forecast and reorder recommendation
 
-- **Status:** Blocked by `OQ-007`, `OQ-010`, `OQ-011`, `OQ-012`, `OQ-021`, `OQ-023`
+- **Status:** Blocked by `OQ-007`, `OQ-010`, `OQ-011`, `OQ-012`, and `OQ-021`; quantity inputs follow `ADR-022`
 - **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` within the accepted forecast/reorder scope
 - **Preconditions:** Forecasting V1 and input definitions are accepted; actor has scope access.
 - **Trigger:** Actor opens forecast/replenishment view.
@@ -465,11 +465,5 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-CAT-002 — Override product price by branch
 
-- **Status:** Blocked by `OQ-014`
-- **Actor:** Future authorized pricing role
-- **Preconditions/trigger/main flow:** Not accepted.
-- **Alternative/error cases:** Effective dates, fallback to organization price, overlapping overrides, receipt snapshot, and actor permission require explicit rules.
-- **Business rules:** Until accepted, product selling price is organization-level and no branch override table/API/UI is implied.
-- **Authorization:** A future branch-price-override feature requires its own accepted scope/authorization decision; the current RBAC baseline does not authorize an unimplemented feature.
-- **Expected result:** No implementation until accepted.
-- **Acceptance criteria:** To be added with the decision.
+- **Status:** Out of MVP scope by `ADR-022`.
+- **Business rules:** Every branch uses the Product's organization-level base price. No branch override table, API, UI, effective-date rule, or pricing permission exists in MVP. A future sale item must snapshot the actual unit price used at sale time.

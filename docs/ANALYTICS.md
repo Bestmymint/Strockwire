@@ -6,7 +6,7 @@
 | Compute stack | PostgreSQL SQL + TypeScript |
 | AI boundary | OpenRouter summarizes supplied aggregates only |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-22 |
+| Last updated | 2026-08-25 |
 
 ## 1. Scope and authority
 
@@ -127,7 +127,7 @@ UnitsSold(S,P) = sum(Q_i for i in EligibleSaleItems(S,P))
 ```
 
 - Unit: product quantity
-- Status: **Blocked** by `OQ-009`, `OQ-011`, `OQ-023`
+- Status: **Blocked** by `OQ-009`, `OQ-011`; quantity unit/precision is accepted by `ADR-022`
 - Aggregating unlike units across all products may be displayed only with a clear label; it is not a physical inventory quantity.
 
 ### M-004 Transaction count
@@ -159,7 +159,7 @@ ADS(S,P) = UnitsSold(S,P) / CalendarDays(P)
 
 - Include zero-sale calendar days within a complete period.
 - A product/branch ADS uses only that product/branch scope.
-- Status: **Blocked** by `OQ-011`, `OQ-016`, `OQ-023`
+- Status: **Blocked** by `OQ-011`, `OQ-016`; quantity unit/precision is accepted by `ADR-022`
 - Must decide: calendar vs open business days, partial periods, minimum data.
 
 ### M-007 Sales growth
@@ -238,7 +238,7 @@ Required states:
 - Negative on-hand behavior depends on `OQ-007`.
 - Insufficient/partial history: `null` with `INSUFFICIENT_DATA`.
 
-- Status: **Blocked** by `OQ-007`, `OQ-011`, `OQ-023`.
+- Status: **Blocked** by `OQ-007`, `OQ-011`; quantity representation is accepted by `ADR-022`.
 
 ### M-103 Fast-moving / slow-moving classification
 
@@ -320,7 +320,7 @@ Potential rounding:
 Round up to purchasing unit/case size after the raw quantity is computed.
 ```
 
-- Status: **Blocked** by `OQ-010`, `OQ-011`, `OQ-012`, `OQ-021`, `OQ-023`.
+- Status: **Blocked** by `OQ-010`, `OQ-011`, `OQ-012`, `OQ-021`; quantity representation is accepted by `ADR-022`.
 - Must decide lead-time source, safety-stock formula, incoming PO states, order multiples, minimum order quantity, and unavailable-data behavior.
 - Output is a recommendation, not an automatic purchase order.
 
@@ -546,4 +546,3 @@ Canonical Open Questions are in `BUILD_SPEC.md`:
 - `OQ-018` OpenRouter model/fallback/budget/retention
 - `OQ-020` performance and retention targets
 - `OQ-021` inbound quantity states
-- `OQ-023` quantity units and precision

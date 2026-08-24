@@ -6,7 +6,7 @@
 | Database | PostgreSQL |
 | ORM/migrations | Prisma |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-24 |
+| Last updated | 2026-08-25 |
 
 ## 1. Scope and authority
 
@@ -430,7 +430,7 @@ Required logical attributes:
 
 - Organization identifier
 - Stable identifier
-- Name
+- Trimmed display name and internal normalized identity key
 - Optional description
 - Status
 - Created/updated timestamps
@@ -438,8 +438,10 @@ Required logical attributes:
 Constraints and indexes:
 
 - Category belongs to exactly one organization.
-- Organization-scoped name normalization/uniqueness follows `OQ-024`; do not assume global uniqueness.
-- Products may keep a nullable category reference if uncategorized products are accepted.
+- Category is flat; no parent/hierarchy or merge exists in MVP.
+- The NFKC/trim/collapsed-Unicode-whitespace/lowercase normalized identity key is unique per organization; the trimmed display name preserves presentation and need not be lowercase.
+- Products may keep a nullable category reference; uncategorized products are accepted.
+- An inactive category remains referenced but cannot receive a new product assignment. Category mutations use exact `updatedAt` optimistic concurrency.
 
 #### `Product`
 
@@ -454,26 +456,30 @@ Required logical attributes:
 - Optional barcode
 - Name
 - Optional description/brand
-- Unit of measure
-- Current organization selling price unless `OQ-014` accepts overrides
-- Cost-related attributes required by the accepted `OQ-010` model
+- One immutable MVP base unit
+- Required current organization base price
 - Optional low-stock/reorder configuration after analytics definitions are accepted
 - Status
 - Created/updated timestamps
 
 Constraints and indexes:
 
-- Unique `(organization, normalized SKU)`.
-- Unique `(organization, normalized barcode)` when barcode is present.
+- SKU is persisted in its trim/NFKC/uppercase canonical form and is unique as `(organization, sku)`.
+- Barcode is a trimmed, control-character-free value of at most 128 characters; it is unique as `(organization, barcode)` when non-null, with exact stored-value equality.
 - Category, if present, must belong to the same organization.
+- Base price targets `DECIMAL(19,4)`, is non-negative, and must not be silently rounded at the API boundary.
+- Unit is one of `EA`, `PACK`, `BOX`, `KG`, `G`, `L`, `ML`, `M`, or `CM`. Quantity values target `DECIMAL(18,4)`; `EA`, `PACK`, and `BOX` are integer-only.
 - Index `(organization, status, name)` or a more suitable search index based on measured search behavior.
 - Product status changes must not rewrite historical sale, purchase, receipt, or ledger records.
 
 Lifecycle:
 
 - Prefer deactivation over deletion once referenced.
-- Price/cost changes affect future operations only.
-- Branch price overrides are not represented unless `OQ-014` is accepted.
+- Product and Category use `ACTIVE`/`INACTIVE`; reactivation is allowed and neither has a hard-delete endpoint in MVP.
+- Product deactivation preserves historical references. Category deactivation neither deletes nor deactivates products and never silently reassigns them.
+- Base-price changes affect future operations only. Branch price overrides are out of MVP scope.
+- Product and Category mutations use their exact prior millisecond UTC `updatedAt`; stale writes map to `PRODUCT_STALE` and `CATEGORY_STALE`.
+- Product has no authoritative cost, average cost, COGS, or inventory valuation attribute until `OQ-010` is accepted.
 
 #### `Supplier`
 
@@ -492,8 +498,8 @@ Required logical attributes:
 Constraints and indexes:
 
 - Supplier belongs to one organization.
-- Supplier normalization/duplicate behavior follows `OQ-024`; names are not assumed globally unique.
-- Deactivation/deletion behavior follows `OQ-024` and must preserve purchase history.
+- Supplier-specific normalization, duplicate, and lifecycle fields are assigned to the later purchasing milestone; names are not assumed globally unique until that scoped contract is recorded.
+- Any later deactivation/deletion behavior must preserve purchase history.
 
 ### 4.3 Inventory
 
@@ -505,7 +511,7 @@ Required logical attributes:
 
 - Branch identifier
 - Product identifier
-- Current quantity using the precision accepted by `OQ-023`
+- Current quantity as `DECIMAL(18,4)` using the Product's accepted immutable base unit
 - Concurrency/version metadata if the chosen locking strategy requires it
 - Updated timestamp
 
@@ -530,7 +536,7 @@ Required logical attributes:
 - Branch identifier
 - Product identifier
 - Movement type
-- Signed quantity delta using `OQ-023` precision
+- Signed quantity delta as `DECIMAL(18,4)` using the Product's accepted immutable base unit; signed-ledger semantics remain an inventory decision
 - Reason/source type and source identifier
 - Acting user or system actor
 - Optional note/reason code for adjustments
@@ -680,7 +686,7 @@ Required logical attributes:
 - Sale identifier
 - Product identifier
 - Product name, SKU, and barcode snapshots as applicable
-- Quantity using `OQ-023` precision
+- Quantity as `DECIMAL(18,4)` using the accepted unit contract
 - Unit price and unit cost snapshot as Prisma `Decimal`
 - Discount/tax allocation and line totals according to `OQ-008`
 - Created timestamp
@@ -889,7 +895,7 @@ The implementation may choose row locking, conditional/versioned updates, atomic
 - Money and costs use `Decimal` through validation, calculation, persistence, and serialization.
 - The API must define a canonical decimal string representation; it must not silently convert precise values to JavaScript floating point.
 - Currency, rounding scale/mode, tax allocation, discounts, and cash rounding are governed by `OQ-008` and `OQ-010`.
-- Quantity representation and fractional units are governed by `OQ-023`.
+- Catalog, inventory, purchasing, and sales quantities use `DECIMAL(18,4)` and decimal-string APIs under `ADR-022`. Inputs with greater scale are rejected, never rounded; integer-only units must be mathematically integral. Derived analytics rounding remains `OQ-011`.
 - All stored aggregate totals must be reproducible from accepted line-level snapshots and rounding rules.
 
 ## 9. Index plan by access pattern
@@ -964,16 +970,13 @@ The canonical definitions live in `BUILD_SPEC.md`:
 - `OQ-007` negative stock affects balance constraints.
 - `OQ-008` payment, tax, discount, and numbering affect sales/payment fields.
 - `OQ-009` reversal rules affect lifecycle/linkage.
-- `OQ-010` costing affects product/receipt/sale cost data.
+- `OQ-010` costing affects receipt/sale cost data and later valuation; Product has no authoritative cost/valuation field before that decision.
 - `OQ-011` completed-sale and metric definitions affect indexes/snapshots.
 - `OQ-012` forecast definition affects forecast storage.
 - `OQ-013` transfer lifecycle affects inventory records.
-- `OQ-014` price override affects catalog/branch relationships.
 - `OQ-016` timezone affects period/schedule fields.
 - `OQ-017` schedule affects job identity.
 - `OQ-018` provider/fallback/retention affects AI report fields.
 - `OQ-019` audit scope affects operational support records.
 - `OQ-020` retention/recovery targets affect lifecycle.
 - `OQ-021` receiving behavior affects purchase state and quantities.
-- `OQ-023` quantity units and precision affect every stock/sale/purchase quantity.
-- `OQ-024` catalog/supplier normalization and lifecycle affect master-data constraints.
