@@ -518,6 +518,16 @@ Lifecycle:
 - Product and Category mutations use their exact prior millisecond UTC `updatedAt`; stale writes map to `PRODUCT_STALE` and `CATEGORY_STALE`.
 - Product has no authoritative cost, average cost, COGS, or inventory valuation attribute until `OQ-010` is accepted.
 
+P3-M1-T03 implements these as service/database boundaries without a schema
+change. Mutations condition on `(id, organization_id, updated_at)` and assign a
+strictly later millisecond timestamp. Product creation/reassignment holds a
+same-tenant Category row lock while verifying active status, preventing a
+concurrent deactivation from bypassing the active-assignment rule. The existing
+unique indexes remain the final concurrent category-name, SKU, and non-null
+barcode conflict boundary; adapter errors are translated to catalog domain
+codes without exposing database metadata. Lists use `(created_at, id)` keyset
+continuation within the trusted organization scope.
+
 #### `Supplier`
 
 Purpose: organization-level purchasing counterparty.

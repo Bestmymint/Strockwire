@@ -3,6 +3,9 @@ import { Router } from "express";
 import { createApp } from "./app.ts";
 import { loadApiEnvironment } from "./environment.ts";
 import { createApiLogger } from "./logger.ts";
+import { createPrismaCatalogRepository } from "./modules/catalog/catalog-repository.ts";
+import { createCatalogRouter } from "./modules/catalog/catalog-router.ts";
+import { createCatalogService } from "./modules/catalog/catalog-service.ts";
 import { createPrismaAuthenticationRepository } from "./modules/identity/authentication-repository.ts";
 import { createPrismaAuthenticationSessionRepository } from "./modules/identity/authentication-repository.ts";
 import { createAuthenticationMiddleware } from "./modules/identity/authentication-context.ts";
@@ -87,6 +90,9 @@ async function main(): Promise<void> {
     repository: createPrismaMembershipAccessRepository(prisma),
     tokenProvider: secureOneTimeTokenProvider,
   });
+  const catalogService = createCatalogService({
+    repository: createPrismaCatalogRepository(prisma),
+  });
   const apiRouter = Router();
   apiRouter.use(
     createRegistrationRouter({
@@ -129,6 +135,13 @@ async function main(): Promise<void> {
     createMembershipAccessRouter({
       authenticationMiddleware,
       membershipAccessService,
+      publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
+    }),
+  );
+  apiRouter.use(
+    createCatalogRouter({
+      authenticationMiddleware,
+      catalogService,
       publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
     }),
   );

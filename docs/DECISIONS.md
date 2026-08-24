@@ -970,6 +970,52 @@ Product has no authoritative cost, average-cost, COGS, or inventory-valuation fi
 - Future inventory, purchasing, sales, and analytics implementations must consume the accepted unit precision while retaining their own unresolved stock, cost, transaction-rounding, and metric rules.
 - A post-MVP branch-price feature requires a new accepted decision, schema/API/UI scope, and sale-price snapshot compatibility review.
 
+## ADR-023 — Bind organization catalog capabilities to revalidated branch context
+
+- **Date:** 2026-08-25
+- **Status:** Accepted
+- **Type:** Catalog API, authorization, security, and concurrency boundary
+
+### Context
+
+Catalog resources belong to an organization, but the accepted policy allows
+branch-scoped roles to exercise catalog capabilities only within an effective
+active assignment. Organization-only catalog paths therefore need an explicit
+branch-context transport without treating a client identifier as authority.
+Catalog list/search and lifecycle contracts also require stable pagination,
+inactive visibility, safe conflicts, and exact optimistic concurrency.
+
+### Decision
+
+Catalog endpoints use optional query `branchId`. `OWNER`/`ADMIN` may omit it and
+operate in trusted organization scope; when supplied it must resolve to an
+active branch in that organization. `BRANCH_MANAGER`, `INVENTORY_STAFF`, and
+`CASHIER` must supply it, and the API re-resolves active membership, role,
+branch ownership/status, and active assignment from PostgreSQL on every request.
+Missing required context returns `BRANCH_CONTEXT_REQUIRED`; every invalid or
+ineffective supplied branch context shares one safe forbidden result.
+
+`catalog.view` owns list/detail, `catalog.create-edit` owns create/PATCH, and
+`catalog.deactivate` owns both deactivate and reactivate. Direct detail may
+return inactive records. Lists default active; inactive listing requires
+create/edit or lifecycle capability. Category and Product lists use filter-bound
+opaque `(createdAt,id)` keyset cursors with limit 25/100. Exact-version lifecycle
+commands are idempotent in the desired state. Product unit remains immutable,
+price serializes at exactly four decimal places, and active same-tenant Category
+assignment is protected through the write transaction.
+
+### Consequences
+
+- Client role, membership, assignment, permission, actor, and ownership data
+  never enter trusted authorization state.
+- Cross-tenant resource candidates use safe scoped queries and do not disclose
+  existence; a cross-tenant Category list filter produces an empty page.
+- Database uniqueness remains authoritative for normalized Category name, SKU,
+  and barcode races, while the API returns only accepted domain conflict codes.
+- No schema/migration, UI, inventory, costing, valuation, or branch-price model
+  is introduced by this decision.
+- `OQ-008`, `OQ-010`, and `OQ-011` remain open and do not block catalog CRUD.
+
 ## 2. Explicitly superseded planning directions
 
 The current ADRs supersede these earlier, unimplemented ideas:

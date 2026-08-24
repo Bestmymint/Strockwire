@@ -163,6 +163,15 @@ Authenticated actor
 
 Path/query/body fields select a candidate resource; they never grant access. Cross-tenant records should be reported without revealing their existence.
 
+P3-M1-T03 applies that boundary to the organization-owned catalog. Catalog
+routes accept optional query `branchId`: `OWNER`/`ADMIN` may use organization
+scope without it, while branch-scoped roles must provide an active branch that
+the API re-resolves with an effective active assignment. Supplied branch IDs
+are candidates only; missing required context is distinct from the common safe
+forbidden result used for nonexistent, inactive, cross-tenant, unassigned, or
+revoked context. Catalog controllers never accept role, membership, assignment,
+permission, actor, or tenant ownership as client authority.
+
 ### Application context and branch cache boundary
 
 `GET /api/v1/me/access-context` returns only active memberships and currently

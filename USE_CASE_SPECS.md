@@ -194,7 +194,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-CAT-001 — Create or update a product
 
-- **Status:** Ready for catalog implementation; cost/valuation remains excluded pending `OQ-010`
+- **Status:** Implemented by P3-M1-T03; cost/valuation remains excluded pending `OQ-010`
 - **Actor:** Authorized owner/admin/inventory staff
 - **Preconditions:** Actor has catalog permission in the organization; referenced category is accessible and active as required.
 - **Trigger:** Actor submits product details.
@@ -205,10 +205,10 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   4. Enforce organization-scoped SKU and optional barcode uniqueness.
   5. Create/update current catalog data.
   6. Return a safe product representation.
-- **Alternative flows:** Deactivate/reactivate a product; omit optional barcode/category; explicitly reassign to an active category or null. Unit is immutable after creation.
+- **Alternative flows:** Deactivate/reactivate a product; omit optional barcode/category; explicitly reassign to an active category or null. Unit is immutable after creation. Direct detail and authorized `includeInactive=true` lists retain inactive visibility. An unrelated edit may preserve the Product's current inactive Category.
 - **Error cases:** Invalid or excess-scale base price/quantity; fractional integer-only quantity; unsupported unit; duplicate SKU/barcode; inactive/cross-tenant category; stale update (`PRODUCT_STALE`); product referenced by history; database failure.
 - **Business rules:** Product is organization-level with one base price shared by every branch; no branch-price override exists in MVP. Base price accepts at most four decimal places and is rejected rather than rounded. Product has no authoritative cost, average-cost, COGS, or valuation field before `OQ-010`. Updating catalog data never rewrites historical sale/receipt snapshots.
-- **Authorization:** Product create/edit is allowed to `OWNER`, `ADMIN`, `BRANCH_MANAGER`, and `INVENTORY_STAFF` in their allowed scope; product deactivation excludes `INVENTORY_STAFF`.
+- **Authorization:** Product create/edit is allowed to `OWNER`, `ADMIN`, `BRANCH_MANAGER`, and `INVENTORY_STAFF` in their allowed scope; product lifecycle excludes `INVENTORY_STAFF`. Branch-scoped roles supply an active assigned `branchId` candidate that the API re-resolves; `OWNER`/`ADMIN` may use organization scope.
 - **Expected result:** One valid organization product is stored without cross-tenant references.
 - **Acceptance criteria:** Validation, uniqueness, tenant, immutable-history, and unauthorized-role tests pass.
 
@@ -216,7 +216,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-CAT-003 — Manage categories
 
-- **Status:** Ready for catalog implementation
+- **Status:** Implemented by P3-M1-T03
 - **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` in allowed scope
 - **Preconditions:** The actor is authenticated in an active organization and has category-management permission.
 - **Trigger:** The actor creates, updates, or deactivates an organization category.
@@ -226,10 +226,10 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   3. For update/deactivation, it loads the category inside the same organization and checks current state.
   4. It creates or updates/deactivates the category while preserving valid product references and history.
   5. It returns the current category representation.
-- **Alternative flows:** Products may remain uncategorized; an inactive category may be reactivated. Explicit product reassignment to another active category or null occurs through product editing only.
+- **Alternative flows:** Products may remain uncategorized; an inactive category may be reactivated. Direct detail and authorized `includeInactive=true` lists retain inactive visibility. Explicit product reassignment to another active category or null occurs through product editing only.
 - **Error cases:** Invalid/missing name; duplicate normalized key; category from another organization; unauthorized role; stale update (`CATEGORY_STALE`); attempted assignment of an inactive category; database failure.
 - **Business rules:** Category is flat and organization-scoped. It is never hard-deleted or merged in MVP. Deactivation preserves product references, does not deactivate products, and never silently reassigns them; inactive categories cannot receive new assignments.
-- **Authorization:** Create/edit follows catalog permission; deactivation is limited to `OWNER`, `ADMIN`, and `BRANCH_MANAGER`.
+- **Authorization:** Create/edit follows catalog permission; deactivate/reactivate is limited to `OWNER`, `ADMIN`, and `BRANCH_MANAGER`. Branch-scoped roles supply an active assigned `branchId` candidate that the API re-resolves; `OWNER`/`ADMIN` may use organization scope.
 - **Expected result:** One valid organization category is created or safely updated/deactivated, or no mutation occurs.
 - **Acceptance criteria:** Tenant, permission, accepted normalization/duplicate, product-reference, deactivation/history, stale-update, and failure tests pass.
 

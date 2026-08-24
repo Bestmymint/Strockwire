@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1 contract; transport shell, operational probes, registration, login, and authenticated-context foundation implemented |
+| Status | Architecture Freeze v1 contract; identity/access, branch/member management, and Catalog API implemented |
 | Base path | `/api/v1` |
 | Style | JSON REST |
 | Baseline | Architecture Freeze v1 |
@@ -599,27 +599,65 @@ holding shell.
 
 ## 8. Catalog endpoints
 
-All paths are organization-scoped because catalog resources belong to an organization.
+All paths are organization-scoped. Every endpoint authenticates and re-resolves
+the active membership and authorization context from PostgreSQL. `OWNER` and
+`ADMIN` may omit `branchId`; if supplied it must identify an active branch in
+the organization. Other roles must supply query `branchId=<uuid>` for an active
+assigned branch. Missing context returns `400 BRANCH_CONTEXT_REQUIRED`; invalid,
+inactive, cross-tenant, unassigned, or revoked context returns the same safe
+`403 FORBIDDEN`.
 
-| Method/path | Auth | Request | Response | Key validation/errors | Status |
-| --- | --- | --- | --- | --- | --- |
-| `GET /organizations/{organizationId}/categories` | Catalog read | Cursor/search/status | Categories | Invalid cursor/filter | Planned |
-| `POST /organizations/{organizationId}/categories` | Catalog write | Trimmed display name, optional description/status | Category | Duplicate normalized key | Planned |
-| `PATCH /organizations/{organizationId}/categories/{categoryId}` | Catalog write | Editable fields and exact prior `updatedAt` | Category | Cross-tenant ref, inactive assignment, `CATEGORY_STALE` | Planned |
-| `GET /organizations/{organizationId}/products` | Catalog read | Cursor, query, SKU/barcode/category/status | Products | Invalid filters/cursor | Planned |
-| `POST /organizations/{organizationId}/products` | Catalog write | Accepted product fields excluding cost/valuation | Product | Duplicate SKU/barcode, invalid category/unit/decimal | Planned |
-| `GET /organizations/{organizationId}/products/{productId}` | Catalog read | None | Product | Safe not-found | Planned |
-| `PATCH /organizations/{organizationId}/products/{productId}` | Catalog write | Editable fields and exact prior `updatedAt`; unit excluded | Product | Duplicate, `PRODUCT_STALE`, inactive category, history constraints | Planned |
+| Method/path | Permission | Request | Status |
+| --- | --- | --- | --- |
+| `GET /organizations/{organizationId}/categories` | `catalog.view` | `branchId`, `limit`, `cursor`, `q`, `includeInactive` | Implemented by P3-M1-T03 |
+| `POST /organizations/{organizationId}/categories` | `catalog.create-edit` | Strict name/optional description | Implemented by P3-M1-T03 |
+| `GET /organizations/{organizationId}/categories/{categoryId}` | `catalog.view` | Optional `branchId` | Implemented by P3-M1-T03 |
+| `PATCH /organizations/{organizationId}/categories/{categoryId}` | `catalog.create-edit` | Name/description plus exact `expectedUpdatedAt` | Implemented by P3-M1-T03 |
+| `POST /organizations/{organizationId}/categories/{categoryId}/deactivate` | `catalog.deactivate` | Exact `expectedUpdatedAt` | Implemented by P3-M1-T03 |
+| `POST /organizations/{organizationId}/categories/{categoryId}/reactivate` | `catalog.deactivate` | Exact `expectedUpdatedAt` | Implemented by P3-M1-T03 |
+| `GET /organizations/{organizationId}/products` | `catalog.view` | `branchId`, `limit`, `cursor`, `q`, `categoryId`, `includeInactive` | Implemented by P3-M1-T03 |
+| `POST /organizations/{organizationId}/products` | `catalog.create-edit` | Strict accepted Product fields | Implemented by P3-M1-T03 |
+| `GET /organizations/{organizationId}/products/{productId}` | `catalog.view` | Optional `branchId` | Implemented by P3-M1-T03 |
+| `PATCH /organizations/{organizationId}/products/{productId}` | `catalog.create-edit` | Mutable fields plus exact `expectedUpdatedAt`; unit excluded | Implemented by P3-M1-T03 |
+| `POST /organizations/{organizationId}/products/{productId}/deactivate` | `catalog.deactivate` | Exact `expectedUpdatedAt` | Implemented by P3-M1-T03 |
+| `POST /organizations/{organizationId}/products/{productId}/reactivate` | `catalog.deactivate` | Exact `expectedUpdatedAt` | Implemented by P3-M1-T03 |
 
-Create/update validation:
+Category create always starts `ACTIVE`. It accepts only `name` and optional
+`description`; blank descriptions become `null`, and normalized identity is
+server-derived. PATCH may change name/description on either lifecycle state and
+requires at least one mutable field. Missing/cross-tenant detail is
+`CATEGORY_NOT_FOUND`; normalized collisions are `CATEGORY_NAME_CONFLICT`; stale
+writes are `CATEGORY_STALE`.
 
-- SKU is required, canonicalized by trim/NFKC/uppercase, matches `^[A-Z0-9][A-Z0-9._-]{0,63}$`, and is unique within organization.
-- Barcode is optional; trim it, map blank to null, reject control characters and values longer than 128, and enforce exact trimmed uniqueness within organization when present.
-- Category must belong to the same organization and be active for a new assignment. Categories are flat and a product may be uncategorized.
-- `basePrice` is a non-negative decimal string with scale at most 4; reject rather than round excess scale. Its target persistence representation is `DECIMAL(19,4)`, but its catalog boundary does not resolve `OQ-008` transaction rounding.
-- `unit` is one immutable base unit: `EA`, `PACK`, `BOX`, `KG`, `G`, `L`, `ML`, `M`, or `CM`. Quantity strings target `DECIMAL(18,4)`; `EA`, `PACK`, and `BOX` must be mathematically integral, while all other units permit at most four fractional digits. No unit conversion exists in MVP.
-- Product and Category mutations carry the exact prior millisecond UTC `updatedAt`; stale writes return `PRODUCT_STALE` or `CATEGORY_STALE`.
-- No client can create branch-price data. Cost, valuation, COGS, and authoritative purchasing-cost behavior remain blocked by `OQ-010`.
+Product create always starts `ACTIVE` and accepts only name, description, SKU,
+barcode, base-price decimal string, immutable unit, and optional category.
+PATCH may change every listed field except unit, status, identity, ownership,
+and timestamps. An omitted category preserves the relation; `null` removes it.
+New category assignments require an active same-organization Category. An
+unrelated edit may retain the Product's current inactive Category. Missing or
+cross-tenant categories return `CATEGORY_NOT_FOUND`; inactive new assignments
+return `CATEGORY_INACTIVE`. Duplicate SKU/barcode and stale writes return
+`SKU_CONFLICT`, `BARCODE_CONFLICT`, and `PRODUCT_STALE`. Product responses always
+serialize `basePrice` with exactly four fractional digits and never as a JSON
+number.
+
+Lifecycle commands are exact-version, idempotent when already in the desired
+state, and never delete or cascade. Direct detail may return inactive records.
+Lists default to active records. `includeInactive=true` requires either
+`catalog.create-edit` or `catalog.deactivate`; view-only `CASHIER` is denied.
+
+Lists use opaque keyset cursors ordered by immutable `(createdAt ASC, id ASC)`,
+default limit 25, and maximum 100. Cursors are bound to normalized filters and
+scope candidates; malformed or mismatched cursors return `INVALID_CURSOR`.
+Category `q` applies normalized substring matching. Product `q` OR-matches
+case-insensitive name substring, canonical SKU prefix, and exact trimmed
+barcode. Product `categoryId` accepts a UUID or `uncategorized`; a missing or
+cross-tenant filter UUID returns an empty page without disclosing existence.
+
+SKU, barcode, base-price, unit, normalization, optimistic concurrency, and
+same-tenant constraints follow `ADR-022`/`ADR-023`. Database uniqueness remains
+authoritative under races. No catalog endpoint exposes cost, valuation, COGS,
+stock, quantity, branch pricing, or hard deletion.
 
 ## 9. Inventory endpoints
 
