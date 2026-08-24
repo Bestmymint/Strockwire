@@ -193,7 +193,7 @@ The accepted fixed RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY
   "sku": "COKE-325",
   "barcode": "8850000000000",
   "name": "Coke 325 ml",
-  "unit": "piece",
+  "unit": "EA",
   "basePrice": "20.00",
   "status": "active",
   "createdAt": "ISO-8601",

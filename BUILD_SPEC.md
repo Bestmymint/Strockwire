@@ -6,7 +6,7 @@
 | Full name | StockWise: Smart Inventory and Sales Analytics Platform for SMEs |
 | Repository | `stockwise` pnpm workspace monorepo |
 | Baseline | Architecture Freeze v1 |
-| Status | Repository foundation and minimal web/API shells implemented; domain implementation gated by explicit decisions |
+| Status | Repository foundation, web/API shells, identity/access lifecycle, and organization catalog persistence implemented; later domain implementation remains gated by explicit decisions |
 | Last updated | 2026-08-25 |
 
 ## 1. Purpose and source-of-truth map
@@ -201,6 +201,12 @@ Google login is a future feature. No JWT browser authentication, browser token s
 - Enforce organization-scoped SKU and barcode uniqueness rules.
 - Search and filter products for management and POS use.
 - Preserve past sale snapshots when current product details change.
+
+P3-M1-T02 implements only the organization-scoped Category/Product persistence
+foundation, accepted normalization helpers, tenant uniqueness, composite
+Category ownership, lifecycle enums, base price, and base unit. Catalog REST
+management/search remains P3-M1-T03; no inventory, cost/valuation, branch-price,
+or operational quantity persistence is part of the catalog model.
 
 Branch-level price overrides are out of MVP scope. Every branch uses the Product's organization-level base selling price; a catalog-price change affects future operations only, and future sale items must snapshot the actual unit price used at sale time.
 
@@ -460,7 +466,7 @@ Python, FastAPI, microservices, and Kubernetes are not part of the current basel
 
 ## 14. Important constraints
 
-1. This repository contains the approved repository/tooling foundation, Source of Truth documentation, and minimal Next.js web and Express API transport shells. No API endpoint, domain, database, or infrastructure implementation exists yet.
+1. This repository contains the approved repository/tooling foundation, Next.js web and Express API shells, completed identity/access lifecycle, and the organization-scoped Category/Product persistence model. Catalog APIs/UI and later retail-domain, analytics, AI, and cloud implementation remain planned.
 2. Product requirements and architecture decisions are made in planning and recorded here before Codex implements them.
 3. Codex may choose local implementation details only inside accepted boundaries; it must surface product or architecture ambiguity.
 4. Significant domain implementation must not start until the Critical Domain Decision Gate and every additional task-specific Open Question affecting that domain are resolved.

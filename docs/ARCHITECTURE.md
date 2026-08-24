@@ -147,6 +147,7 @@ flowchart TD
 6. A user can have organization-wide access and/or access to multiple branches.
 7. An organization aggregate is computed only from branches visible to the actor.
 8. Background jobs execute with an explicit organization and report scope, not an unrestricted global query accidentally reused from request code.
+9. Catalog persistence carries `organization_id` on Category and Product; a Product's nullable Category relation uses a composite Category/organization foreign key, so PostgreSQL rejects cross-tenant references independently of application code.
 
 ### Trusted request context
 

@@ -443,6 +443,18 @@ Constraints and indexes:
 - Products may keep a nullable category reference; uncategorized products are accepted.
 - An inactive category remains referenced but cannot receive a new product assignment. Category mutations use exact `updatedAt` optimistic concurrency.
 
+P3-M1-T02 persists this contract in `categories` with UUID `id` and
+`organization_id`, `TEXT` display/normalized names and optional description,
+the shared `catalog_status` enum, and millisecond UTC `created_at`/`updated_at`.
+The database rejects blank or non-trimmed display names using the explicit
+Unicode whitespace set used by the application boundary. The application-owned
+catalog value helper computes `normalized_name`; a unique
+`(organization_id, normalized_name)` index is the final concurrent-write
+boundary, with bytewise `C` collation making equality independent of the
+database's default locale. Unique `(id, organization_id)` supports same-tenant composite
+references. Organization deletion/update and referenced Category
+deletion/update are restrictive.
+
 #### `Product`
 
 Purpose: organization-level catalog item referenced by all branch operations.
@@ -471,6 +483,31 @@ Constraints and indexes:
 - Unit is one of `EA`, `PACK`, `BOX`, `KG`, `G`, `L`, `ML`, `M`, or `CM`. Quantity values target `DECIMAL(18,4)`; `EA`, `PACK`, and `BOX` are integer-only.
 - Index `(organization, status, name)` or a more suitable search index based on measured search behavior.
 - Product status changes must not rewrite historical sale, purchase, receipt, or ledger records.
+
+P3-M1-T02 persists this contract in `products` with UUID `id`, required
+`organization_id`, nullable `category_id`, trimmed `TEXT` name, optional `TEXT`
+description, canonical `VARCHAR(64)` SKU, nullable exact `VARCHAR(128)` barcode,
+`DECIMAL(19,4)` `base_price`, `product_unit`, shared `catalog_status`, and
+millisecond UTC timestamps. It implements:
+
+- unique `(organization_id, sku)` and `(organization_id, barcode)` indexes;
+  PostgreSQL unique-null semantics permit multiple uncoded Products while
+  serializing every non-null barcode conflict, and bytewise `C` collation
+  preserves exact canonical SKU/barcode equality across database locales;
+- a composite `(category_id, organization_id)` foreign key to Category's
+  `(id, organization_id)` key, plus direct restrictive organization ownership;
+- database checks for a trimmed/nonblank Product name, canonical SKU grammar,
+  trimmed/nonblank/control-character-free barcode, and non-negative base price;
+- organization/status/name and category/organization indexes for the accepted
+  catalog access paths.
+
+`parseCatalogBasePrice` rejects negative, excess-scale, non-decimal, and
+out-of-range catalog strings before Prisma creates a `Decimal`; PostgreSQL then
+stores the accepted value at exact scale four. This application check is
+mandatory because PostgreSQL coerces input to a declared `DECIMAL(19,4)` before
+a row check can observe excess source precision. Product contains no branch,
+stock/quantity, unit-conversion, supplier, cost/valuation/COGS, or branch-price
+column.
 
 Lifecycle:
 

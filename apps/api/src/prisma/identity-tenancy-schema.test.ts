@@ -57,7 +57,7 @@ describe("identity and tenancy database schema", () => {
     await resetTestDatabase(environment);
   });
 
-  it("applies the reviewed identity and tenancy migrations", async () => {
+  it("applies every reviewed forward migration", async () => {
     const migrations = await prisma.$queryRaw<
       { migrationName: string; finished: boolean; active: boolean }[]
     >`
@@ -96,10 +96,16 @@ describe("identity and tenancy database schema", () => {
         finished: true,
         active: true,
       },
+      {
+        migrationName: "20260825120000_category_product_schema",
+        finished: true,
+        active: true,
+      },
     ]);
     expect(tables.map(({ tableName }) => tableName)).toEqual([
       "branch_assignments",
       "branches",
+      "categories",
       "email_verification_tokens",
       "first_organization_onboardings",
       "invitation_branch_scopes",
@@ -109,6 +115,7 @@ describe("identity and tenancy database schema", () => {
       "organization_memberships",
       "organizations",
       "password_reset_tokens",
+      "products",
       "sessions",
       "users",
     ]);

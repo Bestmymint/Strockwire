@@ -52,6 +52,27 @@ enum BranchAssignmentStatus {
   @@map("branch_assignment_status")
 }
 
+enum CatalogStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("catalog_status")
+}
+
+enum ProductUnit {
+  EA
+  PACK
+  BOX
+  KG
+  G
+  L
+  ML
+  M
+  CM
+
+  @@map("product_unit")
+}
+
 enum InvitationRevocationReason {
   REPLACED
   CANCELLED
@@ -105,8 +126,53 @@ model Organization {
   memberships OrganizationMembership[]
   branches    Branch[]
   invitations Invitation[]
+  categories  Category[]
+  products    Product[]
 
   @@map("organizations")
+}
+
+model Category {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  name           String        @db.Text
+  normalizedName String        @map("normalized_name") @db.Text
+  description    String?       @db.Text
+  status         CatalogStatus @default(ACTIVE)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  products     Product[]
+
+  @@unique([organizationId, normalizedName], map: "categories_organization_id_normalized_name_key")
+  @@unique([id, organizationId], map: "categories_id_organization_id_key")
+  @@index([organizationId, status, name], map: "categories_organization_id_status_name_idx")
+  @@map("categories")
+}
+
+model Product {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  categoryId     String?       @map("category_id") @db.Uuid
+  name           String        @db.Text
+  description    String?       @db.Text
+  sku            String        @db.VarChar(64)
+  barcode        String?       @db.VarChar(128)
+  basePrice      Decimal       @map("base_price") @db.Decimal(19, 4)
+  unit           ProductUnit
+  status         CatalogStatus @default(ACTIVE)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  category     Category?    @relation(fields: [categoryId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([organizationId, sku], map: "products_organization_id_sku_key")
+  @@unique([organizationId, barcode], map: "products_organization_id_barcode_key")
+  @@index([organizationId, status, name], map: "products_organization_id_status_name_idx")
+  @@index([categoryId, organizationId], map: "products_category_id_organization_id_idx")
+  @@map("products")
 }
 
 model OrganizationMembership {
