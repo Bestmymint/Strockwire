@@ -250,9 +250,40 @@ requests.
 | `GET /me` | Authenticated | None | Safe profile and onboarding status | Authentication required | Planned after identity foundation |
 | `PATCH /me/profile` | Authenticated | Required display name; optional phone | Updated safe profile | Validation, stale/conflict | Planned after identity foundation |
 | `GET /me/organizations` | Authenticated | Pagination if needed | Accessible organization summaries | Authentication required | Planned |
-| `GET /organizations/{organizationId}/branches` | Organization-scoped | Filters/pagination | Accessible branch summaries | Not found/forbidden safely | Planned |
+| `GET /me/access-context` | Authenticated | None | Safe active user/organization/role/effective-branch context | Authentication required | Implemented by P2-M3-T02 |
+| `GET /organizations/{organizationId}/branches` | Organization-scoped | Optional exact `includeInactive=true`; no pagination | Code-ascending accessible branch list | Invalid query/forbidden safely | Implemented by P2-M3-T02 |
+| `POST /organizations/{organizationId}/branches` | `branch.manage` (`OWNER`/`ADMIN`) | Code, name, optional phone/address | `201` safe branch | Validation, forbidden, `BRANCH_CODE_CONFLICT` | Implemented by P2-M3-T02 |
+| `PATCH /organizations/{organizationId}/branches/{branchId}` | `branch.manage` (`OWNER`/`ADMIN`) | Editable name/phone/address plus exact `expectedUpdatedAt` | Updated safe branch | Validation, safe not-found, `BRANCH_STALE` | Implemented by P2-M3-T02 |
+| `POST /organizations/{organizationId}/branches/{branchId}/deactivate` | `branch.manage` (`OWNER`/`ADMIN`) | Exact `expectedUpdatedAt` | Inactive safe branch | Safe not-found, `BRANCH_STALE`, `LAST_ACTIVE_BRANCH` | Implemented by P2-M3-T02 |
+| `POST /organizations/{organizationId}/branches/{branchId}/reactivate` | `branch.manage` (`OWNER`/`ADMIN`) | Exact `expectedUpdatedAt` | Active safe branch | Safe not-found, `BRANCH_STALE` | Implemented by P2-M3-T02 |
 
 There are no Google OAuth endpoints in the MVP contract.
+
+### Branch and access-context contract
+
+Branch responses contain only `id`, `organizationId`, canonical immutable
+`code`, `name`, nullable `phone`/`address`, `status`, and millisecond UTC
+`updatedAt`. Create trims/uppercases code and trims other boundary text; blank
+optional text becomes `null`. Branch code is 1–16 characters matching
+`[A-Z0-9][A-Z0-9_-]*`. Duplicate names are allowed. Unknown fields, including
+actor, role, permission, organization reassignment, or branch code in an edit,
+fail strict validation.
+
+`includeInactive` defaults false. Only `OWNER`/`ADMIN` may request true. They
+list every organization branch; branch-only roles list active assigned branches
+only and cannot expose inactive rows. All lists order by code ascending with ID
+as a deterministic tie-breaker and are intentionally unpaginated for MVP.
+
+Lifecycle commands are explicit and same-state commands are idempotent only
+when `expectedUpdatedAt` still matches. `LAST_ACTIVE_BRANCH` is enforced inside
+the serialized database transaction. Assignment rows are not changed by branch
+lifecycle. All cookie-authenticated mutations use the accepted same-origin
+request protection.
+
+Access-context returns safe actor display data plus active organization
+memberships, role, and effective active branches. It omits sessions, permission
+arrays, assignments, inactive objects, credential data, and tokens. Clients may
+use it to render navigation, never as proof that a later request is authorized.
 
 ### Registration contract
 

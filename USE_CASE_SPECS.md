@@ -111,19 +111,19 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-IAM-005 — Switch active branch
 
-- **Status:** Ready after identity/authorization foundation
+- **Status:** Implemented by P2-M3-T02
 - **Actor:** Authenticated organization member
 - **Preconditions:** The user has access to at least one active branch.
 - **Trigger:** The user chooses a branch from the branch switcher or an authorized organization aggregate.
 - **Main flow:**
-  1. The client requests accessible branches.
-  2. The user selects one branch.
-  3. Every subsequent branch-scoped request names that candidate branch.
-  4. The API verifies current membership and branch ownership on every request.
-  5. The UI invalidates/refetches branch-dependent TanStack Query data.
-- **Alternative flows:** Organization-wide view is available to `OWNER`/`ADMIN`; the active branch may be restored locally as navigation context but is revalidated.
+  1. The client fetches `GET /me/access-context` and resolves only active effective access.
+  2. It validates the `/app` organization/branch query candidates against that fresh response.
+  3. Missing or revoked branch context falls back to the first accessible branch ordered by code; one organization is automatic, several require a chooser, and none renders a safe no-access state.
+  4. Before switching, the UI cancels and removes the previous `["branch-scoped", organizationId, branchId, ...]` TanStack Query prefix, then replaces the URL.
+  5. Every later branch-scoped API request still revalidates current membership, assignment, ownership, status, and permission server-side.
+- **Alternative flows:** `OWNER`/`ADMIN` see all active organization branches; branch-only roles see active assigned branches only. An organization with no effective branch shows a safe no-branch state.
 - **Error cases:** Branch inactive; access revoked; branch from another organization; stale cached selection; network failure. The UI falls back to an allowed selection and shows a safe message.
-- **Business rules:** Selection is navigation context, not authorization. One user can access multiple branches without separate accounts.
+- **Business rules:** Selection is URL-only navigation context, not authorization. It is never persisted in the database, session, cookie, local storage, or session storage. One user can access multiple branches without separate accounts.
 - **Authorization:** Active organization/branch membership and action permission.
 - **Expected result:** The user sees only data from the selected authorized scope.
 - **Acceptance criteria:** Cross-branch/tenant tests; revoked access takes effect server-side; cached queries do not display previous-branch data as current.

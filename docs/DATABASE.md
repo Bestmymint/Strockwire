@@ -256,8 +256,21 @@ Required logical attributes:
 Constraints and indexes:
 
 - Unique `(organization, branch code)`.
-- Branch organization ownership is immutable after operational records exist.
+- Post-onboarding branch code and organization ownership are immutable.
+- Codes are canonical uppercase ASCII, 1–16 characters, match
+  `[A-Z0-9][A-Z0-9_-]*`, and are unique only within their organization. `MAIN`
+  is not globally reserved.
 - A branch cannot reference another organization.
+- Branches use only `ACTIVE`/`INACTIVE`; deactivation sets `deactivatedAt`,
+  reactivation clears it, and no branch-management delete exists.
+- A lifecycle transaction locks the organization row and refuses to deactivate
+  its last active branch. The lock serializes competing deactivations.
+- Branch edits and lifecycle changes compare the exact prior millisecond UTC
+  `updatedAt`; a mismatch is a stale-write conflict. A same-state lifecycle
+  request with the matching version is idempotent and does not advance the row.
+- Branch assignments are preserved when a branch becomes inactive. They become
+  ineffective while inactive and effective again after reactivation if the
+  assignment and membership remain active.
 
 #### `BranchAssignment`
 

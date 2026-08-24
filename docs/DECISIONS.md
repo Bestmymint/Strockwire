@@ -797,6 +797,61 @@ holding route.
 - Request hashes, provenance identifiers, session state, and permission arrays
   never enter the public response.
 
+## ADR-020 — Use lifecycle branches and URL-only application context
+
+- **Date:** 2026-08-24
+- **Status:** Accepted
+- **Type:** Product, data, API, authorization, and frontend-state boundary
+
+### Context
+
+P2-M3-T02 required exact post-onboarding code rules, branch lifecycle and
+concurrency behavior, effective-access representation, and a switcher state
+owner. Persisting a selected branch in several places would create stale or
+conflicting authority, while deactivation without serialization could leave an
+organization with no active branch.
+
+### Decision
+
+An `OWNER` or `ADMIN`, authorized by centralized `branch.manage`, creates and
+manages branches. Submitted codes are trimmed, uppercased, 1–16 characters,
+match `[A-Z0-9][A-Z0-9_-]*`, are immutable, and are unique per organization;
+`MAIN` has no global reservation. Names are trimmed/nonblank up to the existing
+schema limit, duplicates are allowed, and optional phone/address values are
+trimmed with blank mapped to `NULL`.
+
+Branches have explicit activate/deactivate commands and no delete endpoint.
+Every edit or lifecycle command includes the exact prior millisecond UTC
+`updatedAt`. Mismatch returns `409 BRANCH_STALE`; matching same-state lifecycle
+is idempotent. Deactivation locks the organization row and checks at least one
+other active branch inside the transaction, returning `409 LAST_ACTIVE_BRANCH`
+when prohibited. Assignments remain persisted, have no effect while their
+branch is inactive, and regain effect on reactivation when otherwise active.
+
+Default branch listing returns active rows. Only `OWNER`/`ADMIN` may include
+inactive rows; branch-only roles receive active assigned rows. Results are
+unpaginated and code-ascending for MVP. `GET /me/access-context` returns only
+active memberships/organizations and effective active branches: all active
+branches for `OWNER`/`ADMIN`, active assigned branches for other roles.
+
+The browser owns selection only in
+`/app?organizationId=<id>&branchId=<id>`. It re-resolves candidates against
+fresh access context, applies deterministic fallbacks, and canonicalizes with
+`router.replace`. No database, user/session record, cookie, `localStorage`, or
+`sessionStorage` selection is added. Before transition or revoked-context
+fallback, it cancels and removes the previous TanStack Query prefix
+`["branch-scoped", organizationId, branchId, ...]`.
+
+### Consequences
+
+- URL values select navigation candidates but never prove access; every API
+  endpoint continues server-side membership, scope, status, and permission
+  validation.
+- A refresh or access revocation can immediately remove an ineffective branch
+  from navigation and its old cached branch data.
+- Branch deletion, branch-code changes, selection persistence, membership
+  administration, and later retail features are outside P2-M3-T02.
+
 ## 2. Explicitly superseded planning directions
 
 The current ADRs supersede these earlier, unimplemented ideas:

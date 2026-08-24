@@ -159,6 +159,20 @@ The MVP permission baseline is:
 - Invite employees by email with an expiring, single-use invitation that establishes the accepted organization role and branch scope atomically.
 - Sign out by revoking the current session; support revoking all sessions for a user.
 
+Branch management is fixed by `ADR-020`. After first onboarding, an authorized
+`OWNER` or `ADMIN` supplies a code that is trimmed, uppercased, 1–16 characters,
+starts with an ASCII alphanumeric character, and otherwise contains only ASCII
+alphanumeric characters, `_`, or `-`. Codes are unique per organization and
+immutable; `MAIN` is not globally reserved. Branches are activated/deactivated,
+never deleted. Every edit or lifecycle command carries the exact prior
+millisecond UTC `updatedAt`; stale commands fail rather than overwrite.
+
+Application organization/branch selection lives only in `/app` URL query
+parameters and is re-resolved from the freshly fetched server access context.
+It is navigation state, never authentication or authorization evidence. The
+browser stores no selected organization/branch in a session, user row, cookie,
+`localStorage`, or `sessionStorage`.
+
 Google login is a future feature. No JWT browser authentication, browser token storage in `localStorage`/`sessionStorage`, refresh-token flow, automatic invitation account creation, or naive cross-email account linking is part of the MVP.
 
 ### 10.2 Product catalog

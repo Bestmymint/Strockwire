@@ -56,7 +56,7 @@ flowchart TD
     CW -. job telemetry .- JOB
 ```
 
-The Next.js/Express shells, operational probes, local PostgreSQL/Prisma identity foundation, pure authorization policy, complete authentication lifecycle/UI, and authenticated replay-safe first-organization/`MAIN`-branch onboarding are implemented. No later branch management/switcher, invitation/member administration, retail domain, analytics/AI integration, AWS resource, or production deployment exists yet.
+The Next.js/Express shells, operational probes, local PostgreSQL/Prisma identity foundation, pure authorization policy, complete authentication lifecycle/UI, authenticated replay-safe first-organization/`MAIN`-branch onboarding, and branch management/URL-owned context switcher are implemented. No invitation/member administration, retail domain, analytics/AI integration, AWS resource, or production deployment exists yet.
 
 ### Repository boundaries
 
@@ -161,6 +161,21 @@ Authenticated actor
 ```
 
 Path/query/body fields select a candidate resource; they never grant access. Cross-tenant records should be reported without revealing their existence.
+
+### Application context and branch cache boundary
+
+`GET /api/v1/me/access-context` returns only active memberships and currently
+effective active branches. `OWNER`/`ADMIN` receive every active branch in the
+organization; branch-only roles receive only active explicitly assigned
+branches. The response is safe display/navigation data, not a permission token.
+
+The Next.js application uses only `/app?organizationId=<id>&branchId=<id>` for
+selection. Each load resolves those candidates against the newest access
+context, chooses the first code-ascending effective branch when a candidate is
+missing or revoked, and replaces the URL with the canonical result. A switch or
+revocation cancels and removes the old TanStack Query prefix
+`["branch-scoped", organizationId, branchId, ...]` before transition so cached
+data from the prior branch cannot render as current.
 
 ### Authorization policy convention
 

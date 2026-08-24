@@ -28,6 +28,9 @@ import { createRegistrationService } from "./modules/identity/registration-servi
 import { createSessionConfiguration } from "./modules/identity/session-configuration.ts";
 import { secureSessionTokenProvider } from "./modules/identity/session-token.ts";
 import { secureOneTimeTokenProvider } from "./modules/identity/one-time-token.ts";
+import { createPrismaBranchRepository } from "./modules/organizations/branch-repository.ts";
+import { createBranchRouter } from "./modules/organizations/branch-router.ts";
+import { createBranchService } from "./modules/organizations/branch-service.ts";
 import { getPrismaClient } from "./prisma/client.ts";
 import { createShutdownHandler, startApiServer } from "./server.ts";
 
@@ -68,6 +71,9 @@ async function main(): Promise<void> {
     createFirstOrganizationOnboardingService({
       repository: createPrismaFirstOrganizationOnboardingRepository(prisma),
     });
+  const branchService = createBranchService({
+    repository: createPrismaBranchRepository(prisma),
+  });
   const apiRouter = Router();
   apiRouter.use(
     createRegistrationRouter({
@@ -96,6 +102,13 @@ async function main(): Promise<void> {
     createFirstOrganizationOnboardingRouter({
       authenticationMiddleware,
       onboardingService: firstOrganizationOnboardingService,
+      publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
+    }),
+  );
+  apiRouter.use(
+    createBranchRouter({
+      authenticationMiddleware,
+      branchService,
       publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
     }),
   );
