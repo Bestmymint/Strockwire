@@ -9,6 +9,7 @@ describe("API environment boundary", () => {
         DATABASE_URL:
           "postgresql://local-user:local-password@127.0.0.1:5432/local-database",
         STOCKWISE_API_PORT: "3001",
+        STOCKWISE_PUBLIC_WEB_ORIGIN: "http://localhost:3000/",
         STOCKWISE_RUNTIME_ENV: "development",
       }),
     ).toEqual({
@@ -16,6 +17,7 @@ describe("API environment boundary", () => {
         "postgresql://local-user:local-password@127.0.0.1:5432/local-database",
       STOCKWISE_RUNTIME_ENV: "development",
       STOCKWISE_API_PORT: 3001,
+      STOCKWISE_PUBLIC_WEB_ORIGIN: "http://localhost:3000",
       STOCKWISE_SESSION_ABSOLUTE_TIMEOUT_MINUTES: 10_080,
       STOCKWISE_SESSION_IDLE_TIMEOUT_MINUTES: 1_440,
       STOCKWISE_SESSION_TOUCH_INTERVAL_MINUTES: 15,
@@ -28,13 +30,19 @@ describe("API environment boundary", () => {
         DATABASE_URL:
           "postgresql://local-user:local-password@127.0.0.1:5432/local-database",
         STOCKWISE_API_PORT: "3001",
+        STOCKWISE_EMAIL_FROM: "StockWise <verified@example.com>",
+        STOCKWISE_PUBLIC_WEB_ORIGIN: "https://stockwise.example.com",
         STOCKWISE_RUNTIME_ENV: "production",
+        RESEND_API_KEY: "server-only-resend-key",
         STOCKWISE_SESSION_ABSOLUTE_TIMEOUT_MINUTES: "20160",
         STOCKWISE_SESSION_IDLE_TIMEOUT_MINUTES: "2880",
         STOCKWISE_SESSION_TOUCH_INTERVAL_MINUTES: "30",
       }),
     ).toMatchObject({
       STOCKWISE_RUNTIME_ENV: "production",
+      RESEND_API_KEY: "server-only-resend-key",
+      STOCKWISE_EMAIL_FROM: "StockWise <verified@example.com>",
+      STOCKWISE_PUBLIC_WEB_ORIGIN: "https://stockwise.example.com",
       STOCKWISE_SESSION_ABSOLUTE_TIMEOUT_MINUTES: 20_160,
       STOCKWISE_SESSION_IDLE_TIMEOUT_MINUTES: 2_880,
       STOCKWISE_SESSION_TOUCH_INTERVAL_MINUTES: 30,
@@ -50,6 +58,7 @@ describe("API environment boundary", () => {
       apiEnvironmentSchema.parse({
         DATABASE_URL: "mysql://local-user@127.0.0.1:3306/local-database",
         STOCKWISE_API_PORT: "3001",
+        STOCKWISE_PUBLIC_WEB_ORIGIN: "http://localhost:3000",
         STOCKWISE_RUNTIME_ENV: "development",
       }),
     ).toThrow();
@@ -58,6 +67,7 @@ describe("API environment boundary", () => {
         DATABASE_URL:
           "postgresql://local-user:local-password@127.0.0.1:5432/local-database",
         STOCKWISE_API_PORT: "3001",
+        STOCKWISE_PUBLIC_WEB_ORIGIN: "http://localhost:3000",
         STOCKWISE_RUNTIME_ENV: "development",
         UNOWNED_VALUE: "must-not-be-accepted",
       }),
@@ -70,6 +80,15 @@ describe("API environment boundary", () => {
         STOCKWISE_RUNTIME_ENV: "development",
         STOCKWISE_SESSION_ABSOLUTE_TIMEOUT_MINUTES: "60",
         STOCKWISE_SESSION_IDLE_TIMEOUT_MINUTES: "61",
+      }),
+    ).toThrow();
+    expect(() =>
+      loadApiEnvironment({
+        DATABASE_URL:
+          "postgresql://local-user:local-password@127.0.0.1:5432/local-database",
+        STOCKWISE_API_PORT: "3001",
+        STOCKWISE_PUBLIC_WEB_ORIGIN: "https://stockwise.example.com",
+        STOCKWISE_RUNTIME_ENV: "production",
       }),
     ).toThrow();
   });

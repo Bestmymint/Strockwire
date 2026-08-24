@@ -20,6 +20,23 @@ export function serializeSessionCookie(
   return attributes.join("; ");
 }
 
+export function serializeClearedSessionCookie(secure: boolean): string {
+  const attributes = [
+    `${SESSION_COOKIE_NAME}=`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=0",
+    "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+  ];
+
+  if (secure) {
+    attributes.push("Secure");
+  }
+
+  return attributes.join("; ");
+}
+
 export function readSessionCookie(
   cookieHeader: string | undefined,
 ): string | null {

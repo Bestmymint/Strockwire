@@ -4,6 +4,13 @@ import { createApp } from "./app.ts";
 import { loadApiEnvironment } from "./environment.ts";
 import { createApiLogger } from "./logger.ts";
 import { createPrismaAuthenticationRepository } from "./modules/identity/authentication-repository.ts";
+import { createPrismaAuthenticationSessionRepository } from "./modules/identity/authentication-repository.ts";
+import { createAuthenticationMiddleware } from "./modules/identity/authentication-context.ts";
+import { createPrismaCredentialLifecycleRepository } from "./modules/identity/credential-lifecycle-repository.ts";
+import { createCredentialLifecycleRouter } from "./modules/identity/credential-lifecycle-router.ts";
+import { createCredentialLifecycleService } from "./modules/identity/credential-lifecycle-service.ts";
+import { createIdentityEmailProvider } from "./modules/identity/email-provider-configuration.ts";
+import { createEmailRequestLimiter } from "./modules/identity/email-request-limiter.ts";
 import { createLoginLimiter } from "./modules/identity/login-limiter.ts";
 import { createLoginRouter } from "./modules/identity/login-router.ts";
 import { createLoginService } from "./modules/identity/login-service.ts";
@@ -17,6 +24,7 @@ import { createRegistrationRouter } from "./modules/identity/registration-router
 import { createRegistrationService } from "./modules/identity/registration-service.ts";
 import { createSessionConfiguration } from "./modules/identity/session-configuration.ts";
 import { secureSessionTokenProvider } from "./modules/identity/session-token.ts";
+import { secureOneTimeTokenProvider } from "./modules/identity/one-time-token.ts";
 import { getPrismaClient } from "./prisma/client.ts";
 import { createShutdownHandler, startApiServer } from "./server.ts";
 
@@ -27,6 +35,8 @@ async function main(): Promise<void> {
   const prisma = getPrismaClient(environment);
   const sessionConfiguration = createSessionConfiguration(environment);
   const authenticationRepository = createPrismaAuthenticationRepository(prisma);
+  const authenticationSessionRepository =
+    createPrismaAuthenticationSessionRepository(prisma);
   const loginService = createLoginService({
     configuration: sessionConfiguration,
     passwordVerifier: argon2PasswordVerifier,
@@ -37,11 +47,35 @@ async function main(): Promise<void> {
     passwordHasher: argon2PasswordHasher,
     repository: createPrismaRegistrationRepository(prisma),
   });
+  const credentialLifecycleService = createCredentialLifecycleService({
+    emailProvider: createIdentityEmailProvider(environment),
+    onDeliveryFailure(kind) {
+      logger.error({ deliveryType: kind }, "identity email delivery failed");
+    },
+    passwordHasher: argon2PasswordHasher,
+    publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
+    repository: createPrismaCredentialLifecycleRepository(prisma),
+    tokenProvider: secureOneTimeTokenProvider,
+  });
+  const authenticationMiddleware = createAuthenticationMiddleware({
+    configuration: sessionConfiguration,
+    repository: authenticationSessionRepository,
+  });
   const apiRouter = Router();
   apiRouter.use(
     createRegistrationRouter({
       limiter: createRegistrationLimiter(),
       registrationService,
+    }),
+  );
+  apiRouter.use(
+    createCredentialLifecycleRouter({
+      authenticationMiddleware,
+      configuration: sessionConfiguration,
+      lifecycleService: credentialLifecycleService,
+      passwordResetLimiter: createEmailRequestLimiter(),
+      publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
+      verificationResendLimiter: createEmailRequestLimiter(),
     }),
   );
   apiRouter.use(

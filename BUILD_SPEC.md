@@ -285,6 +285,19 @@ minutes per canonical email through a deterministic process-local in-memory
 limiter. Exhaustion returns `429` with `Retry-After`; distributed and IP-aware
 controls remain part of `OQ-020`.
 
+P2-M2-T03 adds two narrow MVP abuse-control exceptions without resolving
+`OQ-020`: verification resend and password-reset request each permit three
+syntactically valid requests per canonical email per fixed 15-minute
+process-local window. Each valid request consumes an attempt before account
+lookup, regardless of account state or provider outcome; the SHA-256-derived
+limiter key contains no plaintext email. The fourth and later requests return
+`429` with deterministic `Retry-After`. Malformed email allocates no limiter
+entry. Reset completion has no process-local token-keyed limiter: malformed,
+unknown, expired, revoked, replaced, and consumed tokens are rejected before
+Argon2. Distributed, IP-aware, global/provider-wide, proxy-trust,
+multi-instance, production DoS, and long-term telemetry controls remain open in
+`OQ-020`.
+
 ### Catalog and inventory
 
 - **FR-CAT-001:** Products and categories shall be scoped to one organization.
@@ -462,7 +475,7 @@ This is the canonical list. Other documents reference these IDs and must not red
 | **OQ-017** | At what local times do daily, weekly, monthly, and yearly jobs run, and how are retries/catch-up handled? | AI scheduler | Medium |
 | **OQ-018** | Which OpenRouter model, fallback policy, timeout, budget, prompt review, and retention rules are accepted? | AI integration | Medium |
 | **OQ-019** | Is a durable audit-log feature required in MVP or only production hardening? | Security/compliance | Medium |
-| **OQ-020** | Beyond the accepted process-local registration and login limiters, what distributed/IP-aware abuse controls, proxy trust, measurable performance, availability, recovery, browser-support, and data-retention targets define production readiness? | Hardening/load tests | Medium |
+| **OQ-020** | Beyond the accepted narrow process-local registration, login, verification-resend, and password-reset-request limiters, what distributed/IP-aware/global/provider-wide abuse controls, proxy trust, multi-instance coordination, production DoS controls, long-term abuse telemetry, measurable performance, availability, recovery, browser-support, and data-retention targets define production readiness? | Hardening/load tests | Medium |
 | **OQ-021** | Does purchasing support partial receiving, over-receiving, cancellation after partial receipt, and supplier returns in MVP? | Purchasing/receiving | High |
 | **OQ-023** | Which units of measure are supported in MVP, may quantities be fractional, and what database/API precision and rounding apply to quantities? | Catalog, inventory, purchasing, sales, analytics | Critical |
 | **OQ-024** | What normalization, duplicate-name, deactivation, and deletion rules apply to categories, suppliers, and other catalog master data? | Catalog and suppliers | Medium |

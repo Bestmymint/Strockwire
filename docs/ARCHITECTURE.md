@@ -205,6 +205,21 @@ the same generic `202 Accepted` public response. P2-M2-T03 later owns
 verification-token creation, resend, email-provider integration/delivery, and
 verification behavior.
 
+P2-M2-T03 implements verification issuance through the account-safe resend
+endpoint and password recovery through the same identity module. Use cases
+depend only on an `IdentityEmailProvider`; runtime selection binds production
+to Resend and development/test to non-delivery/recording adapters. A provider
+call occurs only after the token transaction commits. Provider failure is
+non-disclosing and triggers a conditional revocation of the just-issued token;
+there is no outbox or generic messaging framework in this MVP boundary.
+
+Verification and reset replacement transactions lock the owning user row,
+replace every prior open token, and create one fresh hash-only token. This
+serializes concurrent application requests without changing the accepted
+schema. Verification consumption and email state update are atomic. Reset first
+performs a cheap active-token lookup, then Argon2, then conditionally consumes
+the token, updates the password, and revokes all sessions in one transaction.
+
 The implemented registration boundary is split into the Express/Zod transport,
 an application service, the centralized Argon2 password boundary, a deterministic
 process-local limiter, and Prisma persistence/error translation. The limiter
@@ -429,6 +444,13 @@ The final design must decide public/private subnets, ingress, Next.js hosting mo
   per 15 minutes are processed; subsequent attempts receive `429` plus
   `Retry-After`. Only credential failures count, success does not reset an
   active window, and missing accounts use one fixed dummy Argon2 verifier.
+- Verification resend and password-reset request use independent process-local
+  fixed-window limiters: three syntactically valid requests per 15 minutes per
+  SHA-256-derived canonical-email key. Counting happens before account lookup
+  and does not vary by eligibility or provider outcome. Reset completion has no
+  MVP limiter and rejects invalid token state before Argon2. These are narrow
+  exceptions only; `OQ-020` remains open for distributed/IP/global/provider,
+  proxy, multi-instance, production DoS, and telemetry controls.
 - Passwords contain 15–128 Unicode code points and are preserved exactly as
   supplied without trimming, normalization, truncation, or composition rules.
   `argon2@0.45.1` creates a PHC-encoded Argon2id verifier with a generated salt,

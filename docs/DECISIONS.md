@@ -700,6 +700,49 @@ readiness questions.
 - `OQ-020` remains open for distributed/IP-aware controls, proxy trust, and the
   rest of production readiness.
 
+## ADR-018 — Bound verification and recovery abuse controls for MVP
+
+- **Date:** 2026-08-24
+- **Status:** Accepted
+- **Type:** Security and delivery boundary
+
+### Context
+
+P2-M2-T03 requires account-safe verification resend and password recovery, but
+`OQ-020` intentionally leaves production-wide abuse architecture open. The task
+still needs deterministic application-level behavior that cannot become an
+account-existence oracle.
+
+### Decision
+
+Verification resend and password-reset request each use an independent
+process-local fixed-window limiter. Three syntactically valid requests are
+accepted per canonical email per 15 minutes; a SHA-256 derivative is the only
+stored key. Every valid request consumes before account lookup and provider work
+regardless of account existence, verification/status eligibility, or delivery
+outcome. Attempt four and later returns `429 RATE_LIMITED` with deterministic
+remaining-window `Retry-After`; success does not reset the window. Malformed
+email follows validation and creates no limiter entry.
+
+Reset completion adds no token-keyed process-local limiter. Opaque 32-byte,
+hash-only, single-use, 30-minute tokens are validated for active state before
+Argon2, so malformed, random, expired, revoked, replaced, consumed, and replayed
+tokens do not trigger password hashing or allocate attacker-controlled keys.
+
+These are narrow MVP exceptions. `OQ-020` remains open for distributed,
+IP-aware, global/provider-wide, reverse-proxy-trust, multi-instance,
+production-DoS, long-term abuse-telemetry, and other production-readiness
+controls.
+
+### Consequences
+
+- Existing/missing/ineligible accounts have the same pre-exhaustion status/body,
+  limiter count, and `Retry-After` behavior.
+- The two request flows do not share counters, and no reset-completion limiter
+  state exists.
+- Process restart or another instance has an independent counter; this is not
+  represented as production-grade distributed protection.
+
 ## 2. Explicitly superseded planning directions
 
 The current ADRs supersede these earlier, unimplemented ideas:

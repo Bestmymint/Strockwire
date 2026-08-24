@@ -144,6 +144,34 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 - **Expected result:** Membership accurately reflects the accepted role and branch scope without orphaning governance.
 - **Acceptance criteria:** Horizontal/vertical escalation tests; duplicates safe; revoked branch access immediately denied; last-owner invariant tested.
 
+### UC-IAM-007 — Verify an email/password account
+
+- **Status:** Implemented by P2-M2-T03
+- **Actor:** Registered email/password user
+- **Preconditions:** Registration may have created an active unverified account; account existence is not public information.
+- **Trigger:** The user requests/resends verification or submits the opaque token from the delivered link.
+- **Main flow:** A syntactically valid resend consumes the independent per-email limiter before lookup. For an eligible active unverified account, the API locks the user, replaces the prior open token, stores only the fresh 32-byte token's SHA-256 hash with 24-hour expiry, and asks the provider abstraction to deliver it. Completion hashes the submitted token and atomically consumes it while setting `emailVerifiedAt`.
+- **Alternative flows:** The resend endpoint is also initial issuance. Missing, verified, or disabled accounts and provider failure return the same generic `202`; provider failure conditionally revokes the just-issued token. Concurrent resend leaves one open token, and concurrent completion succeeds at most once.
+- **Error cases:** Malformed email/token; expired, consumed, revoked, replaced, or random token; provider/database failure; exhausted limiter. Raw token/hash/provider details never enter public errors or logs.
+- **Business rules:** Three syntactically valid resend requests per canonical email per fixed 15-minute process-local window; attempt four returns `429` and deterministic `Retry-After`. Counting is eligibility/provider independent and uses a SHA-256-derived key. This does not resolve `OQ-020`.
+- **Authorization:** Public, account-safe endpoints with no organization/branch privilege.
+- **Expected result:** An eligible account becomes verified exactly once, or the public response remains non-disclosing.
+- **Acceptance criteria:** Hash-only storage, 24-hour expiry, replacement, provider compensation, replay/expiry/random/concurrency, limiter, and leakage tests pass.
+
+### UC-IAM-008 — Recover an email/password credential
+
+- **Status:** Implemented by P2-M2-T03
+- **Actor:** Email/password user who cannot use the current password
+- **Preconditions:** Account may or may not exist; only an active verified account is eligible for delivery.
+- **Trigger:** The user requests recovery and later submits the opaque token with an exact-policy new password.
+- **Main flow:** A syntactically valid request consumes its independent per-email limiter before lookup. An eligible account receives a fresh hash-only 30-minute token after row-serialized replacement. Completion rejects invalid token state before Argon2, hashes the exact 15–128-code-point password with the centralized hasher, then atomically consumes the token, updates the password, and revokes all user sessions.
+- **Alternative flows:** Existing, missing, unverified, disabled, non-delivered, and provider-failed requests return the same generic `202`; provider failure conditionally revokes the issued token. Completion creates no session and does not log the user in.
+- **Error cases:** Malformed email/token/password; expired, consumed, revoked, replaced, or random token; provider/database/Argon2 failure; exhausted request limiter. Transaction failure preserves prior password, token, and sessions.
+- **Business rules:** Recovery request uses the same three-per-15-minute SHA-256-derived canonical-email contract as resend. Reset completion has no MVP limiter; distributed/IP/global/provider controls remain in `OQ-020`.
+- **Authorization:** Public account-safe request/completion endpoints.
+- **Expected result:** One valid token changes the password and invalidates every prior session, without revealing account existence.
+- **Acceptance criteria:** Generic responses, hash-only 30-minute token, exact password policy, pre-Argon2 rejection, atomic reset/session revocation, replay/concurrency/provider/rollback/leakage tests pass.
+
 ### UC-BR-001 — Manage branches
 
 - **Status:** Ready after identity foundation

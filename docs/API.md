@@ -239,12 +239,12 @@ therefore the sole browser path for the health check.
 | --- | --- | --- | --- | --- | --- |
 | `POST /auth/register` | Public | Email and password only | `202 Accepted` account-safe verification-next-step result; no session, token, organization, or branch created | Invalid input/rate limit/database or hashing failure; canonical-email duplicates receive the same public response as new accounts | Implemented by P2-M2-T01 |
 | `POST /auth/login` | Public | Email and password only | `200`; sets a fresh opaque session cookie and returns only safe actor `id`, canonical `email`, and nullable `displayName` | Strict validation; generic invalid credentials for wrong/missing/unverified/disabled accounts; accepted login rate limit; safe database/hashing failure | Implemented by P2-M2-T02 |
-| `POST /auth/logout` | Authenticated/idempotent | None | Revokes current session and clears its cookie | Invalid/expired state; dependency failure | Planned after identity foundation |
-| `POST /auth/logout-all` | Authenticated | None | Revokes all sessions for current user and clears current cookie | Authentication/dependency failure | Planned after identity foundation |
-| `POST /auth/verify-email` | Public | Opaque verification token | Account-safe verification result | Expired/used/invalid token; provider failure | Planned after identity foundation |
-| `POST /auth/verification-resend` | Public | Email/account-safe request | Non-disclosing delivery result; replaces active token when applicable | Rate limit/provider failure | Planned after identity foundation |
-| `POST /auth/forgot-password` | Public | Email | Non-disclosing delivery result | Rate limit/provider failure | Planned after identity foundation |
-| `POST /auth/reset-password` | Public | Opaque reset token, new password | Account-safe reset result; revokes all sessions | Expired/used/invalid token; validation | Planned after identity foundation |
+| `POST /auth/logout` | Safely idempotent | None | `204`; revokes a valid current session and clears its cookie | Missing/malformed/unknown/expired/revoked state is idempotent; dependency failure does not clear cookie | Implemented by P2-M2-T03 |
+| `POST /auth/logout-all` | Authenticated | None | `204`; revokes all sessions for current user and clears current cookie | Authentication/dependency/cross-site-request failure | Implemented by P2-M2-T03 |
+| `POST /auth/verify-email` | Public | `{ "token": "opaque-token" }` | `200` verified result | Generic `400 INVALID_TOKEN` for expired/used/invalid/replaced token | Implemented by P2-M2-T03 |
+| `POST /auth/verification-resend` | Public | `{ "email": "account@example.com" }` | Generic `202`; creates/replaces and delivers only for an eligible unverified account | Validation; accepted three-per-15-minute limit; provider failure remains non-disclosing | Implemented by P2-M2-T03 |
+| `POST /auth/forgot-password` | Public | `{ "email": "account@example.com" }` | Generic `202`; creates/replaces and delivers only for an eligible account | Validation; accepted three-per-15-minute limit; provider failure remains non-disclosing | Implemented by P2-M2-T03 |
+| `POST /auth/reset-password` | Public | `{ "token": "opaque-token", "newPassword": "exact-value" }` | `200` reset result; atomically consumes token, updates password, and revokes all sessions | Generic `400 INVALID_TOKEN`; password validation; safe dependency failure | Implemented by P2-M2-T03 |
 | `GET /me` | Authenticated | None | Safe profile and onboarding status | Authentication required | Planned after identity foundation |
 | `PATCH /me/profile` | Authenticated | Required display name; optional phone | Updated safe profile | Validation, stale/conflict | Planned after identity foundation |
 | `GET /me/organizations` | Authenticated | Pagination if needed | Accessible organization summaries | Authentication required | Planned |
@@ -356,6 +356,59 @@ string when already populated):
 It returns no session ID/hash, password data, membership, role, organization,
 branch, permission, or authorization state. Organization/branch options belong
 to later onboarding and access-management work.
+
+### Logout and credential-lifecycle contract
+
+- `POST /auth/logout` is safely idempotent for a missing, malformed, unknown,
+  expired, or already revoked cookie. A syntactically valid token is hashed for
+  lookup; a matching open session is revoked as `logout`. The cookie is cleared
+  only after the revocation attempt succeeds. `POST /auth/logout-all` requires a
+  valid authenticated context, revokes every open session for that actor as
+  `logout_all`, and clears the current cookie. Both cookie-authenticated writes
+  reject a cross-site Fetch Metadata signal or a mismatched supplied `Origin`;
+  `SameSite=Lax` remains the primary browser cookie control.
+- The cleared `stockwise_session` cookie retains `Path=/`, `HttpOnly`,
+  `SameSite=Lax`, host-only scope, and production-only `Secure`, and adds
+  `Max-Age=0` plus the epoch `Expires` value. Logout never returns a session ID,
+  raw token, or token hash.
+- Verification resend is also initial verification issuance. Eligible means an
+  active, unverified account. Issuance uses a fresh 32-byte CSPRNG opaque token,
+  stores only SHA-256, expires after 24 hours, and serializes replacement by
+  locking the user row. Every prior open token is marked replaced before the new
+  token is created. Completion conditionally consumes the active, unexpired
+  token and sets `emailVerifiedAt` in one transaction; replay and concurrent
+  duplicate completion produce one success at most.
+- Forgot-password is eligible only for an active verified account. Issuance uses
+  the same 32-byte/hash-only boundary, expires after 30 minutes, and serializes
+  replacement through the user row. Completion validates token state before
+  Argon2, then conditionally consumes the token, updates the accepted Argon2id
+  PHC password hash/`passwordChangedAt`, and revokes every open user session as
+  `password_reset` in one transaction. It does not create a session or log the
+  user in.
+- Verification-resend and forgot-password successes use exactly
+  `202 {"data":{"status":"accepted"},"meta":{"requestId":"..."}}` for
+  eligible, missing, already verified, disabled, non-delivered, and
+  provider-failed outcomes. Provider failure conditionally revokes the just
+  issued token; raw provider errors never enter the response. Verification
+  completion returns `200` with `data.status = "verified"`; reset completion
+  returns `200` with `data.status = "password_reset"`.
+- Production uses Resend through the API-owned provider interface. Development
+  uses a no-op non-delivery adapter and tests inject a deterministic recording
+  adapter. The provider request has a ten-second timeout and no automatic retry;
+  provider response bodies, message payloads, API keys, and complete sensitive
+  links are not logged.
+
+Verification resend and forgot-password use independent fixed-window limiters.
+Each allows three syntactically valid requests per canonical email per 15
+minutes, keys only a SHA-256 derivative, and consumes before account lookup and
+provider work regardless of eligibility or delivery outcome. Attempt four and
+later returns `429 RATE_LIMITED` with deterministic remaining-window
+`Retry-After`; success does not reset the window. Malformed email creates no
+entry. Reset completion has no separate MVP limiter and rejects malformed,
+unknown, expired, revoked, replaced, or consumed tokens before Argon2. These are
+narrow application-level exceptions only: all distributed/IP/global/provider,
+proxy-trust, multi-instance, production DoS, and long-term telemetry behavior
+remains open under `OQ-020`.
 
 ## 7. Organization, branch, and membership endpoints
 
@@ -526,7 +579,7 @@ At minimum, define/test rate limits for:
 - Write/idempotency endpoints
 - Internal AI replays and provider-budget paths
 
-Exact thresholds are configuration/production decisions under `OQ-020`. Rate-limit keys must not permit easy cross-tenant denial of service and must respect proxy/ingress trust configuration.
+Except for the four narrow accepted MVP application limiters below, exact thresholds are configuration/production decisions under `OQ-020`. Rate-limit keys must not permit easy cross-tenant denial of service and must respect proxy/ingress trust configuration.
 
 P2-M2-T01 and P2-M2-T02 have accepted MVP exceptions to that deferral. Registration permits
 five attempts per 15 minutes per canonical email through a deterministic
@@ -541,6 +594,13 @@ window per canonical email through a SHA-256-derived process-local key. Only
 credential failures count and success does not reset the active window.
 Exhaustion returns `429 RATE_LIMITED` with `Retry-After`. This does not close the
 remaining distributed/IP-aware/global or proxy-trust decisions in `OQ-020`.
+
+Verification resend and password-reset request each use an independent
+three-request fixed 15-minute process-local window per canonical email. Every
+syntactically valid request consumes before lookup; attempt four returns
+`429 RATE_LIMITED` plus deterministic `Retry-After`. Reset completion has no
+MVP limiter and rejects invalid token state before Argon2. These exceptions do
+not resolve `OQ-020`.
 
 ## 16. API test contract
 

@@ -294,7 +294,11 @@ Constraints and lifecycle:
 - The raw token is never persisted. A session is valid only while unrevoked, its user is enabled/authorized, and neither expiry has passed.
 - Successful authentication creates a fresh session. If the incoming `stockwise_session` cookie identifies a currently valid session for the same user, revoking it as `login_rotation` and creating the fresh record is one transaction. Unknown, malformed, revoked, or expired incoming tokens are not reused.
 - Initial idle expiry is issue time plus the configurable 24-hour baseline; absolute expiry is issue time plus the configurable seven-day baseline. Absolute expiry is immutable. After a valid authenticated request, activity is persisted at most once per 15 minutes: `lastUsedAt` becomes the touch time and idle expiry becomes `min(touch + idle timeout, absolute expiry)`. A required touch failure fails authentication closed, and an expired session is never revived.
-- Logout revokes the current session; password reset and user-wide revocation revoke all sessions for the user. Those actions remain owned by P2-M2-T03.
+- Logout conditionally revokes the current hash-identified open session as
+  `logout`; authenticated all-session logout revokes every open session for the
+  actor as `logout_all`. Password reset revokes every open session for the user
+  as `password_reset` in the password/token transaction. Repeated current
+  logout is idempotent and no user-wide mutation may affect another user.
 - Index active-session lookup by token hash and user-wide revocation/query paths by user and expiry/revocation state.
 
 #### `EmailVerificationToken` and `PasswordResetToken`
@@ -312,6 +316,17 @@ Constraints and lifecycle:
 
 - Raw tokens are never persisted. Verification tokens expire after 24 hours; reset tokens expire after 30 minutes.
 - Each token is single-use. Resending verification replaces and invalidates the prior active verification token. A successful reset revokes all sessions.
+- P2-M2-T03 generates 32 random bytes and persists only SHA-256. Verification
+  and reset issuance lock the owning user row before replacing every open token
+  and inserting the fresh record, which serializes concurrent replacement.
+  Provider failure conditionally marks only the just-issued still-open token
+  revoked; a later replacement is never overwritten by compensation.
+- Verification completion conditionally consumes the open, unexpired token and
+  sets the active user's `emailVerifiedAt` in one transaction. Password reset
+  performs a read-only validity check before Argon2, then conditionally consumes
+  the still-valid token, updates `passwordHash`/`passwordChangedAt`, and revokes
+  all open sessions in one transaction. Any failed write rolls the entire reset
+  transaction back; no new session is created.
 
 #### `Invitation`
 

@@ -1,0 +1,207 @@
+import type { IdentityEmailProvider } from "./email-provider.ts";
+import type { PasswordHasher } from "./password-hasher.ts";
+import {
+  type CredentialLifecycleRepository,
+  OneTimeTokenCollisionError,
+} from "./credential-lifecycle-repository.ts";
+import {
+  hashOneTimeToken,
+  type OneTimeTokenProvider,
+} from "./one-time-token.ts";
+
+const MAX_TOKEN_GENERATION_ATTEMPTS = 3;
+const VERIFICATION_LIFETIME_MILLISECONDS = 24 * 60 * 60 * 1000;
+const PASSWORD_RESET_LIFETIME_MILLISECONDS = 30 * 60 * 1000;
+
+type DeliveryFailureKind =
+  | "password_reset"
+  | "password_reset_compensation"
+  | "verification"
+  | "verification_compensation";
+
+export interface CredentialLifecycleService {
+  logoutAll(userId: string): Promise<void>;
+  logoutCurrent(tokenHash: string): Promise<void>;
+  requestPasswordReset(email: string): Promise<void>;
+  requestVerification(email: string): Promise<void>;
+  resetPassword(input: {
+    newPassword: string;
+    rawToken: string;
+  }): Promise<boolean>;
+  verifyEmail(rawToken: string): Promise<boolean>;
+}
+
+function tokenUrl(origin: string, path: string, rawToken: string): string {
+  const url = new URL(path, origin);
+  url.searchParams.set("token", rawToken);
+  return url.toString();
+}
+
+export function createCredentialLifecycleService({
+  emailProvider,
+  now = () => new Date(),
+  onDeliveryFailure = () => undefined,
+  passwordHasher,
+  publicWebOrigin,
+  repository,
+  tokenProvider,
+}: {
+  emailProvider: IdentityEmailProvider;
+  now?: () => Date;
+  onDeliveryFailure?: (kind: DeliveryFailureKind) => void;
+  passwordHasher: PasswordHasher;
+  publicWebOrigin: string;
+  repository: CredentialLifecycleRepository;
+  tokenProvider: OneTimeTokenProvider;
+}): CredentialLifecycleService {
+  return {
+    async requestVerification(email) {
+      const issuedAt = now();
+      const expiresAt = new Date(
+        issuedAt.getTime() + VERIFICATION_LIFETIME_MILLISECONDS,
+      );
+
+      for (
+        let attempt = 0;
+        attempt < MAX_TOKEN_GENERATION_ATTEMPTS;
+        attempt += 1
+      ) {
+        const token = tokenProvider.generate();
+
+        try {
+          const issued = await repository.issueEmailVerificationToken({
+            email,
+            expiresAt,
+            issuedAt,
+            tokenHash: token.tokenHash,
+          });
+          if (issued === null) {
+            return;
+          }
+
+          try {
+            await emailProvider.send({
+              kind: "verification",
+              recipient: issued.recipient,
+              url: tokenUrl(publicWebOrigin, "/verify-email", token.rawToken),
+            });
+          } catch {
+            onDeliveryFailure("verification");
+            try {
+              await repository.revokeEmailVerificationToken({
+                revokedAt: now(),
+                tokenId: issued.id,
+              });
+            } catch {
+              onDeliveryFailure("verification_compensation");
+            }
+          }
+          return;
+        } catch (error: unknown) {
+          if (
+            error instanceof OneTimeTokenCollisionError &&
+            attempt < MAX_TOKEN_GENERATION_ATTEMPTS - 1
+          ) {
+            continue;
+          }
+          throw error;
+        }
+      }
+    },
+
+    async verifyEmail(rawToken) {
+      return repository.consumeEmailVerificationToken({
+        consumedAt: now(),
+        tokenHash: hashOneTimeToken(rawToken),
+      });
+    },
+
+    async requestPasswordReset(email) {
+      const issuedAt = now();
+      const expiresAt = new Date(
+        issuedAt.getTime() + PASSWORD_RESET_LIFETIME_MILLISECONDS,
+      );
+
+      for (
+        let attempt = 0;
+        attempt < MAX_TOKEN_GENERATION_ATTEMPTS;
+        attempt += 1
+      ) {
+        const token = tokenProvider.generate();
+
+        try {
+          const issued = await repository.issuePasswordResetToken({
+            email,
+            expiresAt,
+            issuedAt,
+            tokenHash: token.tokenHash,
+          });
+          if (issued === null) {
+            return;
+          }
+
+          try {
+            await emailProvider.send({
+              kind: "password_reset",
+              recipient: issued.recipient,
+              url: tokenUrl(publicWebOrigin, "/reset-password", token.rawToken),
+            });
+          } catch {
+            onDeliveryFailure("password_reset");
+            try {
+              await repository.revokePasswordResetToken({
+                revokedAt: now(),
+                tokenId: issued.id,
+              });
+            } catch {
+              onDeliveryFailure("password_reset_compensation");
+            }
+          }
+          return;
+        } catch (error: unknown) {
+          if (
+            error instanceof OneTimeTokenCollisionError &&
+            attempt < MAX_TOKEN_GENERATION_ATTEMPTS - 1
+          ) {
+            continue;
+          }
+          throw error;
+        }
+      }
+    },
+
+    async resetPassword({ newPassword, rawToken }) {
+      const completedAt = now();
+      const validToken = await repository.findValidPasswordResetToken({
+        now: completedAt,
+        tokenHash: hashOneTimeToken(rawToken),
+      });
+      if (validToken === null) {
+        return false;
+      }
+
+      const passwordHash = await passwordHasher.hash(newPassword);
+      return repository.completePasswordReset({
+        completedAt,
+        passwordHash,
+        tokenId: validToken.tokenId,
+        userId: validToken.userId,
+      });
+    },
+
+    async logoutCurrent(tokenHash) {
+      await repository.revokeSessionByTokenHash({
+        revokedAt: now(),
+        tokenHash,
+      });
+    },
+
+    async logoutAll(userId) {
+      await repository.revokeAllSessions({
+        reason: "logout_all",
+        revokedAt: now(),
+        userId,
+      });
+    },
+  };
+}

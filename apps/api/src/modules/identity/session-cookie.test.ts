@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   readSessionCookie,
+  serializeClearedSessionCookie,
   serializeSessionCookie,
   SESSION_COOKIE_NAME,
 } from "./session-cookie.ts";
@@ -21,6 +22,21 @@ describe("session cookie boundary", () => {
     expect(cookie).toContain("; Secure");
     expect(cookie).not.toContain("Domain=");
     expect(cookie).not.toContain("__Host-");
+  });
+
+  it("clears the cookie with matching host-only security attributes", () => {
+    const local = serializeClearedSessionCookie(false);
+    const production = serializeClearedSessionCookie(true);
+
+    expect(local).toContain(`${SESSION_COOKIE_NAME}=`);
+    expect(local).toContain("Path=/");
+    expect(local).toContain("HttpOnly");
+    expect(local).toContain("SameSite=Lax");
+    expect(local).toContain("Max-Age=0");
+    expect(local).toContain("Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+    expect(local).not.toContain("Secure");
+    expect(local).not.toContain("Domain=");
+    expect(production).toContain("Secure");
   });
 
   it("reads one valid StockWise cookie while ignoring unrelated cookies", () => {
