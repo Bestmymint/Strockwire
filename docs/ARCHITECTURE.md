@@ -359,8 +359,10 @@ Owning a table does not mean bypassing another module's invariant. For example, 
 - Add Route Groups such as `(auth)` or `(app)` only when implemented routes justify them; do not create speculative route structure.
 - Keep StockWise core and business REST APIs in the Express application. Do not implement them as Next.js Route Handlers.
 - During local development, the browser reaches the Express operational health
-  probe through the Next.js same-origin `/api/health` rewrite. The rewrite targets
-  the API's loopback origin and avoids enabling broad browser-to-API CORS.
+  probe through the Next.js same-origin `/api/health` rewrite and Express-owned
+  REST endpoints through the same-origin `/api/v1/:path*` rewrite. Both target
+  the API's loopback origin and avoid enabling broad browser-to-API CORS. The
+  server-only loopback origin never enters a client bundle.
 
 ## 9. Backend layering
 

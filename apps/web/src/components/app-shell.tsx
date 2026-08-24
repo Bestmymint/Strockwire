@@ -31,11 +31,16 @@ export function AppShell({ children }: AppShellProps) {
 
           <nav aria-label="Primary navigation">
             <Link
-              aria-current="page"
               className="inline-flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               href="/"
             >
               Home
+            </Link>
+            <Link
+              className="inline-flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              href="/login"
+            >
+              Sign in
             </Link>
           </nav>
         </div>

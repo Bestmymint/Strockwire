@@ -217,9 +217,10 @@ At this foundation stage the API has no required external dependency, so the def
 ### 5.1 Local web development path
 
 For local development only, the Next.js server proxies its same-origin
-`GET /api/health` request to the Express `GET /health` operational probe. The
-browser never calls the Express loopback listener directly. This is not a
-StockWise business REST endpoint and does not change the `/api/v1` API base path.
+`GET /api/health` request to the Express `GET /health` operational probe and
+forwards same-origin `/api/v1/:path*` requests to the matching Express REST
+path. The browser never calls the Express loopback listener directly. This
+keeps `/api/v1` as the StockWise business REST base path without enabling CORS.
 
 The root `.env` supplies `STOCKWISE_API_PORT=3001` to the API and
 `STOCKWISE_API_ORIGIN=http://127.0.0.1:3001` to the Next.js server; the browser
@@ -229,7 +230,8 @@ process and the origin value is server-only.
 Express does not enable CORS for this development path. It listens on
 `127.0.0.1` and emits no `Access-Control-Allow-Origin` header, including for a
 direct request carrying `Origin: http://localhost:3000`. The Next.js proxy is
-therefore the sole browser path for the health check.
+therefore the sole browser path for the health check and web authentication API
+requests.
 
 ## 6. Identity and account endpoints
 

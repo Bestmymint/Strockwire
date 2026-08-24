@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import type { NextConfig } from "next";
 
-import { getApiHealthRewrite } from "./src/api-proxy";
+import { getApiHealthRewrite, getApiV1Rewrite } from "./src/api-proxy";
 import { loadWebEnvironment } from "./src/environment";
 
 const localEnvironmentFile = resolve(import.meta.dirname, "../../.env");
@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
   agentRules: false,
   reactStrictMode: true,
   async rewrites() {
-    return [getApiHealthRewrite(environment)];
+    return [getApiHealthRewrite(environment), getApiV1Rewrite(environment)];
   },
 };
 
