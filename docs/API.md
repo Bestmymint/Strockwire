@@ -6,7 +6,7 @@
 | Base path | `/api/v1` |
 | Style | JSON REST |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-22 |
+| Last updated | 2026-08-24 |
 
 ## 1. Scope and authority
 
@@ -237,7 +237,7 @@ therefore the sole browser path for the health check.
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `POST /auth/register` | Public | Email, password | Account-safe verification-next-step result; no organization created | Invalid/duplicate/rate limit/provider failure | Planned after identity foundation |
+| `POST /auth/register` | Public | Email and password only | `202 Accepted` account-safe verification-next-step result; no session, token, organization, or branch created | Invalid input/rate limit/database or hashing failure; canonical-email duplicates receive the same public response as new accounts | Planned for P2-M2-T01 |
 | `POST /auth/login` | Public | Email, password | Sets rotated opaque session cookie and returns safe user context | Generic invalid credentials, disabled/unverified, rate limit | Planned after identity foundation |
 | `POST /auth/logout` | Authenticated/idempotent | None | Revokes current session and clears its cookie | Invalid/expired state; dependency failure | Planned after identity foundation |
 | `POST /auth/logout-all` | Authenticated | None | Revokes all sessions for current user and clears current cookie | Authentication/dependency failure | Planned after identity foundation |
@@ -252,11 +252,31 @@ therefore the sole browser path for the health check.
 
 There are no Google OAuth endpoints in the MVP contract.
 
+### Registration contract
+
+- Email uses the canonical surrounding-whitespace-trimmed lowercase policy.
+- Password contains 15–128 Unicode code points. Its submitted value is not
+  trimmed, Unicode-normalized, silently truncated, or subject to character-class
+  composition rules; whitespace and Unicode are accepted. Breached-password
+  screening is deferred.
+- Password storage uses the PHC-format output from `argon2@0.45.1` Argon2id with
+  `memoryCost=65536` KiB, `timeCost=3`, `parallelism=4`, and the library-generated
+  random salt.
+- A newly persisted user has `emailVerifiedAt = null` and `displayName = null`.
+  P2-M2-T01 creates no verification-token record, sends no email, establishes no
+  authenticated session, and creates no organization or branch.
+- New and canonical-email duplicate attempts return the same generic `202
+  Accepted` response and verification next step. PostgreSQL canonical-email
+  uniqueness is the final concurrency boundary; Prisma/database uniqueness
+  details are never returned or logged.
+- P2-M2-T03 owns verification-token creation, resend, provider
+  integration/delivery, and verification behavior.
+
 ### Registration/login security requirements
 
 - Do not return password hashes or credential metadata.
 - Do not reveal account existence through materially different messages/timing where practical.
-- Apply rate limiting and security telemetry without logging submitted passwords.
+- Apply rate limiting and security telemetry without logging submitted email or password values.
 - Do not return raw session, verification, reset, or invitation tokens in persisted resources, logs, or general response payloads.
 - Verification, reset, and invitation delivery use the provider abstraction. Local/test adapters are non-delivery; production uses the Resend adapter.
 - Forgot-password and resend responses are account-safe and non-disclosing. Verification and reset tokens are single-use and expiry-bound; successful reset revokes every user session.
@@ -431,6 +451,14 @@ At minimum, define/test rate limits for:
 - Internal AI replays and provider-budget paths
 
 Exact thresholds are configuration/production decisions under `OQ-020`. Rate-limit keys must not permit easy cross-tenant denial of service and must respect proxy/ingress trust configuration.
+
+P2-M2-T01 has one accepted MVP exception to that deferral: registration permits
+five attempts per 15 minutes per canonical email through a deterministic
+process-local in-memory limiter. It stores no database limiter state and logs
+neither email nor password. An exhausted limit returns `429 RATE_LIMITED` with
+`Retry-After`. Distributed/IP-aware limiting, cross-process coordination, and
+proxy/deployment trust remain open under `OQ-020`; this baseline does not close
+those questions.
 
 ## 16. API test contract
 

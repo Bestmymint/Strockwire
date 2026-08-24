@@ -50,7 +50,7 @@ describe("identity and tenancy database schema", () => {
     await resetTestDatabase(environment);
   });
 
-  it("applies the reviewed identity and tenancy migration", async () => {
+  it("applies the reviewed identity and tenancy migrations", async () => {
     const migrations = await prisma.$queryRaw<
       { migrationName: string; finished: boolean; active: boolean }[]
     >`
@@ -71,6 +71,11 @@ describe("identity and tenancy database schema", () => {
     expect(migrations).toEqual([
       {
         migrationName: "20260822104545_identity_tenancy_schema",
+        finished: true,
+        active: true,
+      },
+      {
+        migrationName: "20260824120921_make_user_display_name_nullable",
         finished: true,
         active: true,
       },
@@ -141,6 +146,26 @@ describe("identity and tenancy database schema", () => {
     ).rejects.toThrow();
     await expect(
       createUser(" Unique@Example.com ", "Unnormalized User"),
+    ).rejects.toThrow();
+  });
+
+  it("allows a registration-stage user without a display name and validates present values", async () => {
+    const registrationStageUser = await prisma.user.create({
+      data: {
+        email: "registration-stage@example.com",
+        passwordHash: PASSWORD_HASH_FIXTURE,
+        displayName: null,
+      },
+    });
+    const profiledUser = await createUser(
+      "profiled-user@example.com",
+      "Profiled User",
+    );
+
+    expect(registrationStageUser.displayName).toBeNull();
+    expect(profiledUser.displayName).toBe("Profiled User");
+    await expect(
+      createUser("blank-display-name@example.com", "   "),
     ).rejects.toThrow();
   });
 

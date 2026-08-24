@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | Accepted decision history |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-22 |
+| Last updated | 2026-08-24 |
 
 ## 1. Log rules
 
@@ -519,6 +519,11 @@ Use Resend as the MVP production email adapter behind an email-provider abstract
 
 Email verification, password reset, and invitations use opaque cryptographically random tokens whose cryptographic hash alone is stored. They are single use and expire after 24 hours, 30 minutes, and seven days respectively. Resending verification or reissuing an invitation invalidates the prior active token. Forgot-password responses never reveal whether an account exists; a successful reset revokes all existing sessions.
 
+Task ownership is split deliberately: P2-M2-T01 creates only the unverified
+account and no verification token or email delivery. P2-M2-T03 owns
+verification-token creation, resend, provider integration/delivery, and
+verification behavior.
+
 ### Why selected
 
 - The abstraction prevents provider concerns from leaking into identity rules.
@@ -549,7 +554,13 @@ The MVP needs enough information to identify a platform user and create a first 
 
 ### Decision
 
-Registration requires email, password, and email verification. The platform profile requires `displayName`; profile phone is optional. New-organization onboarding requires organization name and an initial branch name; branch phone and address are optional. The creator becomes `OWNER` in the atomic onboarding result.
+Registration accepts only email and password, and the account must later verify
+its email. The platform profile requires `displayName`; it is nullable on the
+registration-stage user and supplied by the later profile/onboarding flow.
+Profile phone is optional. New-organization onboarding requires organization
+name and an initial branch name; branch phone and address are optional. The
+creator becomes `OWNER` in the atomic onboarding result. No display-name
+placeholder is derived from email.
 
 User identity is platform-level. A user does not carry `branchId` as its complete access model; organization and branch access derive from memberships. Invited users do not automatically create an organization or account: they register/authenticate as the invited email, verify it, then use the invitation acceptance flow. Profile photo, date of birth, gender, tax ID, company registration number, organization website/logo, and billing details are not required for MVP onboarding.
 
@@ -598,6 +609,89 @@ The authoritative capability, role-governance, analytics, forecast, and AI-summa
 - The identity schema uses an organization-role membership plus role-less branch assignments; it must not model competing branch roles for a user.
 - Policy tests must cover deny-by-default, tenant/branch isolation, delegation, last-owner protection, and immediate loss of access after deauthorization.
 - Custom roles, direct user permissions, and any refund/void grants need a future accepted decision.
+
+## ADR-017 — Fix the registration/profile boundary and registration security baseline
+
+- **Date:** 2026-08-24
+- **Status:** Accepted
+- **Type:** Product, security, data, and delivery boundary
+
+### Context
+
+P2-M1-T02 made `User.displayName` non-null even though ADR-015 assigns display
+name to the later profile/onboarding flow and registration accepts only email
+and password. P2-M2-T01 also required password, duplicate, verification-next-step,
+and rate-limit behavior before those implementation-sensitive rules had a
+single accepted baseline.
+
+### Alternatives considered
+
+1. Add display name to registration or derive a placeholder from email
+2. Keep display name nullable until profile/onboarding
+3. Create verification tokens and send email during P2-M2-T01 or assign the
+   complete verification lifecycle to P2-M2-T03
+4. Return an account-specific duplicate conflict or use one generic public
+   response
+5. Defer all abuse control to production or establish a bounded process-local
+   MVP limiter while distributed controls remain open
+
+### Decision
+
+Registration accepts only email and password. `User.displayName` is nullable
+until the later required profile/onboarding flow; registration never derives a
+placeholder from email. Correct the committed schema through a new forward
+migration that drops `users.display_name` `NOT NULL`; do not edit the initial
+migration. A non-null display name must still contain non-whitespace content.
+
+Registration passwords contain 15–128 Unicode code points. Preserve the value
+exactly as supplied: do not trim, Unicode-normalize, silently truncate, or
+require uppercase, lowercase, digits, or symbols. Whitespace and Unicode are
+allowed. Breached-password screening is deferred.
+
+P2-M2-T01 will use `argon2@0.45.1`, Argon2id,
+`memoryCost=65536` KiB, `timeCost=3`, `parallelism=4`, and the library-generated
+random salt, storing the PHC-format encoded hash. Compatibility and behavior
+must be benchmarked and verified in P2-M2-T01; this correction does not install
+Argon2 or implement hashing.
+
+New and canonical-email duplicate registration attempts return the same generic
+`202 Accepted` public response. PostgreSQL's unique canonical email remains the
+final concurrency boundary, and raw Prisma uniqueness errors never escape.
+
+P2-M2-T01 creates the account with `emailVerifiedAt = null` and creates no
+verification-token record or email delivery. P2-M2-T03 owns verification-token
+creation, resend, provider integration/delivery, and verification behavior.
+
+Registration permits five attempts per 15 minutes per canonical email through
+a deterministic process-local in-memory limiter. It stores no database state,
+logs neither email nor password, and returns `429` with `Retry-After` when
+exhausted. Distributed/IP-aware limiting and proxy/deployment topology remain
+open under `OQ-020`; this decision does not close its unrelated production
+readiness questions.
+
+### Why selected
+
+- It preserves the accepted minimal registration/profile boundary without
+  fabricating user data.
+- The password and Argon2id baselines are explicit and testable while keeping
+  credential material unchanged before hashing.
+- A uniform duplicate response reduces account-enumeration disclosure while
+  retaining database-enforced race safety.
+- Verification ownership prevents P2-M2-T01 from prematurely adding provider or
+  token behavior.
+- The process-local limiter provides deterministic MVP abuse control without
+  claiming distributed production protection.
+
+### Consequences
+
+- The schema correction is a new forward migration; restoring `NOT NULL` later
+  requires a reviewed backfill and another forward migration.
+- P2-M2-T01 remains incomplete until its route, service, persistence, hashing,
+  limiter, and security tests are implemented and verified.
+- P2-M2-T03 owns verification and provider failure behavior even though the
+  end-to-end registration use case continues through email verification.
+- `OQ-020` remains open for distributed/IP-aware controls, proxy trust, and the
+  rest of production readiness.
 
 ## 2. Explicitly superseded planning directions
 

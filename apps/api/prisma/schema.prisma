@@ -57,7 +57,7 @@ model User {
   email             String     @unique(map: "users_email_key") @db.VarChar(320)
   passwordHash      String     @map("password_hash") @db.VarChar(255)
   status            UserStatus @default(ACTIVE)
-  displayName       String     @map("display_name") @db.VarChar(200)
+  displayName       String?    @map("display_name") @db.VarChar(200)
   phone             String?    @db.VarChar(32)
   emailVerifiedAt   DateTime?  @map("email_verified_at") @db.Timestamptz(3)
   passwordChangedAt DateTime   @default(now()) @map("password_changed_at") @db.Timestamptz(3)

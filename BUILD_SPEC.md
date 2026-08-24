@@ -7,7 +7,7 @@
 | Repository | `stockwise` pnpm workspace monorepo |
 | Baseline | Architecture Freeze v1 |
 | Status | Repository foundation and minimal web/API shells implemented; domain implementation gated by explicit decisions |
-| Last updated | 2026-08-22 |
+| Last updated | 2026-08-24 |
 
 ## 1. Purpose and source-of-truth map
 
@@ -145,9 +145,10 @@ The MVP permission baseline is:
 
 ### 10.1 Identity, organization, and branches
 
-- Register and sign in with email and password.
-- Hash passwords with Argon2; never store plaintext or reversible passwords.
-- Complete the required user profile after registration.
+- Register with only email and password; complete the required user profile after registration.
+- Preserve passwords exactly as submitted and hash them as PHC-encoded Argon2id
+  using `argon2@0.45.1`, `memoryCost=65536` KiB, `timeCost=3`, and
+  `parallelism=4`; never store plaintext or reversible passwords.
 - Create a new organization through the accepted onboarding flow or join one through an accepted invitation.
 - Create and manage branches with authorized roles.
 - Assign users to organization and branch scopes.
@@ -251,8 +252,8 @@ Identifiers below are stable references for plans, use cases, tests, and APIs.
 
 ### Identity and authorization
 
-- **FR-IAM-001:** The system shall authenticate MVP users with email and password.
-- **FR-IAM-002:** The system shall store password verifiers created with Argon2.
+- **FR-IAM-001:** The system shall register and authenticate MVP users with email and password. Registration accepts no profile, organization, or branch field.
+- **FR-IAM-002:** The system shall store PHC-encoded Argon2id password verifiers created by `argon2@0.45.1` with `memoryCost=65536` KiB, `timeCost=3`, `parallelism=4`, and a library-generated random salt.
 - **FR-IAM-003:** The system shall authorize every business operation by organization membership, branch scope where applicable, and role permission.
 - **FR-IAM-004:** One user shall be able to access multiple authorized branches using one account.
 - **FR-IAM-005:** A user shall not access a tenant, branch, or aggregate outside their authorization scope.
@@ -261,6 +262,21 @@ Identifiers below are stable references for plans, use cases, tests, and APIs.
 - **FR-IAM-008:** Email/password accounts shall verify email before access; verification, reset, and invitation tokens shall be opaque, cryptographically random, hashed at rest, single-use, and expiry-bound.
 - **FR-IAM-009:** New-organization onboarding shall require display name, organization name, and initial branch name, create the creator's `OWNER` membership atomically, and collect only the approved optional profile/branch phone and branch-address fields.
 - **FR-IAM-010:** Invitations shall be email-bound, require authentication and verified ownership of the invited email before acceptance, and create the organization membership and branch assignments atomically and idempotently.
+
+Registration passwords contain 15–128 Unicode code points. The API preserves
+the submitted string exactly: it does not trim, Unicode-normalize, silently
+truncate, or impose uppercase, lowercase, digit, or symbol composition rules.
+Whitespace and Unicode are allowed. Breached-password screening is deferred.
+
+P2-M2-T01 creates the platform user with `emailVerifiedAt = null` but creates no
+verification token and sends no email. P2-M2-T03 owns verification-token
+creation, resend, provider integration/delivery, and verification behavior.
+New and canonical-email duplicate registration attempts return the same generic
+`202 Accepted` public response; the database unique constraint remains the
+final race-safe email boundary. Registration permits five attempts per 15
+minutes per canonical email through a deterministic process-local in-memory
+limiter. Exhaustion returns `429` with `Retry-After`; distributed and IP-aware
+controls remain part of `OQ-020`.
 
 ### Catalog and inventory
 
@@ -302,7 +318,7 @@ Identifiers below are stable references for plans, use cases, tests, and APIs.
 - Enforce tenant and branch authorization on the server for every business request and background job.
 - Derive trusted scope from authenticated membership; never trust a client-supplied tenant identifier alone.
 - Validate all untrusted request and environment input with Zod at system boundaries.
-- Use Argon2 for password hashing and apply rate limiting and abuse protection to authentication endpoints.
+- Apply the accepted registration password, Argon2id, duplicate-response, and process-local rate-limit baseline above; do not log submitted email or password values.
 - Keep secrets out of source, logs, error responses, analytics snapshots, AI prompts, and client bundles.
 - Minimize data sent to OpenRouter and prohibit personally identifiable customer or employee data.
 - Use least-privilege AWS identities, private database networking, encryption in transit, and managed encryption at rest.
@@ -417,8 +433,8 @@ This is the canonical list. Other documents reference these IDs and must not red
 | **OQ-001** | Use a native pnpm workspace on Node.js 24 LTS. Runtime applications use `apps/web` and `apps/api`; deliberately shared internal packages may use `packages/*` only when justified. Use one root lockfile and no monorepo orchestration framework until a measured need exists. | `ADR-011` |
 | **OQ-002** | Use the Next.js App Router with the `src/app` directory convention. React Server Components are the default; use Client Components only for required client-side behavior. Route Groups may be added later only for implemented routes. StockWise business REST APIs remain in Express and must not be implemented as Next.js Route Handlers. | `ADR-012` |
 | **OQ-003** | Use opaque PostgreSQL-backed server-side sessions. Send a cryptographically random session token only in an HttpOnly, host-only, `SameSite=Lax` cookie (`Secure` in production); store only its cryptographic hash. Do not use browser JWTs, `localStorage`/`sessionStorage`, or refresh tokens. Rotate on successful authentication, revoke current or all user sessions, enforce server-side authorization, and make idle/absolute timeouts configurable (24 hours/7 days baseline). | `ADR-013` |
-| **OQ-004** | Require email verification for email/password accounts. Use a Resend production adapter behind an email-provider abstraction and non-delivery/test adapters locally and in tests. Verification and reset tokens are opaque, cryptographically random, hash-only, single-use tokens with 24-hour and 30-minute expiry respectively; resend replaces the active verification token; reset revokes all sessions; forgot-password responses are non-disclosing. | `ADR-014` |
-| **OQ-005** | Require email, password, and verification; require display name, organization name, and initial branch name. Phone is optional for the platform profile and initial branch; branch address is optional. The creator becomes `OWNER`. User identity is platform-level; access derives from memberships. Invitations use their own flow. The listed photo, personal, tax, registration, website, logo, and billing fields are not required in MVP onboarding. | `ADR-015` |
+| **OQ-004** | Require email verification for email/password accounts. P2-M2-T01 creates an unverified account but no verification token and sends no email; P2-M2-T03 owns token creation, resend, provider integration/delivery, and verification. Verification and reset tokens are opaque, cryptographically random, hash-only, single-use tokens with 24-hour and 30-minute expiry respectively; resend replaces the active verification token; reset revokes all sessions; forgot-password responses are non-disclosing. | `ADR-014`, `ADR-017` |
+| **OQ-005** | Registration accepts only email and password. The platform profile later requires display name, so `User.displayName` remains nullable until profile/onboarding; no placeholder is derived from email. New-organization onboarding requires display name, organization name, and initial branch name. Phone is optional for the platform profile and initial branch; branch address is optional. The creator becomes `OWNER`. User identity is platform-level; access derives from memberships. Invitations use their own flow. | `ADR-015`, `ADR-017` |
 | **OQ-006** | Use email-bound organization invitations carrying the intended role and branch scope. Their opaque, cryptographically random, hash-only token is single-use and expires in seven days; reissue invalidates the active invite. The invited email must authenticate and verify before transactional, idempotent acceptance creates membership and branch assignments. No automatic account creation or naive cross-email linking. Changed scope requires a replacement invitation. | `ADR-014` |
 | **OQ-022** | Use fixed, deny-by-default RBAC with one organization role per user/organization and explicit branch assignments for branch-only roles. `OWNER`/`ADMIN` are organization-wide; `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER` are assigned-branch roles. The role, governance, delegation, capability, analytics, forecast, and AI-summary baseline in section 8 is authoritative; refund/void remains `OQ-009`. | `ADR-016` |
 
@@ -439,7 +455,7 @@ This is the canonical list. Other documents reference these IDs and must not red
 | **OQ-017** | At what local times do daily, weekly, monthly, and yearly jobs run, and how are retries/catch-up handled? | AI scheduler | Medium |
 | **OQ-018** | Which OpenRouter model, fallback policy, timeout, budget, prompt review, and retention rules are accepted? | AI integration | Medium |
 | **OQ-019** | Is a durable audit-log feature required in MVP or only production hardening? | Security/compliance | Medium |
-| **OQ-020** | What measurable performance, availability, recovery, browser-support, and data-retention targets define production readiness? | Hardening/load tests | Medium |
+| **OQ-020** | Beyond the accepted process-local registration limiter, what distributed/IP-aware abuse controls, proxy trust, measurable performance, availability, recovery, browser-support, and data-retention targets define production readiness? | Hardening/load tests | Medium |
 | **OQ-021** | Does purchasing support partial receiving, over-receiving, cancellation after partial receipt, and supplier returns in MVP? | Purchasing/receiving | High |
 | **OQ-023** | Which units of measure are supported in MVP, may quantities be fractional, and what database/API precision and rounding apply to quantities? | Catalog, inventory, purchasing, sales, analytics | Critical |
 | **OQ-024** | What normalization, duplicate-name, deactivation, and deletion rules apply to categories, suppliers, and other catalog master data? | Catalog and suppliers | Medium |

@@ -6,7 +6,7 @@
 | Database | PostgreSQL |
 | ORM/migrations | Prisma |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-22 |
+| Last updated | 2026-08-24 |
 
 ## 1. Scope and authority
 
@@ -20,8 +20,8 @@ Metric formulas belong to `docs/ANALYTICS.md`. HTTP payloads belong to `docs/API
 PostgreSQL schema at `apps/api/prisma/schema.prisma`, reviewed migrations at
 `apps/api/prisma/migrations/`, and the ignored generated client at
 `apps/api/src/generated/prisma/`. P1-M3-T02 established the empty foundation;
-P2-M1-T02 adds only the accepted identity and tenancy models and their initial
-forward migration.
+P2-M1-T02 adds only the accepted identity and tenancy models, their initial
+forward migration, and the later nullable-display-name correction migration.
 
 The API validates its required server-only `DATABASE_URL` before runtime use.
 Prisma CLI generation and schema validation work without a populated local URL;
@@ -55,7 +55,9 @@ PostgreSQL service and a test-only URL.
 
 ### Implemented identity and tenancy schema
 
-P2-M1-T02 creates exactly these PostgreSQL-backed Prisma models:
+P2-M1-T02 creates exactly these PostgreSQL-backed Prisma models. The forward
+`20260824120921_make_user_display_name_nullable` correction makes only
+`User.displayName` nullable so registration can persist before profile/onboarding:
 
 - `User`, `Organization`, `OrganizationMembership`, `Branch`, and
   `BranchAssignment`
@@ -75,12 +77,19 @@ memberships, branches, and branch assignments. A matching deactivation
 timestamp is required for every inactive/disabled row. The schema adds no audit
 log, organization timezone, auth endpoint, provider, or later-domain field.
 
-The migration adds SQL checks and partial unique indexes that Prisma cannot
+The initial migration adds SQL checks and partial unique indexes that Prisma cannot
 express. They validate nonblank normalized identity/hash/name fields, lifecycle
 status/timestamp agreement, session expiry ordering, one-time-token state and
 expiry ordering, one open verification token per user, and one open invitation
 per organization/email. Expired open records must be marked revoked or replaced
 in the same transaction that creates their replacement.
+
+The display-name nonblank check remains in force when a value is present;
+PostgreSQL permits `NULL` through that check. The forward correction drops only
+the column's `NOT NULL` requirement, performs no table rewrite/backfill, and
+does not alter the initial migration. Reintroducing `NOT NULL` requires a later
+reviewed backfill and forward migration after all applicable accounts have a
+profile.
 
 ## 2. Database-wide invariants
 
@@ -165,19 +174,24 @@ Required logical attributes:
 - Normalized email
 - Argon2 password hash for MVP email/password identity
 - Account status
-- Required display name and optional phone
+- Display name, nullable until the later required profile/onboarding flow, and optional phone
 - Created/updated timestamps
 - Credential/security timestamps needed for verification, reset, session revocation, and account deauthorization
 
 Constraints and indexes:
 
 - Email is globally unique after documented normalization.
+- A non-null display name must contain non-whitespace content; registration must
+  not synthesize a placeholder from the email.
 - Password hash is never selected into general user DTOs, logs, analytics, or AI data.
 - Index account status only if a proven query requires it.
 
 Lifecycle:
 
-- Registration creates an email/password account that must verify its email before access.
+- Registration creates an email/password account with `displayName` and
+  `emailVerifiedAt` set to `NULL`; it creates no verification-token record.
+- P2-M2-T03 owns verification-token creation, resend, provider delivery, and
+  verification. Profile/onboarding later supplies the required display name.
 - Deactivation must preserve historical actor references.
 - Physical deletion/anonymization and retention require an accepted policy.
 
@@ -821,6 +835,8 @@ Every unique constraint required for correctness is mandatory even if no direct 
 
 At minimum, database-backed tests must cover:
 
+- Registration-stage `NULL` display names, valid non-null display names, and
+  rejection of blank non-null display names
 - Same email, SKU, barcode, membership, balance, idempotency, or report identity duplicates
 - Product/category/supplier from another organization
 - Branch resource accessed or linked from another organization

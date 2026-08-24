@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | Architecture Freeze v1; accepted logical architecture; minimal web/API shells implemented |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-22 |
+| Last updated | 2026-08-24 |
 
 ## 1. Scope and authority
 
@@ -195,6 +195,15 @@ exist.
 ## 6. Critical data flows
 
 ### 6.1 Authentication and scope selection
+
+Registration and verification are separate task boundaries. P2-M2-T01 accepts
+only email and password, normalizes the email, applies the accepted per-email
+process-local limiter, stores a PHC-encoded Argon2id verifier, and creates an
+unverified platform user with no profile, organization, branch, session, or
+verification-token record. New and canonical-email duplicate attempts return
+the same generic `202 Accepted` public response. P2-M2-T03 later owns
+verification-token creation, resend, email-provider integration/delivery, and
+verification behavior.
 
 1. The client sends credentials over TLS.
 2. The API validates the request and verifies the Argon2 password hash.
@@ -401,8 +410,15 @@ The final design must decide public/private subnets, ingress, Next.js hosting mo
 
 - Authentication proves identity; authorization independently proves organization, branch, and action scope.
 - Queries are scoped as a defense-in-depth control, not only filtered after retrieval.
-- Sensitive endpoints use rate limits and safe error behavior.
-- Passwords use Argon2 and never leave the identity boundary in plaintext.
+- Registration uses a deterministic process-local in-memory limit of five
+  attempts per 15 minutes per canonical email, returns `429` plus `Retry-After`
+  when exhausted, and logs neither email nor password. Distributed/IP-aware
+  controls and proxy trust remain governed by `OQ-020`.
+- Passwords contain 15–128 Unicode code points and are preserved exactly as
+  supplied without trimming, normalization, truncation, or composition rules.
+  `argon2@0.45.1` creates a PHC-encoded Argon2id verifier with a generated salt,
+  `memoryCost=65536` KiB, `timeCost=3`, and `parallelism=4`; plaintext never
+  leaves the identity boundary.
 - Browser sessions are opaque, hash-only PostgreSQL records carried in HttpOnly cookies; no browser JWT or refresh-token flow exists.
 - Email verification, reset, and invitation delivery are routed through the email-provider abstraction; Resend is the production adapter and local/test adapters do not deliver mail.
 - Verification, reset, and invitation tokens are opaque, hash-only, single-use, and expiry-bound. Successful reset revokes all sessions; authorization/session checks deny disabled or deauthorized users.

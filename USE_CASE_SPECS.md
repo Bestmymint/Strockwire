@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | Behavioral Source of Truth; Architecture Freeze v1 with explicit blockers |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-22 |
+| Last updated | 2026-08-24 |
 
 ## 1. How to use this document
 
@@ -32,21 +32,23 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 - **Status:** Ready after identity foundation
 - **Actor:** New user
-- **Preconditions:** The email is not already registered under the accepted normalization rule; the service is available.
+- **Preconditions:** The service is available; the submitted email may be new or already registered under the accepted normalization rule.
 - **Trigger:** The user submits the email/password registration form.
 - **Main flow:**
   1. The client validates basic form shape and submits over TLS.
-  2. The API validates email and password requirements.
+  2. The API validates the required email and the 15–128 Unicode-code-point
+     password without trimming, normalizing, truncating, or applying composition rules.
   3. The API normalizes the email and checks uniqueness without leaking account details.
   4. The API hashes the password with Argon2.
-  5. The API creates the user in an email-unverified status and sends verification through the provider abstraction.
-  6. The API returns an account-safe verification next step; registration alone does not create authenticated state, organization access, or branch access.
-- **Alternative flows:** A previously incomplete account follows the accepted recovery/resume path; a verified existing user is directed to sign in without revealing sensitive state.
-- **Error cases:** Invalid email/password; duplicate normalized email; rate limit; database conflict; hashing failure; unavailable email provider; request retry. No plaintext password or internal error is logged/returned.
-- **Business rules:** Email/password is the only MVP sign-up method; Google login is future. Passwords are never stored before hashing. Duplicate requests must not create multiple accounts.
+  5. The API creates the user with `emailVerifiedAt = null` and
+     `displayName = null`; P2-M2-T01 creates no verification token and sends no email.
+  6. The API returns the same generic `202 Accepted` verification-next-step response for a new account and a canonical-email duplicate; registration alone does not create authenticated state, organization access, or branch access.
+- **Alternative flows:** Canonical-email duplicate and concurrent duplicate requests preserve exactly one account and receive the same public response as a new account. Verification-token creation, resend, provider integration/delivery, and verification are handled later by P2-M2-T03.
+- **Error cases:** Invalid email/password; exhausted rate limit; database conflict or failure; hashing failure; request retry. Expected uniqueness conflicts are absorbed into the generic response. No plaintext password, email limiter key, raw database error, or internal error is logged/returned.
+- **Business rules:** Email/password is the only MVP sign-up method; Google login is future. Passwords allow whitespace and Unicode, have no character-class composition requirements, and are preserved exactly before Argon2id hashing. Breached-password screening is deferred. Five attempts per canonical email per 15 minutes are allowed by a deterministic process-local in-memory limiter; exhaustion returns `429` with `Retry-After`. Duplicate requests must not create multiple accounts.
 - **Authorization:** Public endpoint with abuse controls; creates no organization/branch privilege by itself.
-- **Expected result:** Exactly one account is created or a safe, non-disclosing error is returned.
-- **Acceptance criteria:** Argon2 verifier stored; plaintext absent from storage/logs; duplicates handled; invalid input rejected; rate limiting tested; no organization access granted accidentally.
+- **Expected result:** Exactly one unverified account exists for the canonical email and the public response does not reveal whether this request created it.
+- **Acceptance criteria:** PHC-encoded accepted Argon2id verifier stored; plaintext absent from storage/logs; duplicate and concurrent requests return the generic `202`; invalid input rejected; rate limiting and `Retry-After` tested; no verification token, email delivery, session, organization, or branch access created accidentally.
 
 ### UC-IAM-002 — Sign in with email and password
 
