@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1 contract; transport shell, operational probes, and registration implemented |
+| Status | Architecture Freeze v1 contract; transport shell, operational probes, registration, login, and authenticated-context foundation implemented |
 | Base path | `/api/v1` |
 | Style | JSON REST |
 | Baseline | Architecture Freeze v1 |
@@ -106,7 +106,7 @@ The project must choose one consistent boundary between `409` and `422` during A
 
 ### 3.5 Authentication
 
-Browser authentication uses opaque server-side PostgreSQL sessions. The API sets the cryptographically random session token only in an HttpOnly, host-only cookie with `SameSite=Lax` and `Secure` in production; PostgreSQL stores only its cryptographic hash. The browser does not receive a JWT or refresh token and must not use `localStorage` or `sessionStorage` for authentication. Session idle and absolute timeouts are configurable (24 hours and seven days as the baseline), and the API validates expiry, revocation, account status, membership, and authorization on every protected request.
+Browser authentication uses opaque server-side PostgreSQL sessions. The API sets the cryptographically random session token only in the `stockwise_session` HttpOnly, host-only, `Path=/`, `SameSite=Lax` cookie (`Secure` in production, not local HTTP); PostgreSQL stores only its cryptographic hash. The browser does not receive a JWT or refresh token and must not use `localStorage` or `sessionStorage` for authentication. Session idle and absolute timeouts are configurable (sliding 24 hours and fixed seven days as the baseline), and valid activity persists at most one touch per 15 minutes. The API validates expiry, revocation, and active verified account state for authentication; membership and authorization remain a separate server-resolved boundary.
 
 This contract uses these semantic labels:
 
@@ -238,7 +238,7 @@ therefore the sole browser path for the health check.
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
 | `POST /auth/register` | Public | Email and password only | `202 Accepted` account-safe verification-next-step result; no session, token, organization, or branch created | Invalid input/rate limit/database or hashing failure; canonical-email duplicates receive the same public response as new accounts | Implemented by P2-M2-T01 |
-| `POST /auth/login` | Public | Email, password | Sets rotated opaque session cookie and returns safe user context | Generic invalid credentials, disabled/unverified, rate limit | Planned after identity foundation |
+| `POST /auth/login` | Public | Email and password only | `200`; sets a fresh opaque session cookie and returns only safe actor `id`, canonical `email`, and nullable `displayName` | Strict validation; generic invalid credentials for wrong/missing/unverified/disabled accounts; accepted login rate limit; safe database/hashing failure | Implemented by P2-M2-T02 |
 | `POST /auth/logout` | Authenticated/idempotent | None | Revokes current session and clears its cookie | Invalid/expired state; dependency failure | Planned after identity foundation |
 | `POST /auth/logout-all` | Authenticated | None | Revokes all sessions for current user and clears current cookie | Authentication/dependency failure | Planned after identity foundation |
 | `POST /auth/verify-email` | Public | Opaque verification token | Account-safe verification result | Expired/used/invalid token; provider failure | Planned after identity foundation |
@@ -307,6 +307,55 @@ abuse and stronger production timing controls remain under `OQ-020`.
 - Do not return raw session, verification, reset, or invitation tokens in persisted resources, logs, or general response payloads.
 - Verification, reset, and invitation delivery use the provider abstraction. Local/test adapters are non-delivery; production uses the Resend adapter.
 - Forgot-password and resend responses are account-safe and non-disclosing. Verification and reset tokens are single-use and expiry-bound; successful reset revokes every user session.
+
+### Login and authenticated-session contract
+
+- Request validation accepts only `email` and `password`, rejects unknown
+  fields, canonicalizes email with the registration policy, and preserves the
+  password exactly without trimming, normalization, or truncation.
+- Correct credentials require an `ACTIVE` user with non-null
+  `emailVerifiedAt`. Wrong password, missing canonical account, disabled user,
+  and unverified user all return `401 INVALID_CREDENTIALS` with the same public
+  message. Missing accounts execute verification against one fixed valid dummy
+  Argon2 PHC hash through the centralized verifier.
+- Successful authentication generates a fresh 32-byte CSPRNG token and stores
+  only its deterministic SHA-256 hash. The database session identifier and
+  token hash are never serialized. A currently valid same-user incoming cookie
+  session is revoked as `login_rotation` atomically with fresh-session creation.
+- Initial idle expiry is login plus 24 hours and absolute expiry is login plus
+  seven days by default. Valid authenticated requests persist a touch at most
+  once per 15 minutes, setting idle expiry to
+  `min(now + idle timeout, absolute expiry)`. Required touch failure, expiry,
+  revocation, unknown token, disabled/unverified actor, and database failure all
+  fail authentication closed.
+- The login-only limiter processes five credential failures per canonical email
+  per fixed 15-minute process-local window. Success is allowed before
+  exhaustion and does not reset the active window. Subsequent attempts after
+  five failures receive `429 RATE_LIMITED` and remaining-window `Retry-After`.
+  Malformed requests do not create limiter keys. Distributed/IP-aware/global
+  controls and proxy trust remain under `OQ-020`.
+
+Successful login returns exactly this public shape (with `displayName` as a
+string when already populated):
+
+```json
+{
+  "data": {
+    "user": {
+      "id": "opaque-user-id",
+      "email": "user@example.com",
+      "displayName": null
+    }
+  },
+  "meta": {
+    "requestId": "opaque-request-id"
+  }
+}
+```
+
+It returns no session ID/hash, password data, membership, role, organization,
+branch, permission, or authorization state. Organization/branch options belong
+to later onboarding and access-management work.
 
 ## 7. Organization, branch, and membership endpoints
 
@@ -479,13 +528,19 @@ At minimum, define/test rate limits for:
 
 Exact thresholds are configuration/production decisions under `OQ-020`. Rate-limit keys must not permit easy cross-tenant denial of service and must respect proxy/ingress trust configuration.
 
-P2-M2-T01 has one accepted MVP exception to that deferral: registration permits
+P2-M2-T01 and P2-M2-T02 have accepted MVP exceptions to that deferral. Registration permits
 five attempts per 15 minutes per canonical email through a deterministic
 process-local in-memory limiter. It stores no database limiter state and logs
 neither email nor password. An exhausted limit returns `429 RATE_LIMITED` with
 `Retry-After`. Distributed/IP-aware limiting, cross-process coordination, and
 proxy/deployment trust remain open under `OQ-020`; this baseline does not close
 those questions.
+
+Login separately permits five failed credential attempts per fixed 15-minute
+window per canonical email through a SHA-256-derived process-local key. Only
+credential failures count and success does not reset the active window.
+Exhaustion returns `429 RATE_LIMITED` with `Retry-After`. This does not close the
+remaining distributed/IP-aware/global or proxy-trust decisions in `OQ-020`.
 
 ## 16. API test contract
 

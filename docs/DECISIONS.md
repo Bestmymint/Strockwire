@@ -481,7 +481,11 @@ The MVP needs browser authentication that supports immediate revocation, disable
 
 ### Decision
 
-Use opaque server-side sessions backed by PostgreSQL for MVP. Generate a cryptographically random session token, send it only in an HttpOnly cookie, and persist only its cryptographic hash with the user, issue/last-use, idle/absolute expiry, and revocation state. The cookie is host-only (no `Domain` attribute), `SameSite=Lax`, and `Secure` in production. The idle-timeout baseline is 24 hours and the absolute-timeout baseline is seven days; both remain configuration values.
+Use opaque server-side sessions backed by PostgreSQL for MVP. Generate a cryptographically random session token, send it only in the `stockwise_session` HttpOnly cookie, and persist only its cryptographic hash with the user, issue/last-use, idle/absolute expiry, and revocation state. The cookie has `Path=/`, is host-only (no `Domain` attribute), `SameSite=Lax`, and `Secure` in production but not on the accepted local HTTP path.
+
+The idle-timeout baseline is a sliding 24 hours and the absolute-timeout baseline is a fixed seven days; both remain configuration values. A valid authenticated request persists an activity touch at most once every 15 minutes, setting `lastUsedAt` to the touch time and `idleExpiresAt` to the earlier of touch time plus 24 hours or absolute expiry. A required touch failure fails authentication closed. Absolute expiry never moves.
+
+Successful authentication always creates a fresh token. When the incoming StockWise cookie resolves to a currently valid session for the same account, revocation as `login_rotation` and fresh-session creation occur atomically. Malformed, unknown, revoked, and expired incoming values are never reused and do not independently block valid credentials.
 
 Do not use JWT for browser authentication, store tokens in `localStorage` or `sessionStorage`, or add a refresh-token flow. Rotate the session on successful authentication, revoke the current session on logout, support revoking every session for a user, and resolve authorization server-side on every protected request. Disabled or deauthorized users lose access when their request is evaluated.
 
@@ -496,6 +500,9 @@ Do not use JWT for browser authentication, store tokens in `localStorage` or `se
 - The identity schema must add an appropriately indexed, hash-only session record and expiry/revocation checks.
 - Cookie-based state-changing endpoints need implementation-time cross-site-request protections; this ADR does not authorize an alternate credential transport.
 - The API and web client must never return or persist a browser bearer token.
+- Authentication context contains trusted actor/session identity only. Membership,
+  role, organization, branch, and permission resolution remains a separate
+  authorization/access-management boundary.
 
 ## ADR-014 — Use a provider-abstracted Resend email lifecycle
 

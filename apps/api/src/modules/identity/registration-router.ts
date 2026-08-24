@@ -1,25 +1,15 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
 
+import { canonicalEmailSchema, passwordSchema } from "./credential-schemas.ts";
 import type { RegistrationLimiter } from "./registration-limiter.ts";
 import type { RegistrationService } from "./registration-service.ts";
 
 const REQUEST_ID_HEADER = "X-Request-Id";
 
-const passwordSchema = z.string().superRefine((password, context) => {
-  const codePointLength = [...password].length;
-
-  if (codePointLength < 15 || codePointLength > 128) {
-    context.addIssue({
-      code: "custom",
-      message: "Password must contain between 15 and 128 Unicode code points.",
-    });
-  }
-});
-
 export const registrationRequestSchema = z
   .object({
-    email: z.string().trim().toLowerCase().max(320).email(),
+    email: canonicalEmailSchema,
     password: passwordSchema,
   })
   .strict();

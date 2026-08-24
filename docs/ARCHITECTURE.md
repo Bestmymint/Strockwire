@@ -56,7 +56,7 @@ flowchart TD
     CW -. job telemetry .- JOB
 ```
 
-Only the minimal Next.js web shell, Express API transport shell, root-level operational probes, and a development-only local PostgreSQL Docker Compose baseline are implemented. The API exposes no business endpoints or domain modules; Prisma, AWS resources, and diagrammed integrations do not exist yet.
+The minimal Next.js web shell, Express API transport shell, root-level operational probes, development-only local PostgreSQL Docker Compose baseline, API-owned Prisma identity/tenancy foundation, pure authorization policy, registration, login, and authenticated actor/session context are implemented. No organization/branch onboarding or access-management endpoint, later retail domain, analytics/AI integration, AWS resource, or production deployment exists yet.
 
 ### Repository boundaries
 
@@ -217,12 +217,12 @@ generation, email provider, or onboarding behavior is part of this boundary.
 
 1. The client sends credentials over TLS.
 2. The API validates the request and verifies the Argon2 password hash.
-3. The API rotates a cryptographically random opaque session, sends it only in an HttpOnly cookie, and stores only its hash in PostgreSQL.
-4. For each protected request, the API resolves the actor, account status, membership, and branch assignment from trusted session state.
-5. If a branch is selected, the API verifies that it belongs to the active organization and that the actor has branch or organization permission.
-6. The client receives only accessible organizations/branches and permissible actions.
+3. The API creates a fresh 256-bit opaque session token, sends it only in the `stockwise_session` HttpOnly cookie, and stores only its SHA-256 hash in PostgreSQL. A currently valid same-user cookie session is revoked as `login_rotation` in the fresh-session transaction.
+4. Login returns only safe actor `id`, canonical `email`, and nullable `displayName`; it does not load or return membership, role, organization, branch, permission, or authorization state.
+5. For each protected request, authentication resolves the active, verified actor and session from the token hash. Sliding idle activity is persisted at most once per 15 minutes and never extends fixed absolute expiry.
+6. Later access-management/policy wiring separately resolves membership and branch assignment. If a branch is selected, that layer verifies its organization ownership and actor permission before returning accessible scope.
 
-The browser never receives a JWT or refresh token and never stores an auth token in `localStorage` or `sessionStorage`. Session expiry/revocation, including disabled or deauthorized actors, is evaluated server-side. The cookie is host-only, `SameSite=Lax`, and `Secure` in production; configurable timeout baselines are 24 hours idle and seven days absolute.
+The browser never receives a JWT or refresh token and never stores an auth token in `localStorage` or `sessionStorage`. Session expiry/revocation and disabled actors are evaluated server-side; deauthorized membership is denied later by the separate authorization boundary. The cookie has `Path=/`, is host-only, `SameSite=Lax`, and `Secure` in production but not local HTTP. Configurable timeout baselines are sliding 24 hours idle, fixed seven days absolute, and a 15-minute minimum persisted-touch interval.
 
 ### 6.2 Purchase receiving
 
@@ -424,6 +424,11 @@ The final design must decide public/private subnets, ingress, Next.js hosting mo
   attempts per 15 minutes per canonical email, returns `429` plus `Retry-After`
   when exhausted, and logs neither email nor password. Distributed/IP-aware
   controls and proxy trust remain governed by `OQ-020`.
+- Login uses a separate deterministic process-local fixed-window limiter keyed
+  by a SHA-256 derivative of canonical email. Five failed credential attempts
+  per 15 minutes are processed; subsequent attempts receive `429` plus
+  `Retry-After`. Only credential failures count, success does not reset an
+  active window, and missing accounts use one fixed dummy Argon2 verifier.
 - Passwords contain 15–128 Unicode code points and are preserved exactly as
   supplied without trimming, normalization, truncation, or composition rules.
   `argon2@0.45.1` creates a PHC-encoded Argon2id verifier with a generated salt,

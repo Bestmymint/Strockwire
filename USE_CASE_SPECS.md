@@ -61,14 +61,17 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   2. It locates the account using non-disclosing behavior.
   3. It verifies the Argon2 password hash.
   4. It checks account status/verification rules.
-  5. It rotates an opaque server-side session and sets its HttpOnly cookie.
-  6. It returns safe user context and accessible organization/branch options.
+  5. It atomically rotates a currently valid same-user session when present,
+     creates a fresh opaque server-side session, and sets its HttpOnly cookie.
+  6. It returns only the safe authenticated actor fields `id`, canonical `email`,
+     and nullable `displayName`. Organization/branch options are resolved by
+     later onboarding and access-management work.
 - **Alternative flows:** A verified account with incomplete profile/onboarding can authenticate but is limited to the next required setup route. Disabled or deauthorized users lose access when authorization is evaluated.
 - **Error cases:** Wrong email/password; unverified/disabled account; rate limit; expired/revoked state; database unavailable. Credential failure must not disclose whether an email exists.
-- **Business rules:** Branch selection is not embedded as permanent user ownership. The browser never receives a JWT/refresh token or writes auth state to web storage; only the session hash is stored server-side.
-- **Authorization:** Public endpoint with rate limiting; returned scopes come only from active memberships.
+- **Business rules:** Branch selection is not embedded as permanent user ownership. The browser never receives a JWT/refresh token or writes auth state to web storage; only the session hash is stored server-side. Login permits five failed credential attempts per canonical email per fixed 15-minute process-local window. Only credential failures count; success does not reset an active window. After five failures, subsequent attempts receive `429` and `Retry-After`. Sessions have sliding 24-hour idle and fixed seven-day absolute expiry baselines; successful authenticated requests persist at most one activity touch per 15 minutes.
+- **Authorization:** Public endpoint with the accepted login abuse control. Login establishes authentication only and returns no membership, role, organization, branch, permission, or authorization state.
 - **Expected result:** A valid user obtains authenticated state; invalid attempts have no side effect beyond safe security telemetry.
-- **Acceptance criteria:** Generic credential error; rate-limit tests; secret-safe logs; only authorized memberships returned; strategy-specific security tests pass.
+- **Acceptance criteria:** Generic credential error; fixed-window rate-limit tests; secret-safe logs; hash-only session persistence; secure cookie/rotation/expiry/touch behavior; safe actor-only response; strategy-specific security tests pass.
 
 ### UC-IAM-003 — Sign out
 

@@ -292,7 +292,9 @@ Required logical attributes:
 Constraints and lifecycle:
 
 - The raw token is never persisted. A session is valid only while unrevoked, its user is enabled/authorized, and neither expiry has passed.
-- Successful authentication creates a rotated session. Logout revokes the current session; password reset and user-wide revocation revoke all sessions for the user.
+- Successful authentication creates a fresh session. If the incoming `stockwise_session` cookie identifies a currently valid session for the same user, revoking it as `login_rotation` and creating the fresh record is one transaction. Unknown, malformed, revoked, or expired incoming tokens are not reused.
+- Initial idle expiry is issue time plus the configurable 24-hour baseline; absolute expiry is issue time plus the configurable seven-day baseline. Absolute expiry is immutable. After a valid authenticated request, activity is persisted at most once per 15 minutes: `lastUsedAt` becomes the touch time and idle expiry becomes `min(touch + idle timeout, absolute expiry)`. A required touch failure fails authentication closed, and an expired session is never revived.
+- Logout revokes the current session; password reset and user-wide revocation revoke all sessions for the user. Those actions remain owned by P2-M2-T03.
 - Index active-session lookup by token hash and user-wide revocation/query paths by user and expiry/revocation state.
 
 #### `EmailVerificationToken` and `PasswordResetToken`

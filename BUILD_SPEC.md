@@ -258,7 +258,7 @@ Identifiers below are stable references for plans, use cases, tests, and APIs.
 - **FR-IAM-004:** One user shall be able to access multiple authorized branches using one account.
 - **FR-IAM-005:** A user shall not access a tenant, branch, or aggregate outside their authorization scope.
 - **FR-IAM-006:** Browser authentication shall use a cryptographically random opaque session token in an HttpOnly cookie; PostgreSQL stores only its hash and the API authorizes every protected request server-side.
-- **FR-IAM-007:** Sessions shall rotate on successful authentication, expire after configurable 24-hour idle and seven-day absolute baselines, and be revocable individually or for all user sessions.
+- **FR-IAM-007:** Sessions shall rotate on successful authentication, expire after configurable sliding 24-hour idle and fixed seven-day absolute baselines, and be revocable individually or for all user sessions. Valid authenticated activity persists a touch at most once per 15 minutes and never extends absolute expiry.
 - **FR-IAM-008:** Email/password accounts shall verify email before access; verification, reset, and invitation tokens shall be opaque, cryptographically random, hashed at rest, single-use, and expiry-bound.
 - **FR-IAM-009:** New-organization onboarding shall require display name, organization name, and initial branch name, create the creator's `OWNER` membership atomically, and collect only the approved optional profile/branch phone and branch-address fields.
 - **FR-IAM-010:** Invitations shall be email-bound, require authentication and verified ownership of the invited email before acceptance, and create the organization membership and branch assignments atomically and idempotently.
@@ -271,6 +271,13 @@ Whitespace and Unicode are allowed. Breached-password screening is deferred.
 P2-M2-T01 creates the platform user with `emailVerifiedAt = null` but creates no
 verification token and sends no email. P2-M2-T03 owns verification-token
 creation, resend, provider integration/delivery, and verification behavior.
+
+P2-M2-T02 login permits five failed credential attempts per canonical email per
+fixed 15-minute process-local window. Only credential failures count; a success
+does not reset the active counter/window. After five failures, later attempts in
+the window return `429` with `Retry-After`. Missing-account login runs the same
+Argon2 verification path against one fixed valid dummy PHC hash. Distributed,
+IP-aware, global controls and proxy trust remain open under `OQ-020`.
 New and canonical-email duplicate registration attempts return the same generic
 `202 Accepted` public response; the database unique constraint remains the
 final race-safe email boundary. Registration permits five attempts per 15
@@ -432,7 +439,7 @@ This is the canonical list. Other documents reference these IDs and must not red
 | --- | --- | --- |
 | **OQ-001** | Use a native pnpm workspace on Node.js 24 LTS. Runtime applications use `apps/web` and `apps/api`; deliberately shared internal packages may use `packages/*` only when justified. Use one root lockfile and no monorepo orchestration framework until a measured need exists. | `ADR-011` |
 | **OQ-002** | Use the Next.js App Router with the `src/app` directory convention. React Server Components are the default; use Client Components only for required client-side behavior. Route Groups may be added later only for implemented routes. StockWise business REST APIs remain in Express and must not be implemented as Next.js Route Handlers. | `ADR-012` |
-| **OQ-003** | Use opaque PostgreSQL-backed server-side sessions. Send a cryptographically random session token only in an HttpOnly, host-only, `SameSite=Lax` cookie (`Secure` in production); store only its cryptographic hash. Do not use browser JWTs, `localStorage`/`sessionStorage`, or refresh tokens. Rotate on successful authentication, revoke current or all user sessions, enforce server-side authorization, and make idle/absolute timeouts configurable (24 hours/7 days baseline). | `ADR-013` |
+| **OQ-003** | Use opaque PostgreSQL-backed server-side sessions. Send a cryptographically random session token only in the `stockwise_session` HttpOnly, host-only, `SameSite=Lax`, `Path=/` cookie (`Secure` in production, not local HTTP); store only its cryptographic hash. Do not use browser JWTs, `localStorage`/`sessionStorage`, or refresh tokens. Successful authentication creates a fresh token and atomically revokes a currently valid same-user cookie session as `login_rotation`. Enforce server-side authorization, configurable sliding 24-hour idle and fixed seven-day absolute expiry baselines, and at most one persisted activity touch per 15 minutes. | `ADR-013` |
 | **OQ-004** | Require email verification for email/password accounts. P2-M2-T01 creates an unverified account but no verification token and sends no email; P2-M2-T03 owns token creation, resend, provider integration/delivery, and verification. Verification and reset tokens are opaque, cryptographically random, hash-only, single-use tokens with 24-hour and 30-minute expiry respectively; resend replaces the active verification token; reset revokes all sessions; forgot-password responses are non-disclosing. | `ADR-014`, `ADR-017` |
 | **OQ-005** | Registration accepts only email and password. The platform profile later requires display name, so `User.displayName` remains nullable until profile/onboarding; no placeholder is derived from email. New-organization onboarding requires display name, organization name, and initial branch name. Phone is optional for the platform profile and initial branch; branch address is optional. The creator becomes `OWNER`. User identity is platform-level; access derives from memberships. Invitations use their own flow. | `ADR-015`, `ADR-017` |
 | **OQ-006** | Use email-bound organization invitations carrying the intended role and branch scope. Their opaque, cryptographically random, hash-only token is single-use and expires in seven days; reissue invalidates the active invite. The invited email must authenticate and verify before transactional, idempotent acceptance creates membership and branch assignments. No automatic account creation or naive cross-email linking. Changed scope requires a replacement invitation. | `ADR-014` |
@@ -455,7 +462,7 @@ This is the canonical list. Other documents reference these IDs and must not red
 | **OQ-017** | At what local times do daily, weekly, monthly, and yearly jobs run, and how are retries/catch-up handled? | AI scheduler | Medium |
 | **OQ-018** | Which OpenRouter model, fallback policy, timeout, budget, prompt review, and retention rules are accepted? | AI integration | Medium |
 | **OQ-019** | Is a durable audit-log feature required in MVP or only production hardening? | Security/compliance | Medium |
-| **OQ-020** | Beyond the accepted process-local registration limiter, what distributed/IP-aware abuse controls, proxy trust, measurable performance, availability, recovery, browser-support, and data-retention targets define production readiness? | Hardening/load tests | Medium |
+| **OQ-020** | Beyond the accepted process-local registration and login limiters, what distributed/IP-aware abuse controls, proxy trust, measurable performance, availability, recovery, browser-support, and data-retention targets define production readiness? | Hardening/load tests | Medium |
 | **OQ-021** | Does purchasing support partial receiving, over-receiving, cancellation after partial receipt, and supplier returns in MVP? | Purchasing/receiving | High |
 | **OQ-023** | Which units of measure are supported in MVP, may quantities be fractional, and what database/API precision and rounding apply to quantities? | Catalog, inventory, purchasing, sales, analytics | Critical |
 | **OQ-024** | What normalization, duplicate-name, deactivation, and deletion rules apply to categories, suppliers, and other catalog master data? | Catalog and suppliers | Medium |
