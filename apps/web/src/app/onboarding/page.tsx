@@ -1,13 +1,13 @@
 import { AuthCard } from "@/components/auth/auth-card";
-import { LogoutButton } from "@/components/auth/logout-button";
+import { OnboardingForm } from "@/components/auth/onboarding-form";
 
-export default function OnboardingHoldingPage() {
+export default function OnboardingPage() {
   return (
     <AuthCard
-      description="Profile and organization setup is the next workflow and will be available in P2-M3."
-      title="Continue setup"
+      description="Complete your profile and create your first organization and branch."
+      title="Set up StockWise"
     >
-      <LogoutButton />
+      <OnboardingForm />
     </AuthCard>
   );
 }

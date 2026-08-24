@@ -99,9 +99,10 @@ model OrganizationMembership {
   createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  user              User               @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  branchAssignments BranchAssignment[]
+  organization                Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  user                        User                         @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  branchAssignments           BranchAssignment[]
+  firstOrganizationOnboarding FirstOrganizationOnboarding?
 
   @@id([organizationId, userId], map: "organization_memberships_pkey")
   @@index([userId, status, organizationId], map: "organization_memberships_user_status_idx")
@@ -120,14 +121,30 @@ model Branch {
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  organization           Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  assignments            BranchAssignment[]
-  invitationBranchScopes InvitationBranchScope[]
+  organization                Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  assignments                 BranchAssignment[]
+  invitationBranchScopes      InvitationBranchScope[]
+  firstOrganizationOnboarding FirstOrganizationOnboarding?
 
   @@unique([organizationId, code], map: "branches_organization_id_code_key")
   @@unique([id, organizationId], map: "branches_id_organization_id_key")
   @@index([organizationId, status], map: "branches_organization_id_status_idx")
   @@map("branches")
+}
+
+model FirstOrganizationOnboarding {
+  userId         String   @id @map("user_id") @db.Uuid
+  organizationId String   @unique(map: "first_organization_onboardings_organization_id_key") @map("organization_id") @db.Uuid
+  branchId       String   @map("branch_id") @db.Uuid
+  requestHash    String   @map("request_hash") @db.VarChar(64)
+  completedAt    DateTime @default(now()) @map("completed_at") @db.Timestamptz(3)
+
+  membership OrganizationMembership @relation(fields: [organizationId, userId], references: [organizationId, userId], onDelete: Restrict, onUpdate: Restrict)
+  branch     Branch                 @relation(fields: [branchId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([organizationId, userId], map: "first_organization_onboardings_organization_id_user_id_key")
+  @@unique([branchId, organizationId], map: "first_organization_onboardings_branch_id_organization_id_key")
+  @@map("first_organization_onboardings")
 }
 
 model BranchAssignment {

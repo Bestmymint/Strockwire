@@ -65,7 +65,7 @@ function accepted(response: Response): void {
   });
 }
 
-function createCrossSiteRequestProtection(
+export function createCrossSiteRequestProtection(
   publicWebOrigin: string,
 ): RequestHandler {
   return (request, response, next) => {

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   AuthApiError,
+  completeFirstOrganizationOnboarding,
   forgotPassword,
   login,
   register,
@@ -135,11 +136,77 @@ describe("authentication API client", () => {
     });
   });
 
+  it("posts only the accepted first-onboarding fields and validates the safe result", async () => {
+    const responseData = {
+      branch: {
+        address: null,
+        code: "MAIN",
+        id: "branch-id",
+        name: "Main",
+        phone: null,
+      },
+      nextStep: "app",
+      organization: { id: "organization-id", name: "Store" },
+      role: "OWNER",
+      user: { displayName: "Owner", id: "user-id", phone: null },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(successfulResponse(responseData));
+    vi.stubGlobal("fetch", fetchMock);
+    const request = {
+      branchAddress: "",
+      branchName: "Main",
+      branchPhone: "",
+      displayName: "Owner",
+      organizationName: "Store",
+      phone: "",
+    };
+
+    await expect(completeFirstOrganizationOnboarding(request)).resolves.toEqual(
+      { data: responseData },
+    );
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/organizations", {
+      body: JSON.stringify(request),
+      credentials: "same-origin",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+  });
+
+  it("maps first-onboarding conflicts to safe client error kinds", async () => {
+    for (const [code, kind] of [
+      ["ALREADY_ONBOARDED", "already_onboarded"],
+      ["ALREADY_HAS_ORGANIZATION_ACCESS", "already_has_organization_access"],
+    ] as const) {
+      vi.stubGlobal(
+        "fetch",
+        vi
+          .fn()
+          .mockResolvedValue(
+            new Response(JSON.stringify({ error: { code } }), { status: 409 }),
+          ),
+      );
+
+      await expect(
+        completeFirstOrganizationOnboarding({
+          branchName: "Main",
+          displayName: "Owner",
+          organizationName: "Store",
+        }),
+      ).rejects.toMatchObject({ kind });
+    }
+  });
+
   it("keeps browser storage and the server-only loopback origin out of auth UI code", () => {
     const sourceRoot = new URL(".", import.meta.url);
     const authSources = [
       new URL("./api-client.ts", sourceRoot),
       new URL("./components/auth/login-form.tsx", sourceRoot),
+      new URL("./components/auth/onboarding-form.tsx", sourceRoot),
       new URL("./components/auth/registration-form.tsx", sourceRoot),
       new URL("./components/auth/reset-password-form.tsx", sourceRoot),
       new URL("./components/auth/verification-form.tsx", sourceRoot),

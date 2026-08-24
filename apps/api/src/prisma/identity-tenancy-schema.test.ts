@@ -79,11 +79,17 @@ describe("identity and tenancy database schema", () => {
         finished: true,
         active: true,
       },
+      {
+        migrationName: "20260824173000_first_organization_onboarding",
+        finished: true,
+        active: true,
+      },
     ]);
     expect(tables.map(({ tableName }) => tableName)).toEqual([
       "branch_assignments",
       "branches",
       "email_verification_tokens",
+      "first_organization_onboardings",
       "invitation_branch_scopes",
       "invitations",
       "organization_memberships",
@@ -215,6 +221,93 @@ describe("identity and tenancy database schema", () => {
         where: { organizationId: organization.id },
       }),
     ).toBe(0);
+  });
+
+  it("enforces one tenant-safe first-onboarding provenance row per user", async () => {
+    const firstUser = await createUser("first-onboarding@example.com");
+    const secondUser = await createUser("second-onboarding@example.com");
+    const firstOrganization = await createOrganization(
+      "First Onboarding Organization",
+    );
+    const secondOrganization = await createOrganization(
+      "Second Onboarding Organization",
+    );
+    const firstBranch = await createBranch(firstOrganization.id, "MAIN");
+    const secondBranch = await createBranch(secondOrganization.id, "MAIN");
+    await prisma.organizationMembership.createMany({
+      data: [
+        {
+          organizationId: firstOrganization.id,
+          role: "OWNER",
+          userId: firstUser.id,
+        },
+        {
+          organizationId: secondOrganization.id,
+          role: "OWNER",
+          userId: secondUser.id,
+        },
+        {
+          organizationId: secondOrganization.id,
+          role: "ADMIN",
+          userId: firstUser.id,
+        },
+        {
+          organizationId: firstOrganization.id,
+          role: "ADMIN",
+          userId: secondUser.id,
+        },
+      ],
+    });
+
+    await prisma.firstOrganizationOnboarding.create({
+      data: {
+        branchId: firstBranch.id,
+        organizationId: firstOrganization.id,
+        requestHash: "a".repeat(64),
+        userId: firstUser.id,
+      },
+    });
+
+    await expect(
+      prisma.firstOrganizationOnboarding.create({
+        data: {
+          branchId: secondBranch.id,
+          organizationId: secondOrganization.id,
+          requestHash: "b".repeat(64),
+          userId: firstUser.id,
+        },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      prisma.firstOrganizationOnboarding.create({
+        data: {
+          branchId: firstBranch.id,
+          organizationId: firstOrganization.id,
+          requestHash: "b".repeat(64),
+          userId: secondUser.id,
+        },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      prisma.firstOrganizationOnboarding.create({
+        data: {
+          branchId: secondBranch.id,
+          organizationId: firstOrganization.id,
+          requestHash: "c".repeat(64),
+          userId: secondUser.id,
+        },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      prisma.firstOrganizationOnboarding.create({
+        data: {
+          branchId: secondBranch.id,
+          organizationId: secondOrganization.id,
+          requestHash: "not-a-sha-256-hash",
+          userId: secondUser.id,
+        },
+      }),
+    ).rejects.toThrow();
   });
 
   it("rejects duplicate and cross-organization branch assignments", async () => {

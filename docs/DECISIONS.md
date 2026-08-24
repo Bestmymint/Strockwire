@@ -743,6 +743,60 @@ controls.
 - Process restart or another instance has an independent counter; this is not
   represented as production-grade distributed protection.
 
+## ADR-019 — Persist one replay-safe first-organization onboarding result
+
+- **Date:** 2026-08-24
+- **Status:** Accepted
+- **Type:** Product, data, API, and concurrency boundary
+
+### Context
+
+The accepted minimal onboarding fields did not define the required physical
+branch code, one-time eligibility, durable replay identity, or post-success
+destination. The existing multi-organization membership model intentionally
+cannot use membership uniqueness alone to identify the one first-onboarding
+result.
+
+### Decision
+
+`POST /organizations` is the authenticated verified user's one-time first-
+organization command. With no persisted onboarding provenance, eligibility
+requires zero `OrganizationMembership` rows of any status; a pending invitation
+alone does not block it. Submitted profile values replace existing profile
+values only during the successful initial transaction.
+
+Create the initial branch with server-owned code `MAIN`; the client neither
+supplies nor derives it. Required text is boundary-trimmed and nonblank. Optional
+phone/address text is boundary-trimmed and blank becomes `NULL`. Preserve
+internal whitespace and Unicode representation without case folding, Unicode
+normalization, or phone transformation.
+
+Persist one `FirstOrganizationOnboarding` row per user containing the created
+organization, same-organization branch, canonical-request SHA-256 hash, and
+completion time. Restrictive foreign keys and the composite branch/organization
+relationship preserve tenant integrity. The API locks the user row and rechecks
+provenance/membership inside the transaction; the per-user primary key remains
+the authoritative uniqueness boundary. The transaction updates profile and
+creates organization, OWNER membership, `MAIN` branch, and provenance together.
+
+Existing provenance plus the same hash returns HTTP `200` with the original
+logical resource result and no mutation. A different hash returns `409
+ALREADY_ONBOARDED`; membership without provenance returns `409
+ALREADY_HAS_ORGANIZATION_ACCESS`. No client idempotency key or serialized HTTP
+response is stored. Success returns only safe user/organization/branch data,
+role `OWNER`, and `nextStep = app`; the web client navigates to a minimal `/app`
+holding route.
+
+### Consequences
+
+- This endpoint cannot create a second organization; that requires a later
+  explicit capability and contract.
+- OWNER is organization-wide and the initial transaction creates no branch
+  assignment.
+- Invitation acceptance and later branch code rules remain separate tasks.
+- Request hashes, provenance identifiers, session state, and permission arrays
+  never enter the public response.
+
 ## 2. Explicitly superseded planning directions
 
 The current ADRs supersede these earlier, unimplemented ideas:

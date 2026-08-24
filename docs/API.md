@@ -416,7 +416,7 @@ remains open under `OQ-020`.
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `POST /organizations` | Authenticated verified account without organization onboarding | Organization name; initial branch name; optional branch phone/address | Atomically created organization, initial branch, and OWNER context | Duplicate submission, invalid fields | Planned after identity foundation |
+| `POST /organizations` | Authenticated verified account; first-onboarding/replay rules below | Required display, organization, and initial branch names; optional profile/branch phone and branch address | `200`; initial creation or identical replay of safe user/organization/`MAIN` branch/OWNER context | Strict validation; `ALREADY_ONBOARDED`; `ALREADY_HAS_ORGANIZATION_ACCESS`; safe dependency failure | Implemented by P2-M3-T01 |
 | `GET /organizations/{organizationId}` | Organization-scoped | None | Organization detail allowed to role | Safe not-found/forbidden | Planned |
 | `PATCH /organizations/{organizationId}` | Organization admin | Editable fields | Updated organization | Validation/state/stale conflict | Blocked field/permission details |
 | `POST /organizations/{organizationId}/branches` | `OWNER` or `ADMIN` | Code, name; optional phone/address | Created branch | Duplicate code, invalid state | Planned after identity foundation |
@@ -426,6 +426,76 @@ remains open under `OQ-020`.
 | `PATCH /organizations/{organizationId}/members/{userId}` | `OWNER` for OWNER changes; `OWNER`/`ADMIN` for non-owner changes | Role/status/branch assignments | Updated membership | Last-owner/role escalation/stale state | Planned after identity foundation |
 
 No endpoint may accept an arbitrary `organizationId` in the body as ownership truth.
+
+### First organization onboarding contract
+
+`POST /organizations` is the one-time first-organization command, not a generic
+organization creator. Its strict body accepts exactly:
+
+```json
+{
+  "displayName": "Owner Name",
+  "phone": "+66 1 234 5678",
+  "organizationName": "HCN Mart",
+  "branchName": "Latkrabang",
+  "branchPhone": "+66 2 000 0000",
+  "branchAddress": "1 Main Road"
+}
+```
+
+The three name fields are required. Surrounding whitespace is trimmed and the
+result must be nonblank. Optional strings are trimmed and omitted/blank values
+persist as `NULL`. Internal whitespace and Unicode representation are preserved;
+no Unicode normalization, case folding, phone transformation, or phone format is
+introduced. The request never accepts actor, organization, membership, role,
+branch, code, permission, onboarding, or idempotency-key state. The API derives
+the actor from the verified opaque session and assigns initial branch code
+`MAIN` plus role `OWNER` server-side.
+
+The API hashes a deterministic serialization of the canonical six-field value,
+including explicit `NULL` optionals, with SHA-256. The internal hash and a unique
+per-user provenance record drive replay; neither is accepted or returned. With
+no provenance, eligibility requires zero organization memberships regardless of
+status. A pending invitation alone is not a membership and does not block the
+command. Existing provenance plus the same hash is a non-mutating replay;
+different hash returns `409 ALREADY_ONBOARDED`. Membership without provenance
+returns `409 ALREADY_HAS_ORGANIZATION_ACCESS`. Both conflicts use the canonical
+error envelope and mutate nothing.
+
+Initial success and identical replay return HTTP `200`:
+
+```json
+{
+  "data": {
+    "user": {
+      "id": "opaque-user-id",
+      "displayName": "Owner Name",
+      "phone": null
+    },
+    "organization": {
+      "id": "opaque-organization-id",
+      "name": "HCN Mart"
+    },
+    "branch": {
+      "id": "opaque-branch-id",
+      "name": "Latkrabang",
+      "code": "MAIN",
+      "phone": null,
+      "address": null
+    },
+    "role": "OWNER",
+    "nextStep": "app"
+  },
+  "meta": {
+    "requestId": "opaque-request-id"
+  }
+}
+```
+
+The result contains no membership/provenance identifier, request hash, session
+state, token, permission list, or database representation. The web client
+navigates a successful result to `/app`, which is only the P2-M3-T01 completion
+holding shell.
 
 ## 8. Catalog endpoints
 

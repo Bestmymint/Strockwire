@@ -27,6 +27,8 @@ const apiErrorSchema = z.object({
 });
 
 const safeApiErrorCodes = new Set([
+  "ALREADY_HAS_ORGANIZATION_ACCESS",
+  "ALREADY_ONBOARDED",
   "INVALID_CREDENTIALS",
   "INVALID_TOKEN",
   "RATE_LIMITED",
@@ -34,6 +36,8 @@ const safeApiErrorCodes = new Set([
 ]);
 
 export type AuthApiErrorKind =
+  | "already_has_organization_access"
+  | "already_onboarded"
   | "invalid_credentials"
   | "invalid_token"
   | "rate_limited"
@@ -85,6 +89,14 @@ function authErrorFromResponse(
 
   if (code === "INVALID_TOKEN") {
     return new AuthApiError("invalid_token");
+  }
+
+  if (code === "ALREADY_ONBOARDED") {
+    return new AuthApiError("already_onboarded");
+  }
+
+  if (code === "ALREADY_HAS_ORGANIZATION_ACCESS") {
+    return new AuthApiError("already_has_organization_access");
   }
 
   if (response.status === 400 || code === "VALIDATION_ERROR") {
@@ -158,6 +170,25 @@ const verificationResponseSchema = z.object({
 const resetResponseSchema = z.object({
   data: z.object({ status: z.literal("password_reset") }),
 });
+const firstOrganizationOnboardingResponseSchema = z.object({
+  data: z.object({
+    user: z.object({
+      id: z.string(),
+      displayName: z.string(),
+      phone: z.string().nullable(),
+    }),
+    organization: z.object({ id: z.string(), name: z.string() }),
+    branch: z.object({
+      id: z.string(),
+      name: z.string(),
+      code: z.literal("MAIN"),
+      phone: z.string().nullable(),
+      address: z.string().nullable(),
+    }),
+    role: z.literal("OWNER"),
+    nextStep: z.literal("app"),
+  }),
+});
 
 function parseSuccess<T>(schema: z.ZodType<T>, value: unknown): T {
   const parsed = schema.safeParse(value);
@@ -212,4 +243,40 @@ export async function resetPassword(input: {
 
 export async function logout() {
   await postAuth("logout");
+}
+
+export interface FirstOrganizationOnboardingRequest {
+  branchAddress?: string;
+  branchName: string;
+  branchPhone?: string;
+  displayName: string;
+  organizationName: string;
+  phone?: string;
+}
+
+export async function completeFirstOrganizationOnboarding(
+  input: FirstOrganizationOnboardingRequest,
+) {
+  let response: Response;
+
+  try {
+    response = await fetch("/api/v1/organizations", {
+      body: JSON.stringify(input),
+      credentials: "same-origin",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+  } catch {
+    throw new AuthApiError("unavailable");
+  }
+
+  const responseBody = await readResponseBody(response);
+  if (!response.ok) {
+    throw authErrorFromResponse(response, responseBody);
+  }
+
+  return parseSuccess(firstOrganizationOnboardingResponseSchema, responseBody);
 }

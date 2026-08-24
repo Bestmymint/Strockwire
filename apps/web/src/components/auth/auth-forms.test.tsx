@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   AuthApiError,
+  completeFirstOrganizationOnboarding,
   forgotPassword,
   login,
   logout,
@@ -24,6 +25,7 @@ import { passwordValidationMessage } from "./auth-form-support";
 import { EmailRequestForm } from "./email-request-form";
 import { LoginForm } from "./login-form";
 import { LogoutButton } from "./logout-button";
+import { OnboardingForm } from "./onboarding-form";
 import { RegistrationForm } from "./registration-form";
 import { ResetPasswordForm } from "./reset-password-form";
 import { VerificationForm } from "./verification-form";
@@ -39,6 +41,7 @@ vi.mock("@/api-client", async (importOriginal) => {
   return {
     ...actual,
     forgotPassword: vi.fn(),
+    completeFirstOrganizationOnboarding: vi.fn(),
     login: vi.fn(),
     logout: vi.fn(),
     register: vi.fn(),
@@ -52,6 +55,7 @@ afterEach(() => {
   cleanup();
   routerPush.mockReset();
   vi.mocked(forgotPassword).mockReset();
+  vi.mocked(completeFirstOrganizationOnboarding).mockReset();
   vi.mocked(login).mockReset();
   vi.mocked(logout).mockReset();
   vi.mocked(register).mockReset();
@@ -176,6 +180,122 @@ describe("login form", () => {
     );
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Please wait 15 seconds before trying again.",
+    );
+  });
+});
+
+describe("first organization onboarding form", () => {
+  function fillOnboarding() {
+    fireEvent.change(screen.getByLabelText("Display name"), {
+      target: { value: "  Owner  Name  " },
+    });
+    fireEvent.change(screen.getByLabelText("Organization name"), {
+      target: { value: "  Example  Store  " },
+    });
+    fireEvent.change(screen.getByLabelText("First branch name"), {
+      target: { value: "  Main  Branch  " },
+    });
+  }
+
+  it("renders exactly the accepted fields, submits no actor or branch code, and prevents duplicate submission", async () => {
+    let resolveOnboarding: (() => void) | undefined;
+    vi.mocked(completeFirstOrganizationOnboarding).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveOnboarding = () =>
+            resolve({
+              data: {
+                branch: {
+                  address: null,
+                  code: "MAIN",
+                  id: "branch-id",
+                  name: "Main  Branch",
+                  phone: null,
+                },
+                nextStep: "app",
+                organization: {
+                  id: "organization-id",
+                  name: "Example  Store",
+                },
+                role: "OWNER",
+                user: {
+                  displayName: "Owner  Name",
+                  id: "user-id",
+                  phone: null,
+                },
+              },
+            });
+        }),
+    );
+    render(<OnboardingForm />);
+    fillOnboarding();
+
+    expect(screen.queryByLabelText(/branch code/i)).toBeNull();
+    expect(screen.queryByLabelText(/user id|organization id|role/i)).toBeNull();
+    const form = screen
+      .getByRole("button", { name: "Create organization" })
+      .closest("form")!;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+
+    expect(completeFirstOrganizationOnboarding).toHaveBeenCalledTimes(1);
+    expect(completeFirstOrganizationOnboarding).toHaveBeenCalledWith({
+      branchAddress: "",
+      branchName: "  Main  Branch  ",
+      branchPhone: "",
+      displayName: "  Owner  Name  ",
+      organizationName: "  Example  Store  ",
+      phone: "",
+    });
+    expect(
+      screen
+        .getByRole("button", { name: "Creating organization…" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    resolveOnboarding?.();
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/app"));
+  });
+
+  it("blocks whitespace-only required values and presents both safe conflict states", async () => {
+    render(<OnboardingForm />);
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Create organization" })
+        .closest("form")!,
+    );
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Enter a display name, organization name, and branch name.",
+    );
+    expect(completeFirstOrganizationOnboarding).not.toHaveBeenCalled();
+
+    cleanup();
+    vi.mocked(completeFirstOrganizationOnboarding).mockRejectedValue(
+      new AuthApiError("already_onboarded"),
+    );
+    render(<OnboardingForm />);
+    fillOnboarding();
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Create organization" })
+        .closest("form")!,
+    );
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "already completed",
+    );
+
+    cleanup();
+    vi.mocked(completeFirstOrganizationOnboarding).mockRejectedValue(
+      new AuthApiError("already_has_organization_access"),
+    );
+    render(<OnboardingForm />);
+    fillOnboarding();
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Create organization" })
+        .closest("form")!,
+    );
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "already has organization access",
     );
   });
 });

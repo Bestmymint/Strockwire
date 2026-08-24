@@ -11,6 +11,9 @@ import { createCredentialLifecycleRouter } from "./modules/identity/credential-l
 import { createCredentialLifecycleService } from "./modules/identity/credential-lifecycle-service.ts";
 import { createIdentityEmailProvider } from "./modules/identity/email-provider-configuration.ts";
 import { createEmailRequestLimiter } from "./modules/identity/email-request-limiter.ts";
+import { createPrismaFirstOrganizationOnboardingRepository } from "./modules/identity/first-organization-onboarding-repository.ts";
+import { createFirstOrganizationOnboardingRouter } from "./modules/identity/first-organization-onboarding-router.ts";
+import { createFirstOrganizationOnboardingService } from "./modules/identity/first-organization-onboarding-service.ts";
 import { createLoginLimiter } from "./modules/identity/login-limiter.ts";
 import { createLoginRouter } from "./modules/identity/login-router.ts";
 import { createLoginService } from "./modules/identity/login-service.ts";
@@ -61,6 +64,10 @@ async function main(): Promise<void> {
     configuration: sessionConfiguration,
     repository: authenticationSessionRepository,
   });
+  const firstOrganizationOnboardingService =
+    createFirstOrganizationOnboardingService({
+      repository: createPrismaFirstOrganizationOnboardingRepository(prisma),
+    });
   const apiRouter = Router();
   apiRouter.use(
     createRegistrationRouter({
@@ -83,6 +90,13 @@ async function main(): Promise<void> {
       configuration: sessionConfiguration,
       limiter: createLoginLimiter(),
       loginService,
+    }),
+  );
+  apiRouter.use(
+    createFirstOrganizationOnboardingRouter({
+      authenticationMiddleware,
+      onboardingService: firstOrganizationOnboardingService,
+      publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
     }),
   );
 

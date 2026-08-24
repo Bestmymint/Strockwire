@@ -11,7 +11,7 @@ This file is the execution contract for human and AI developers working in the `
 
 StockWise is a responsive, cloud-based retail platform for SMEs. It covers organization-level product and supplier management; branch-level inventory, purchasing/receiving, POS, and sales; deterministic analytics and forecasting; and scheduled aggregate summaries through OpenRouter.
 
-The repository contains the **repository foundation, minimal web/API application shells, identity/tenancy database schema, pure authorization-policy foundation, and completed backend credential lifecycle through P2-M2-T03**. The pnpm workspace root, quality/test/CI/environment baselines, web/API shells, local PostgreSQL/Prisma foundation, identity/tenancy models/migrations, centralized typed RBAC policy, Argon2 registration/login, opaque hash-only sessions/authenticated context, current/all-session logout, verification issuance/resend/completion, provider-abstracted Resend/non-delivery email, and password recovery/session revocation exist. No onboarding, auth UI, invitation acceptance, authorization endpoint wiring, later-domain implementation/table, or production infrastructure implementation exists. Do not treat later planned directories, commands, schemas, endpoints, or features as existing code.
+The repository contains the **repository foundation, web/API application shells, identity/tenancy schema and policy, completed authentication lifecycle/UI, and first-organization onboarding through P2-M3-T01**. The pnpm workspace root, quality/test/CI/environment baselines, local PostgreSQL/Prisma foundation, centralized typed RBAC policy, Argon2 registration/login, opaque hash-only sessions/authenticated context, logout, verification/recovery email lifecycle, responsive authentication UI, and atomic replay-safe profile/first-organization/`MAIN`-branch onboarding exist. No later branch management/switcher, invitation acceptance, membership administration, full authorization endpoint wiring, retail domain implementation/table, dashboard, or production infrastructure implementation exists. Do not treat later planned directories, commands, schemas, endpoints, or features as existing code.
 
 ## 2. Read before changing anything
 
@@ -98,7 +98,10 @@ apps/web/tsconfig.json
 apps/web/src/environment.ts
 apps/web/src/app/layout.tsx
 apps/web/src/app/page.tsx
+apps/web/src/app/onboarding/page.tsx
+apps/web/src/app/app/page.tsx
 apps/web/src/components/app-shell.tsx
+apps/web/src/components/auth/onboarding-form.tsx
 apps/web/src/providers/query-provider.tsx
 apps/api/package.json
 apps/api/tsconfig.json
@@ -106,6 +109,7 @@ apps/api/tsconfig.build.json
 apps/api/prisma/schema.prisma
 apps/api/prisma/migrations/20260822104545_identity_tenancy_schema/migration.sql
 apps/api/prisma/migrations/20260824120921_make_user_display_name_nullable/migration.sql
+apps/api/prisma/migrations/20260824173000_first_organization_onboarding/migration.sql
 apps/api/src/environment.ts
 apps/api/src/logger.ts
 apps/api/src/app.ts
@@ -143,9 +147,14 @@ apps/api/src/modules/identity/one-time-token.ts
 apps/api/src/modules/identity/email-provider.ts
 apps/api/src/modules/identity/email-provider-configuration.ts
 apps/api/src/modules/identity/credential-lifecycle.integration.test.ts
+apps/api/src/modules/identity/first-organization-onboarding-schema.ts
+apps/api/src/modules/identity/first-organization-onboarding-repository.ts
+apps/api/src/modules/identity/first-organization-onboarding-service.ts
+apps/api/src/modules/identity/first-organization-onboarding-router.ts
+apps/api/src/modules/identity/first-organization-onboarding.integration.test.ts
 ```
 
-The web and API packages have separate strict Zod environment schemas. P1-M2-T04 defines the local path: the API binds to `127.0.0.1:3001`, and Next.js serves the browser at `http://localhost:3000` with same-origin `/api/health` and `/api/v1/:path*` rewrites to Express; the server-only loopback origin never enters a client bundle. P1-M3 established local PostgreSQL, API-owned Prisma, and the isolated database test harness. P2-M1 established identity/tenancy persistence and pure authorization policy. P2-M2-T01/T02 add bounded registration/login, centralized Argon2, accepted limiters, opaque hash-only sessions/cookies, rotation/expiry/touch, and trusted actor/session context only. P2-M2-T03 adds safely idempotent current logout, authenticated all-session logout, hash-only 24-hour verification and 30-minute reset tokens, row-serialized replacement, atomic verification/reset/session-revocation transactions, independent three-per-15-minute resend/reset-request limiters, production Resend behind an identity-provider interface, and development/test non-delivery adapters. P2-M2-T04 adds responsive App Router registration, login, verification/resend, recovery/reset, and minimal logout UI. Browser forms use only same-origin API requests, preserve submitted passwords exactly, expose no tokens/cookies/storage-based state, and remove consumed verification/reset query tokens from the visible URL. Its `/onboarding` route is only a holding screen with current-session logout; it adds no onboarding, membership, role, organization, branch, or authorization UI.
+The web and API packages have separate strict Zod environment schemas. P1-M2-T04 defines the local path: the API binds to `127.0.0.1:3001`, and Next.js serves the browser at `http://localhost:3000` with same-origin `/api/health` and `/api/v1/:path*` rewrites to Express; the server-only loopback origin never enters a client bundle. P1-M3 established local PostgreSQL, API-owned Prisma, and the isolated database test harness. P2-M1 established identity/tenancy persistence and pure authorization policy. P2-M2 established bounded registration/login, Argon2, opaque hash-only sessions, logout, verification/recovery/provider lifecycle, trusted actor context, and responsive authentication UI. P2-M3-T01 replaces the onboarding holding page with the strict profile/organization/first-branch form and adds only a minimal `/app` completion shell. `POST /api/v1/organizations` uses the trusted verified session actor, canonical request hashing, a user-row lock, and unique `FirstOrganizationOnboarding` provenance to create/replay the profile, organization, OWNER membership, and server-owned `MAIN` branch atomically. OWNER receives no branch assignment. Browser code supplies no actor, role, tenant, branch code, token, or permission state.
 
 ### Approved physical boundaries
 
@@ -360,6 +369,8 @@ The Phase 1 foundation tasks collectively must establish exact root commands, st
 `P2-M2-T02 — Login and authenticated context` added public `POST /api/v1/auth/login`, the separate accepted login-failure limiter, fixed-dummy Argon2 enumeration mitigation, CSPRNG/SHA-256 session-token boundary, atomic collision-safe PostgreSQL session creation/rotation, the production-aware `stockwise_session` cookie, sliding idle/fixed absolute expiry with bounded persisted touches, and a private-branded Express authentication context containing active verified actor/session identity only. Login returns exactly safe `id`/`email`/nullable `displayName` actor data and no authorization state. No logout, verification/provider, recovery, onboarding, UI, authorization endpoint wiring, model, or migration was added. Frozen install, format-check, lint, strict typecheck, 56 focused tests, 262 full tests, 4 harness tests, API/web builds, production audit, STRIDE/leakage review, and diff checks passed on 2026-08-24 against an isolated removed-after-verification PostgreSQL 16.11 environment.
 
 `P2-M2-T03 — Logout, verification, and credential recovery` added safely idempotent current-session logout, authenticated all-session logout, verification resend/initial issuance and atomic completion, account-safe password-reset request and atomic completion, provider-abstracted production Resend/development non-delivery/test recording adapters, 32-byte hash-only 24-hour/30-minute tokens, row-serialized replacement, provider-failure compensation, and the narrow independent three-per-15-minute process-local resend/reset-request limiters accepted by `ADR-018`. Reset validates token state before centralized Argon2 and atomically consumes the token, changes the password, and revokes all sessions without creating a new one. The reviewed schema/migrations were sufficient; no model or migration changed. Frozen install, format-check, lint, strict typecheck, 298 full tests, 4 harness tests, API/web builds, production audit, STRIDE/authored-source secret/leakage review, and diff checks passed on 2026-08-24 against an isolated disposable PostgreSQL 16.11 project. `OQ-020` remains open beyond its four narrow application-level limiter exceptions.
+
+`P2-M3-T01 — Profile and first organization onboarding` added authenticated `POST /api/v1/organizations`, strict accepted text normalization, deterministic SHA-256 canonical request identity, server-owned initial branch code `MAIN`, unique `FirstOrganizationOnboarding` provenance, and a user-row-locked transaction that replaces submitted profile values and creates the organization, OWNER membership, branch, and provenance together. Identical requests replay HTTP `200`; different post-completion requests and membership-only users receive the accepted `409` conflicts. Pending invitations alone do not block; any membership status does. The responsive `/onboarding` form sends no actor/role/code state and navigates success to the minimal `/app` holding shell. OWNER remains organization-wide with no assignment. The forward migration passed existing-schema and clean-chain PostgreSQL 16.11 application with zero Prisma drift; 29 focused API/database tests, 30 focused web tests, 336 full tests, 4 harness tests, frozen install, Prisma format/validate/generate, format-check, lint, strict typecheck, builds, production audit, and diff/security review passed on 2026-08-24 against an isolated disposable PostgreSQL project.
 
 Across the later foundation/application-shell tasks:
 

@@ -277,6 +277,32 @@ Constraints and indexes:
 - Index by branch for administration.
 - The user's active organization membership must belong to the branch's organization and have a branch-only role. `OWNER`/`ADMIN` do not need assignments for branch access.
 
+#### `FirstOrganizationOnboarding`
+
+Purpose: durable one-time provenance and replay identity for the platform user's
+first organization flow.
+
+Required physical attributes and invariants:
+
+- `userId` is the primary key, so exactly one provenance row may exist per user.
+- `organizationId` is unique; `(organizationId, userId)` restrictively references
+  the exact membership created by onboarding, proving that the recorded user and
+  organization belong to the same membership identity.
+- `(branchId, organizationId)` is unique and restrictively references the existing
+  composite branch identity, proving that the recorded initial branch belongs to
+  the recorded organization.
+- `requestHash` is exactly one lowercase 64-hex-character SHA-256 value derived
+  internally from the canonical six-field request; it is not an API credential or
+  response field.
+- `completedAt` is a UTC completion timestamp.
+- Membership and branch update/delete actions are `RESTRICT`; their existing
+  foreign keys continue to protect the user and organization. Replay
+  reconstructs safe current resource data rather than storing an HTTP response blob.
+
+The row does not replace membership authorization. The same transaction creates
+the user's `OWNER` membership for its recorded organization, while organization-
+wide OWNER access deliberately creates no `BranchAssignment`.
+
 #### `Session`
 
 Purpose: server-side browser-authentication state for one user session.
@@ -745,6 +771,15 @@ organization onboarding creates its first branch and OWNER atomically; token
 expiry durations use the accepted 24-hour, 30-minute, and seven-day values; and
 invitation acceptance creates the membership/assignments and consumes the
 invitation atomically and idempotently.
+
+First-organization onboarding additionally locks the authenticated user row and
+re-reads provenance plus all membership statuses inside that transaction. If
+provenance exists, the canonical request hash selects replay or conflict. If it
+does not, any membership blocks the flow; a pending invitation alone does not.
+An eligible transaction replaces submitted profile values, creates the
+organization, OWNER membership, `MAIN` branch, and provenance row, or rolls all
+of them back. The provenance primary key is the database-authoritative per-user
+uniqueness boundary in addition to row-lock serialization.
 
 ## 6. Transaction contracts
 

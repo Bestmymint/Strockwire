@@ -30,7 +30,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-IAM-001 — Register with email and password
 
-- **Status:** Ready after identity foundation
+- **Status:** Implemented by P2-M3-T01
 - **Actor:** New user
 - **Preconditions:** The service is available; the submitted email may be new or already registered under the accepted normalization rule.
 - **Trigger:** The user submits the email/password registration form.
@@ -95,21 +95,19 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 - **Status:** Ready after identity foundation
 - **Actor:** Authenticated user with incomplete onboarding
-- **Preconditions:** User may authenticate but has not completed required profile/organization setup.
+- **Preconditions:** The verified user has either a persisted first-onboarding record for replay or no first-onboarding record and zero organization memberships. A pending invitation without a membership does not block the flow.
 - **Trigger:** The user submits the onboarding form.
 - **Main flow:**
-  1. The API validates required display name, organization name, and initial branch name; profile/branch phone and branch address are optional.
-  2. It creates/updates the profile.
-  3. It creates the organization and owner membership if that is the accepted flow.
-  4. It creates the first branch if required.
-  5. All related records commit atomically where partial onboarding would be invalid.
-  6. The API returns the next permitted application context.
-- **Alternative flows:** Joining by invitation uses UC-IAM-006 instead of creating a new organization; retry returns/resumes one logical onboarding result.
-- **Error cases:** Invalid/missing fields; duplicate branch code; account already onboarded; invitation invalid; transaction failure; concurrent duplicate submission.
-- **Business rules:** Profile photo, date of birth, gender, tax ID, company registration number, organization website/logo, and billing details are not MVP onboarding fields. Onboarding must not create duplicate organizations on retry.
+  1. The API strictly validates required display name, organization name, and initial branch name plus optional profile/branch phone and branch address, applying the accepted boundary-trim/null rules.
+  2. It derives the authenticated user from the opaque session, computes the internal SHA-256 canonical-request hash, locks that user row, and re-evaluates provenance and every membership status inside the transaction.
+  3. For an eligible new flow, it replaces submitted profile values, creates the organization, creates the user's `OWNER` membership, creates the first branch with server-owned code `MAIN`, and creates the per-user provenance row atomically.
+  4. It returns the safe organization/branch/owner context with `nextStep = app`; the browser navigates to the minimal `/app` holding route.
+- **Alternative flows:** An identical canonical request with existing provenance returns HTTP `200` and the stored logical result without mutations. A pending invitation alone does not block onboarding. Joining through an accepted membership remains UC-IAM-006 rather than this endpoint.
+- **Error cases:** Invalid/missing/unknown fields; `409 ALREADY_ONBOARDED` for different payload after provenance; `409 ALREADY_HAS_ORGANIZATION_ACCESS` for membership without provenance; transaction failure; concurrent different submission.
+- **Business rules:** Required text is boundary-trimmed/nonblank; optional text is boundary-trimmed and blank becomes `NULL`; internal whitespace/Unicode form are preserved. The client supplies no actor, role, organization, branch, code, permission, or onboarding identity. `OWNER` is server-assigned and organization-wide, so no branch assignment is created. Profile photo, date of birth, gender, tax ID, company registration number, organization website/logo, and billing details are not MVP onboarding fields.
 - **Authorization:** Authenticated incomplete account; cannot alter another account or organization.
 - **Expected result:** A consistent user/organization/branch context is established, or nothing is partially created.
-- **Acceptance criteria:** Atomicity/idempotency tests; required fields exactly match decision; owner permission created correctly; no cross-user modification.
+- **Acceptance criteria:** Atomicity, normalization, replay, concurrency, provenance, tenant-integrity, authenticated-actor, fixed-`MAIN`, no-owner-assignment, response-leakage, and frontend-navigation tests pass.
 
 ### UC-IAM-005 — Switch active branch
 

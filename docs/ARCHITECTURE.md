@@ -56,7 +56,7 @@ flowchart TD
     CW -. job telemetry .- JOB
 ```
 
-The minimal Next.js web shell, Express API transport shell, root-level operational probes, development-only local PostgreSQL Docker Compose baseline, API-owned Prisma identity/tenancy foundation, pure authorization policy, registration, login, and authenticated actor/session context are implemented. No organization/branch onboarding or access-management endpoint, later retail domain, analytics/AI integration, AWS resource, or production deployment exists yet.
+The Next.js/Express shells, operational probes, local PostgreSQL/Prisma identity foundation, pure authorization policy, complete authentication lifecycle/UI, and authenticated replay-safe first-organization/`MAIN`-branch onboarding are implemented. No later branch management/switcher, invitation/member administration, retail domain, analytics/AI integration, AWS resource, or production deployment exists yet.
 
 ### Repository boundaries
 
@@ -236,6 +236,19 @@ generation, email provider, or onboarding behavior is part of this boundary.
 4. Login returns only safe actor `id`, canonical `email`, and nullable `displayName`; it does not load or return membership, role, organization, branch, permission, or authorization state.
 5. For each protected request, authentication resolves the active, verified actor and session from the token hash. Sliding idle activity is persisted at most once per 15 minutes and never extends fixed absolute expiry.
 6. Later access-management/policy wiring separately resolves membership and branch assignment. If a branch is selected, that layer verifies its organization ownership and actor permission before returning accessible scope.
+
+P2-M3-T01 adds one authenticated first-organization command at
+`POST /api/v1/organizations`. The Express boundary accepts only the six profile,
+organization, and initial-branch fields, applies accepted canonical trimming,
+and hashes their deterministic canonical representation internally. The use case
+locks the platform user row, re-evaluates unique onboarding provenance and every
+membership status inside one PostgreSQL transaction, and either replays, rejects,
+or atomically updates the profile and creates the organization, `OWNER`
+membership, `MAIN` branch, and provenance row. The provenance branch uses the
+existing composite branch/organization identity; the client supplies no actor,
+tenant, role, branch code, or authorization state. OWNER remains organization-
+wide and receives no assignment. The web form uses the same-origin Express path
+and navigates success only to the minimal `/app` holding shell.
 
 The browser never receives a JWT or refresh token and never stores an auth token in `localStorage` or `sessionStorage`. Session expiry/revocation and disabled actors are evaluated server-side; deauthorized membership is denied later by the separate authorization boundary. The cookie has `Path=/`, is host-only, `SameSite=Lax`, and `Secure` in production but not local HTTP. Configurable timeout baselines are sliding 24 hours idle, fixed seven days absolute, and a 15-minute minimum persisted-touch interval.
 
