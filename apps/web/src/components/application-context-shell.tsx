@@ -170,12 +170,20 @@ export function ApplicationContextShell() {
       </div>
       <div className="flex flex-wrap gap-3">
         {canManage ? (
-          <Link
-            className="inline-flex min-h-11 items-center rounded-md bg-foreground px-4 text-sm font-medium text-background"
-            href={`/app/branches?organizationId=${activeOrganization.id}&branchId=${resolved.branch?.id ?? ""}`}
-          >
-            Manage branches
-          </Link>
+          <>
+            <Link
+              className="inline-flex min-h-11 items-center rounded-md bg-foreground px-4 text-sm font-medium text-background"
+              href={`/app/branches?organizationId=${activeOrganization.id}&branchId=${resolved.branch?.id ?? ""}`}
+            >
+              Manage branches
+            </Link>
+            <Link
+              className="inline-flex min-h-11 items-center rounded-md border px-4 text-sm font-medium"
+              href={`/app/members?organizationId=${activeOrganization.id}&branchId=${resolved.branch?.id ?? ""}`}
+            >
+              Manage members
+            </Link>
+          </>
         ) : null}
         <LogoutButton />
       </div>

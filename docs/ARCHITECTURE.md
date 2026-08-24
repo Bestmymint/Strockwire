@@ -56,7 +56,7 @@ flowchart TD
     CW -. job telemetry .- JOB
 ```
 
-The Next.js/Express shells, operational probes, local PostgreSQL/Prisma identity foundation, pure authorization policy, complete authentication lifecycle/UI, authenticated replay-safe first-organization/`MAIN`-branch onboarding, and branch management/URL-owned context switcher are implemented. No invitation/member administration, retail domain, analytics/AI integration, AWS resource, or production deployment exists yet.
+The Next.js/Express shells, operational probes, local PostgreSQL/Prisma identity foundation, pure authorization policy, complete authentication lifecycle/UI, authenticated replay-safe first-organization/`MAIN`-branch onboarding, branch management/URL-owned context switcher, and invitation/membership access management are implemented. No retail domain, analytics/AI integration, AWS resource, or production deployment exists yet.
 
 ### Repository boundaries
 
@@ -184,8 +184,8 @@ P2-M1-T03 establishes the API-owned, pure policy foundation at
 typed permission vocabulary, server-resolved authorization context, trusted
 organization/branch resource scopes, and the centralized `can(context,
 permission, resourceScope)` decision. It issues no database query and is not
-wired into Express until authentication middleware and protected use cases
-exist.
+itself a database service. Protected branch and membership use cases resolve
+trusted state from PostgreSQL and call this policy before mutation or exposure.
 
 - A trusted context is constructed only from server-resolved actor,
   membership, and branch-assignment state. It retains the actor and membership
@@ -204,8 +204,8 @@ exist.
   AI-summary, and governance capabilities. It excludes refund/void authority
   until `OQ-009` is resolved. `ADMIN` can manage only non-owner memberships;
   OWNER membership, ownership transfer, and destructive ownership actions are
-  OWNER-only. The later membership mutation transaction must still preserve the
-  last-active-OWNER invariant.
+  OWNER-only. Membership mutations serialize on the organization row and
+  preserve the last-active-OWNER invariant.
 
 ## 6. Critical data flows
 
@@ -250,7 +250,7 @@ generation, email provider, or onboarding behavior is part of this boundary.
 3. The API creates a fresh 256-bit opaque session token, sends it only in the `stockwise_session` HttpOnly cookie, and stores only its SHA-256 hash in PostgreSQL. A currently valid same-user cookie session is revoked as `login_rotation` in the fresh-session transaction.
 4. Login returns only safe actor `id`, canonical `email`, and nullable `displayName`; it does not load or return membership, role, organization, branch, permission, or authorization state.
 5. For each protected request, authentication resolves the active, verified actor and session from the token hash. Sliding idle activity is persisted at most once per 15 minutes and never extends fixed absolute expiry.
-6. Later access-management/policy wiring separately resolves membership and branch assignment. If a branch is selected, that layer verifies its organization ownership and actor permission before returning accessible scope.
+6. Access-management/policy wiring separately resolves current membership and branch assignment. If a branch is selected, it verifies organization ownership and actor permission before returning accessible scope.
 
 P2-M3-T01 adds one authenticated first-organization command at
 `POST /api/v1/organizations`. The Express boundary accepts only the six profile,
@@ -264,6 +264,25 @@ existing composite branch/organization identity; the client supplies no actor,
 tenant, role, branch code, or authorization state. OWNER remains organization-
 wide and receives no assignment. The web form uses the same-origin Express path
 and navigates success only to the minimal `/app` holding shell.
+
+P2-M3-T03 keeps membership governance in the identity module and wires the
+central policy into authenticated Express routes. Invitation creation locks the
+organization, validates delegation and the complete active same-tenant branch
+scope, replaces any prior open invitation, stores only a fresh token hash, and
+delivers the transient `/accept-invitation` URL through the existing provider.
+Provider failure conditionally revokes only that new invitation.
+
+Acceptance resolves a hash candidate, then locks the organization and
+invitation in that order. It revalidates lifecycle, canonical actor email, and
+branch state before atomically creating membership/assignments, consuming the
+invitation, linking `sourceInvitationId`, and recording the bounded access
+event/scope snapshot. Concurrent same-token acceptance reconciles to one
+logical result; revoke and reissue use the same lock order. Role/scope edits,
+deactivation, and reactivation are exact-version full replacements under the
+organization lock. Deactivation leaves sessions and configured assignments
+intact but authorization/access-context re-evaluation immediately removes the
+membership. `/app/members` is management UX only; the API remains authoritative.
+Invitation tokens remain URL-transient and are never copied to browser storage.
 
 The browser never receives a JWT or refresh token and never stores an auth token in `localStorage` or `sessionStorage`. Session expiry/revocation and disabled actors are evaluated server-side; deauthorized membership is denied later by the separate authorization boundary. The cookie has `Path=/`, is host-only, `SameSite=Lax`, and `Secure` in production but not local HTTP. Configurable timeout baselines are sliding 24 hours idle, fixed seven days absolute, and a 15-minute minimum persisted-touch interval.
 

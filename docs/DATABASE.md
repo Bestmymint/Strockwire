@@ -63,6 +63,16 @@ P2-M1-T02 creates exactly these PostgreSQL-backed Prisma models. The forward
   `BranchAssignment`
 - `Session`, `EmailVerificationToken`, and `PasswordResetToken`
 - `Invitation` and `InvitationBranchScope`
+- `MembershipAccessEvent` and `MembershipAccessEventBranchScope` (bounded
+  P2-M3-T03 access-lifecycle provenance only)
+
+The forward `20260824210000_membership_access_provenance` migration adds a
+stable membership resource ID while retaining the existing
+`(organizationId,userId)` primary identity, tenant-safe invitation
+issuer/revoker and membership-source references, terminal revocation reasons,
+and immutable access-event/scope-snapshot tables. It fails closed if manually
+inserted pre-T03 invitations exist because a trustworthy issuer cannot be
+fabricated.
 
 Email identity is stored canonically as surrounding-whitespace-trimmed,
 lowercase text. The API implementation must perform that normalization before
@@ -74,8 +84,10 @@ there is no plaintext session, verification, reset, or invitation-token column.
 Statuses are deliberately limited to the accepted lifecycle boundary:
 `ACTIVE`/`DISABLED` for users and `ACTIVE`/`INACTIVE` for organizations,
 memberships, branches, and branch assignments. A matching deactivation
-timestamp is required for every inactive/disabled row. The schema adds no audit
-log, organization timezone, auth endpoint, provider, or later-domain field.
+timestamp is required for every inactive/disabled row. The schema adds no
+generic audit log, organization timezone, auth endpoint, provider, or
+later-domain field; `MembershipAccessEvent` is deliberately limited to the T03
+access transitions while `OQ-019` remains open.
 
 The initial migration adds SQL checks and partial unique indexes that Prisma cannot
 express. They validate nonblank normalized identity/hash/name fields, lifecycle
@@ -225,16 +237,19 @@ Purpose: links a user to an organization-wide role/scope.
 Required logical attributes:
 
 - Organization identifier
+- Stable membership resource identifier
 - User identifier
 - Organization-scoped role
 - Membership status
 - One organization role: `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, or `CASHIER`
-- Active/inactive lifecycle and historical invitation/acceptance metadata
+- Active/inactive lifecycle and nullable unique source-invitation provenance
 - Created/updated timestamps
 
 Constraints and indexes:
 
-- Unique `(organization, user)` active membership identity.
+- Unique `(organization, user)` membership identity across all statuses.
+- Unique `(organization, stable membership ID)` and at most one membership per
+  source invitation; the source invitation must carry the same organization.
 - Index by user for accessible-organization lookup.
 - Index by organization for member administration.
 - Exactly one organization role applies to a user within an organization. `OWNER`/`ADMIN` are organization-wide; `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER` additionally require branch assignments. The application transaction/policy layer preserves at least one active `OWNER` and prevents unauthorized role delegation.
@@ -376,6 +391,8 @@ Required logical attributes:
 - Organization identifier, normalized invited email, intended organization role, and intended branch assignments
 - Cryptographic invitation-token hash, unique for lookup
 - Issued, expiry, consumed, revoked/replaced, and accepted-by-user timestamps
+- Same-organization issuer membership; nullable same-organization revoker
+  membership and explicit terminal reason
 - Created/updated timestamps
 
 Constraints and lifecycle:
@@ -383,6 +400,25 @@ Constraints and lifecycle:
 - Raw tokens are never persisted. Invitations are single-use, expire after seven days, and reissue/replacement invalidates the prior active invitation.
 - Acceptance requires authentication and verified ownership of the invited email. The membership and branch assignments are created atomically and idempotently.
 - A changed intended role or branch scope revokes the old invitation and creates a replacement; no automatic account creation or cross-email linking occurs.
+- Delivery failure conditionally records `DELIVERY_FAILED`; management revoke
+  records `CANCELLED`; reissue records `REPLACED`. A concurrent pre-existing
+  membership winner records the bounded `MEMBERSHIP_EXISTS` terminal reason.
+
+#### `MembershipAccessEvent`
+
+Purpose: immutable, task-scoped provenance for invitation acceptance and
+membership effective-access transitions. It is not the generic audit mechanism
+left open by `OQ-019`.
+
+Each row stores the same-organization target membership, global actor user,
+nullable same-organization actor membership, event type, before/after
+role/status, and UTC occurrence time. A separate immutable scope table snapshots
+the resulting configured branch IDs for branch-scoped access. Composite foreign
+keys prove that target, actor membership, event, and every snapshotted branch
+belong to the recorded organization. Restrictive foreign keys preserve
+relationships, and table-specific triggers reject event/snapshot update or
+delete operations. Test-harness `TRUNCATE` remains available only behind the
+guarded disposable-database boundary.
 
 ### 4.2 Catalog
 
@@ -763,6 +799,9 @@ P2-M1-T02 implements the identity/tenancy cases with composite foreign keys:
 - Accepted invitations reference `User(id, email)` through
   `(acceptedByUserId, invitedEmail)`, preventing cross-email account linking at
   the relational boundary.
+- Invitation issuer/revoker membership, membership source invitation,
+  access-event target/actor membership, and access-event branch snapshots use
+  composite organization keys and reject cross-tenant provenance.
 
 The repeated `organizationId` values in the two scope tables are deliberate
 referential-integrity keys, not independently trusted tenant state. Application
@@ -774,7 +813,7 @@ organization, token-hash uniqueness, normalized email storage, the composite
 same-tenant relationships above, lifecycle/temporal checks, and restrictive
 foreign-key deletion.
 
-The later application transaction/policy layer must enforce invariants that
+The application transaction/policy layer enforces invariants that
 cannot be represented safely by ordinary row constraints without duplicating
 role state or adding fragile cross-row triggers: every organization retains at
 least one active `OWNER`; branch-only active memberships have at least one
@@ -782,8 +821,10 @@ active assignment; organization-wide roles do not derive access from assignment
 rows; membership deactivation/role changes update affected access atomically;
 organization onboarding creates its first branch and OWNER atomically; token
 expiry durations use the accepted 24-hour, 30-minute, and seven-day values; and
-invitation acceptance creates the membership/assignments and consumes the
-invitation atomically and idempotently.
+invitation acceptance creates membership/assignments/source/event state and
+consumes the invitation atomically. Same-actor replay is read-only and
+idempotent. Exact membership versions plus organization locks serialize full
+replacement, deactivation/reactivation, and the last-active-owner check.
 
 First-organization onboarding additionally locks the authenticated user row and
 re-reads provenance plus all membership statuses inside that transaction. If

@@ -451,12 +451,81 @@ remains open under `OQ-020`.
 | `GET /organizations/{organizationId}` | Organization-scoped | None | Organization detail allowed to role | Safe not-found/forbidden | Planned |
 | `PATCH /organizations/{organizationId}` | Organization admin | Editable fields | Updated organization | Validation/state/stale conflict | Blocked field/permission details |
 | `POST /organizations/{organizationId}/branches` | `OWNER` or `ADMIN` | Code, name; optional phone/address | Created branch | Duplicate code, invalid state | Planned after identity foundation |
-| `GET /organizations/{organizationId}/members` | `OWNER` or `ADMIN` | Cursor/filter | Members and branch scopes | Invalid cursor, forbidden | Planned after identity foundation |
-| `POST /organizations/{organizationId}/invitations` | `OWNER` for OWNER invitations; `OWNER`/`ADMIN` for non-owner invitations | Invited email, role, branch assignments | Account-safe invitation state | Duplicate/role escalation/provider failure | Planned after identity foundation |
-| `POST /invitations/accept` | Authenticated verified invited email | Opaque invitation token | Transactional, idempotent membership and branch-assignment result | Expired/used/invalid/mismatched token | Planned after identity foundation |
-| `PATCH /organizations/{organizationId}/members/{userId}` | `OWNER` for OWNER changes; `OWNER`/`ADMIN` for non-owner changes | Role/status/branch assignments | Updated membership | Last-owner/role escalation/stale state | Planned after identity foundation |
+| `GET /organizations/{organizationId}/members` | `OWNER` or `ADMIN` | `includeInactive`, opaque cursor, limit | Safe member/user/role/status/configured branch scope page | Invalid cursor, forbidden | Implemented by P2-M3-T03 |
+| `GET /organizations/{organizationId}/invitations` | `OWNER` or `ADMIN` | Opaque cursor, limit | Open invitation metadata/scope page; no token/hash | Invalid cursor, forbidden | Implemented by P2-M3-T03 |
+| `POST /organizations/{organizationId}/invitations` | `OWNER` for OWNER; `OWNER`/`ADMIN` for non-owner | Exact email, role, full branch IDs | `201` safe invitation state | Existing membership, invalid scope, escalation, provider failure | Implemented by P2-M3-T03 |
+| `POST /organizations/{organizationId}/invitations/{invitationId}/revoke` | Same delegation as target invitation | No body | Current safe invitation state | Accepted final state, forbidden | Implemented by P2-M3-T03 |
+| `POST /invitations/accept` | Authenticated verified invited email | Exact opaque invitation token | Current membership plus replay flag | Generic invalid invitation, invalid current scope, existing membership | Implemented by P2-M3-T03 |
+| `PATCH /organizations/{organizationId}/members/{membershipId}` | `OWNER` for OWNER changes; `OWNER`/`ADMIN` for non-owner | Exact role, full branch IDs, expected `updatedAt` | Updated safe membership | Last owner, escalation, stale/state/scope | Implemented by P2-M3-T03 |
+| `POST /organizations/{organizationId}/members/{membershipId}/deactivate` | Same delegation as target membership | Expected `updatedAt` | Inactive safe membership | Last owner, stale, forbidden/not found | Implemented by P2-M3-T03 |
+| `POST /organizations/{organizationId}/members/{membershipId}/reactivate` | Same delegation as desired/current role | Exact role, full branch IDs, expected `updatedAt` | Active safe membership | Escalation, stale/state/scope | Implemented by P2-M3-T03 |
 
 No endpoint may accept an arbitrary `organizationId` in the body as ownership truth.
+
+### Membership invitation and assignment contract
+
+All request bodies are strict. Invitation create accepts exactly:
+
+```json
+{
+  "email": "staff@example.com",
+  "role": "CASHIER",
+  "branchIds": ["opaque-branch-id"]
+}
+```
+
+The API canonicalizes email. `OWNER` may issue any role; `ADMIN` may issue only
+non-owner roles. `OWNER`/`ADMIN` invitations require `branchIds: []`.
+`BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER` require at least one unique
+active same-organization branch. Inactive or cross-tenant IDs return the same
+safe `400 INVALID_BRANCH_SCOPE`. Any active/inactive membership for that
+canonical email returns `409 MEMBERSHIP_ALREADY_EXISTS` without mutation.
+
+Creating for the same organization/email always reissues: the prior open row is
+terminal `REPLACED`, a new hash-only seven-day token row is created, and only the
+new transient URL is delivered. Delivery failure conditionally revokes that row
+and returns `503 INVITATION_DELIVERY_FAILED`. Explicit revoke is `POST` with no
+body. Revoked and expired outcomes are safe/idempotent `200`; an accepted
+invitation returns `409 INVITATION_FINALIZED`. `ADMIN` cannot revoke an OWNER
+invitation.
+
+Acceptance accepts exactly `{ "token": "opaque-token" }`. Malformed, unknown,
+expired, revoked, replaced, wrong-email, or another-actor consumed tokens return
+the generic `400 INVALID_INVITATION`. Invalid current branch scope returns `409
+INVITATION_SCOPE_INVALID` and leaves the invitation unconsumed. Success returns
+HTTP `200` with `{ membership, replayed }`. The first success atomically creates
+the membership, assignments, source provenance, and bounded access event while
+consuming the invitation. Replay by that same accepted user returns the linked
+current membership with `replayed: true` and performs no mutation. A concurrent
+membership winner returns `409 MEMBERSHIP_ALREADY_EXISTS` and terminalizes the
+invitation so it cannot later mutate that membership.
+
+Member PATCH/reactivate accept exactly:
+
+```json
+{
+  "role": "BRANCH_MANAGER",
+  "branchIds": ["opaque-branch-id"],
+  "expectedUpdatedAt": "2026-08-24T18:00:00.000Z"
+}
+```
+
+This is full replacement. PATCH requires an active membership; reactivation
+requires an inactive membership unless the exact active desired state is an
+idempotent no-op. Deactivate accepts only `expectedUpdatedAt`; matching-version
+inactive deactivation is idempotent. Exact timestamp mismatch returns `409
+MEMBERSHIP_STALE`. Organization-wide results inactivate configured assignments;
+branch roles activate exactly the requested active scope. Deactivation retains
+role, assignments, and sessions but subsequent server access-context and
+authorization evaluation excludes the membership. Organization-row locking
+enforces `409 LAST_ACTIVE_OWNER` under concurrent demotion/deactivation.
+
+Member and open-invitation lists use ascending `(createdAt,id)` opaque cursors,
+default limit 25, maximum 100. Member listing defaults to active rows and accepts
+`includeInactive=true`. Responses omit sessions, permission internals, token
+hashes/raw values, provider payloads, and persistence internals. Cross-tenant
+resource identifiers use safe forbidden/not-found behavior without revealing
+existence.
 
 ### First organization onboarding contract
 
@@ -727,7 +796,7 @@ High-risk commands additionally require database-backed atomicity and idempotenc
 
 Canonical definitions live in `BUILD_SPEC.md`:
 
-- Auth/session: `ADR-013`; verification/reset/invitations: `ADR-014`; onboarding: `ADR-015`
+- Auth/session: `ADR-013`; verification/reset token/provider behavior: `ADR-014`; onboarding: `ADR-015`; invitation/member access lifecycle: `ADR-021`
 - Role/permission exposure: `ADR-016`
 - Product payload: `OQ-010`, `OQ-014`, `OQ-023`
 - Inventory adjustment: `OQ-007`, `OQ-019`, `OQ-023`

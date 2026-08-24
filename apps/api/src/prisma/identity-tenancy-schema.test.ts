@@ -40,6 +40,13 @@ async function createBranch(organizationId: string, code: string) {
   });
 }
 
+async function createOwnerMembership(organizationId: string, label: string) {
+  const user = await createUser(`${label}@example.com`);
+  return prisma.organizationMembership.create({
+    data: { organizationId, role: "OWNER", userId: user.id },
+  });
+}
+
 describe("identity and tenancy database schema", () => {
   beforeEach(async () => {
     await resetTestDatabase(environment);
@@ -84,6 +91,11 @@ describe("identity and tenancy database schema", () => {
         finished: true,
         active: true,
       },
+      {
+        migrationName: "20260824210000_membership_access_provenance",
+        finished: true,
+        active: true,
+      },
     ]);
     expect(tables.map(({ tableName }) => tableName)).toEqual([
       "branch_assignments",
@@ -92,6 +104,8 @@ describe("identity and tenancy database schema", () => {
       "first_organization_onboardings",
       "invitation_branch_scopes",
       "invitations",
+      "membership_access_event_branch_scopes",
+      "membership_access_events",
       "organization_memberships",
       "organizations",
       "password_reset_tokens",
@@ -365,8 +379,13 @@ describe("identity and tenancy database schema", () => {
     );
     const validBranch = await createBranch(firstOrganization.id, "A");
     const crossTenantBranch = await createBranch(secondOrganization.id, "B");
+    const issuer = await createOwnerMembership(
+      firstOrganization.id,
+      "invitation-scope-issuer",
+    );
     const invitation = await prisma.invitation.create({
       data: {
+        issuedByMembershipId: issuer.id,
         organizationId: firstOrganization.id,
         invitedEmail: "invitee@example.com",
         intendedRole: "BRANCH_MANAGER",
@@ -397,8 +416,13 @@ describe("identity and tenancy database schema", () => {
     const organization = await createOrganization("Email-bound Invitation");
     const wrongUser = await createUser("other-user@example.com");
     const invitedUser = await createUser("invited-user@example.com");
+    const issuer = await createOwnerMembership(
+      organization.id,
+      "email-bound-issuer",
+    );
     const invitation = await prisma.invitation.create({
       data: {
+        issuedByMembershipId: issuer.id,
         organizationId: organization.id,
         invitedEmail: invitedUser.email,
         intendedRole: "CASHIER",
@@ -419,6 +443,127 @@ describe("identity and tenancy database schema", () => {
         data: { acceptedByUserId: invitedUser.id, consumedAt: new Date() },
       }),
     ).resolves.toMatchObject({ acceptedByUserId: invitedUser.id });
+  });
+
+  it("rejects cross-organization membership-access provenance", async () => {
+    const firstOrganization = await createOrganization("Provenance A");
+    const secondOrganization = await createOrganization("Provenance B");
+    const firstBranch = await createBranch(firstOrganization.id, "A");
+    const secondBranch = await createBranch(secondOrganization.id, "B");
+    const firstOwner = await createOwnerMembership(
+      firstOrganization.id,
+      "provenance-owner-a",
+    );
+    const secondOwner = await createOwnerMembership(
+      secondOrganization.id,
+      "provenance-owner-b",
+    );
+
+    await expect(
+      prisma.invitation.create({
+        data: {
+          expiresAt: futureHours(7 * 24),
+          intendedRole: "ADMIN",
+          invitedEmail: "cross-issuer@example.com",
+          issuedByMembershipId: secondOwner.id,
+          organizationId: firstOrganization.id,
+          tokenHash: "cross-issuer-hash",
+        },
+      }),
+    ).rejects.toThrow();
+
+    const invitation = await prisma.invitation.create({
+      data: {
+        expiresAt: futureHours(7 * 24),
+        intendedRole: "CASHIER",
+        invitedEmail: "provenance-invitee@example.com",
+        issuedByMembershipId: firstOwner.id,
+        organizationId: firstOrganization.id,
+        tokenHash: "provenance-invitation-hash",
+      },
+    });
+    await expect(
+      prisma.invitation.update({
+        data: {
+          revocationReason: "CANCELLED",
+          revokedAt: new Date(),
+          revokedByMembershipId: secondOwner.id,
+        },
+        where: { id: invitation.id },
+      }),
+    ).rejects.toThrow();
+
+    const invitedUser = await createUser("provenance-invitee@example.com");
+    await expect(
+      prisma.organizationMembership.create({
+        data: {
+          organizationId: secondOrganization.id,
+          role: "CASHIER",
+          sourceInvitationId: invitation.id,
+          userId: invitedUser.id,
+        },
+      }),
+    ).rejects.toThrow();
+
+    const event = await prisma.membershipAccessEvent.create({
+      data: {
+        actorMembershipId: firstOwner.id,
+        actorUserId: firstOwner.userId,
+        afterRole: "OWNER",
+        afterStatus: "ACTIVE",
+        beforeRole: "OWNER",
+        beforeStatus: "ACTIVE",
+        eventType: "ROLE_SCOPE_REPLACED",
+        organizationId: firstOrganization.id,
+        targetMembershipId: firstOwner.id,
+      },
+    });
+    await expect(
+      prisma.membershipAccessEvent.create({
+        data: {
+          actorMembershipId: firstOwner.id,
+          actorUserId: firstOwner.userId,
+          afterRole: "OWNER",
+          afterStatus: "ACTIVE",
+          eventType: "ROLE_SCOPE_REPLACED",
+          organizationId: firstOrganization.id,
+          targetMembershipId: secondOwner.id,
+        },
+      }),
+    ).rejects.toThrow();
+    await prisma.membershipAccessEventBranchScope.create({
+      data: {
+        branchId: firstBranch.id,
+        eventId: event.id,
+        organizationId: firstOrganization.id,
+      },
+    });
+    await expect(
+      prisma.membershipAccessEvent.update({
+        data: { afterStatus: "INACTIVE" },
+        where: { id: event.id },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      prisma.membershipAccessEventBranchScope.delete({
+        where: {
+          organizationId_eventId_branchId: {
+            branchId: firstBranch.id,
+            eventId: event.id,
+            organizationId: firstOrganization.id,
+          },
+        },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      prisma.membershipAccessEventBranchScope.create({
+        data: {
+          branchId: secondBranch.id,
+          eventId: event.id,
+          organizationId: firstOrganization.id,
+        },
+      }),
+    ).rejects.toThrow();
   });
 
   it("enforces session and one-time token hash uniqueness", async () => {
@@ -511,6 +656,10 @@ describe("identity and tenancy database schema", () => {
   it("represents verification and invitation replacement without deleting history", async () => {
     const user = await createUser("replacement@example.com");
     const organization = await createOrganization("Replacement Organization");
+    const issuer = await createOwnerMembership(
+      organization.id,
+      "replacement-issuer",
+    );
     const verification = await prisma.emailVerificationToken.create({
       data: {
         userId: user.id,
@@ -520,6 +669,7 @@ describe("identity and tenancy database schema", () => {
     });
     const invitation = await prisma.invitation.create({
       data: {
+        issuedByMembershipId: issuer.id,
         organizationId: organization.id,
         invitedEmail: user.email,
         intendedRole: "CASHIER",
@@ -540,6 +690,7 @@ describe("identity and tenancy database schema", () => {
     await expect(
       prisma.invitation.create({
         data: {
+          issuedByMembershipId: issuer.id,
           organizationId: organization.id,
           invitedEmail: user.email,
           intendedRole: "BRANCH_MANAGER",
@@ -557,7 +708,11 @@ describe("identity and tenancy database schema", () => {
       }),
       prisma.invitation.update({
         where: { id: invitation.id },
-        data: { replacedAt },
+        data: {
+          replacedAt,
+          revocationReason: "REPLACED",
+          revokedByMembershipId: issuer.id,
+        },
       }),
     ]);
     await expect(
@@ -572,6 +727,7 @@ describe("identity and tenancy database schema", () => {
     await expect(
       prisma.invitation.create({
         data: {
+          issuedByMembershipId: issuer.id,
           organizationId: organization.id,
           invitedEmail: user.email,
           intendedRole: "BRANCH_MANAGER",

@@ -2,7 +2,7 @@ const RESEND_EMAIL_ENDPOINT = "https://api.resend.com/emails";
 const RESEND_TIMEOUT_MILLISECONDS = 10_000;
 
 export type IdentityEmailMessage = Readonly<{
-  kind: "password_reset" | "verification";
+  kind: "invitation" | "password_reset" | "verification";
   recipient: string;
   url: string;
 }>;
@@ -49,12 +49,17 @@ export function createResendEmailProvider({
   return {
     async send(message) {
       const isVerification = message.kind === "verification";
+      const isInvitation = message.kind === "invitation";
       const subject = isVerification
         ? "Verify your StockWise email"
-        : "Reset your StockWise password";
+        : isInvitation
+          ? "Accept your StockWise invitation"
+          : "Reset your StockWise password";
       const action = isVerification
         ? "verify your email"
-        : "reset your password";
+        : isInvitation
+          ? "accept your organization invitation"
+          : "reset your password";
 
       try {
         const response = await fetchImplementation(RESEND_EMAIL_ENDPOINT, {

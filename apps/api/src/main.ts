@@ -17,6 +17,9 @@ import { createFirstOrganizationOnboardingService } from "./modules/identity/fir
 import { createLoginLimiter } from "./modules/identity/login-limiter.ts";
 import { createLoginRouter } from "./modules/identity/login-router.ts";
 import { createLoginService } from "./modules/identity/login-service.ts";
+import { createMembershipAccessRouter } from "./modules/identity/membership-access-router.ts";
+import { createPrismaMembershipAccessRepository } from "./modules/identity/membership-access-repository.ts";
+import { createMembershipAccessService } from "./modules/identity/membership-access-service.ts";
 import {
   argon2PasswordHasher,
   argon2PasswordVerifier,
@@ -53,8 +56,9 @@ async function main(): Promise<void> {
     passwordHasher: argon2PasswordHasher,
     repository: createPrismaRegistrationRepository(prisma),
   });
+  const emailProvider = createIdentityEmailProvider(environment);
   const credentialLifecycleService = createCredentialLifecycleService({
-    emailProvider: createIdentityEmailProvider(environment),
+    emailProvider,
     onDeliveryFailure(kind) {
       logger.error({ deliveryType: kind }, "identity email delivery failed");
     },
@@ -73,6 +77,15 @@ async function main(): Promise<void> {
     });
   const branchService = createBranchService({
     repository: createPrismaBranchRepository(prisma),
+  });
+  const membershipAccessService = createMembershipAccessService({
+    emailProvider,
+    onDeliveryFailure(kind) {
+      logger.error({ deliveryType: kind }, "invitation email delivery failed");
+    },
+    publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
+    repository: createPrismaMembershipAccessRepository(prisma),
+    tokenProvider: secureOneTimeTokenProvider,
   });
   const apiRouter = Router();
   apiRouter.use(
@@ -109,6 +122,13 @@ async function main(): Promise<void> {
     createBranchRouter({
       authenticationMiddleware,
       branchService,
+      publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
+    }),
+  );
+  apiRouter.use(
+    createMembershipAccessRouter({
+      authenticationMiddleware,
+      membershipAccessService,
       publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
     }),
   );

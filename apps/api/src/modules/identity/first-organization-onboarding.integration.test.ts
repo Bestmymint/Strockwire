@@ -324,11 +324,23 @@ describe("first organization onboarding with PostgreSQL", () => {
       displayName: "Pending Profile",
       email: "pending@example.com",
     });
+    const invitationIssuer = await seedUser({
+      displayName: "Invitation Owner",
+      email: "invitation-owner@example.com",
+    });
+    const issuerMembership = await prisma.organizationMembership.create({
+      data: {
+        organizationId: invitationOrganization.id,
+        role: "OWNER",
+        userId: invitationIssuer.id,
+      },
+    });
     await prisma.invitation.create({
       data: {
         expiresAt: new Date(NOW.getTime() + 7 * DAY_MILLISECONDS),
         intendedRole: "CASHIER",
         invitedEmail: pendingUser.email,
+        issuedByMembershipId: issuerMembership.id,
         organizationId: invitationOrganization.id,
         tokenHash: "pending-invitation-hash",
       },

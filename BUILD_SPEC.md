@@ -173,6 +173,25 @@ It is navigation state, never authentication or authorization evidence. The
 browser stores no selected organization/branch in a session, user row, cookie,
 `localStorage`, or `sessionStorage`.
 
+Membership access management is fixed by `ADR-021`. `OWNER` may invite and
+manage every accepted role; `ADMIN` may invite and manage only non-owner roles.
+An invitation is allowed only when no membership of any status exists for the
+canonical email in that organization. Reissue always replaces the prior open
+invitation with a fresh seven-day hash-only token. Acceptance requires the
+authenticated, verified, canonical invited email and atomically creates exactly
+one membership, the full branch scope, source-invitation provenance, and a
+bounded access event. A same-user replay returns the existing logical result
+without another mutation.
+
+Membership role/scope edits and reactivation are full desired-state
+replacements protected by the exact prior millisecond UTC `updatedAt`.
+Organization-wide roles have no effective assignments; branch-only roles need
+at least one active same-organization branch. Deactivation preserves configured
+assignment rows, grants no access immediately, and does not globally revoke the
+user's sessions. Every later authorization request re-evaluates membership
+state. Organization-row serialization prevents concurrent changes from leaving
+zero active owners.
+
 Google login is a future feature. No JWT browser authentication, browser token storage in `localStorage`/`sessionStorage`, refresh-token flow, automatic invitation account creation, or naive cross-email account linking is part of the MVP.
 
 ### 10.2 Product catalog
@@ -456,7 +475,7 @@ These decisions are mandatory gates before the affected domain implementation:
 | Affected domain | Required accepted decisions before implementation |
 | --- | --- |
 | Authentication and authenticated state | `ADR-013` (`OQ-003` resolved) |
-| Email verification, password reset, and invitations | `ADR-014` (`OQ-004`, `OQ-006` resolved) |
+| Email verification, password reset, and invitations | `ADR-014`, `ADR-021` (`OQ-004`, `OQ-006` resolved) |
 | Profile and organization/first-branch onboarding | `ADR-015` (`OQ-005` resolved) |
 | Authorization policies for accepted MVP roles | `ADR-016` (`OQ-022` resolved) |
 | Inventory mutations and stock availability | `OQ-007`, `OQ-023` |
@@ -481,7 +500,7 @@ This is the canonical list. Other documents reference these IDs and must not red
 | **OQ-003** | Use opaque PostgreSQL-backed server-side sessions. Send a cryptographically random session token only in the `stockwise_session` HttpOnly, host-only, `SameSite=Lax`, `Path=/` cookie (`Secure` in production, not local HTTP); store only its cryptographic hash. Do not use browser JWTs, `localStorage`/`sessionStorage`, or refresh tokens. Successful authentication creates a fresh token and atomically revokes a currently valid same-user cookie session as `login_rotation`. Enforce server-side authorization, configurable sliding 24-hour idle and fixed seven-day absolute expiry baselines, and at most one persisted activity touch per 15 minutes. | `ADR-013` |
 | **OQ-004** | Require email verification for email/password accounts. P2-M2-T01 creates an unverified account but no verification token and sends no email; P2-M2-T03 owns token creation, resend, provider integration/delivery, and verification. Verification and reset tokens are opaque, cryptographically random, hash-only, single-use tokens with 24-hour and 30-minute expiry respectively; resend replaces the active verification token; reset revokes all sessions; forgot-password responses are non-disclosing. | `ADR-014`, `ADR-017` |
 | **OQ-005** | Registration accepts only email and password. The platform profile later requires display name, so `User.displayName` remains nullable until profile/onboarding; no placeholder is derived from email. New-organization onboarding requires display name, organization name, and initial branch name. Phone is optional for the platform profile and initial branch; branch address is optional. The creator becomes `OWNER`; the server assigns initial branch code `MAIN`. One persisted per-user provenance row provides request-hash replay and concurrency identity; zero memberships are required when that row does not exist. User identity is platform-level; access derives from memberships. Invitations use their own flow. | `ADR-015`, `ADR-017`, `ADR-019` |
-| **OQ-006** | Use email-bound organization invitations carrying the intended role and branch scope. Their opaque, cryptographically random, hash-only token is single-use and expires in seven days; reissue invalidates the active invite. The invited email must authenticate and verify before transactional, idempotent acceptance creates membership and branch assignments. No automatic account creation or naive cross-email linking. Changed scope requires a replacement invitation. | `ADR-014` |
+| **OQ-006** | Use email-bound organization invitations carrying the intended role and branch scope. Their opaque, cryptographically random, hash-only token is single-use for access creation and expires in seven days; reissue invalidates the active invite. The invited email must authenticate and verify before transactional acceptance creates membership, branch assignments, source provenance, and a bounded access event. Same-actor replay returns the existing result without mutation. Existing membership of any status blocks invitation. Full-replacement edits/reactivation use exact optimistic versions; deactivation preserves assignment configuration but immediately removes effective access. No automatic account creation or naive cross-email linking. | `ADR-014`, `ADR-021` |
 | **OQ-022** | Use fixed, deny-by-default RBAC with one organization role per user/organization and explicit branch assignments for branch-only roles. `OWNER`/`ADMIN` are organization-wide; `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER` are assigned-branch roles. The role, governance, delegation, capability, analytics, forecast, and AI-summary baseline in section 8 is authoritative; refund/void remains `OQ-009`. | `ADR-016` |
 
 ### Open Questions

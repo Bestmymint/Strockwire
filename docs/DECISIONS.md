@@ -852,6 +852,68 @@ fallback, it cancels and removes the previous TanStack Query prefix
 - Branch deletion, branch-code changes, selection persistence, membership
   administration, and later retail features are outside P2-M3-T02.
 
+## ADR-021 — Serialize email invitations and full-replacement membership access
+
+- **Date:** 2026-08-24
+- **Status:** Accepted
+- **Type:** Product, data, API, authorization, concurrency, and security boundary
+
+### Context
+
+P2-M3-T03 needed exact invitation replacement/revocation/acceptance semantics,
+delegation limits, member lifecycle rules, and concurrency-safe ownership. The
+base schema could bind invitation email and branch scope, but could not prove
+issuer/revoker/source provenance or retain the resulting access scope. Simple
+application pre-checks could also race and leave zero active owners or create
+conflicting invitation outcomes.
+
+### Decision
+
+`OWNER` manages every role. `ADMIN` may view owner rows but may invite or mutate
+only non-owner access and may never grant `OWNER`. Branch roles have no
+management authority. Invitations are allowed only when no active or inactive
+membership exists for the canonical email in the organization. Organization-
+wide roles require an empty branch scope; branch-only roles require at least one
+unique active same-organization branch.
+
+Every create/reissue stores a fresh hash-only seven-day token in a new row and
+marks the prior open invitation `REPLACED`. Explicit revoke is idempotent for
+revoked/expired state, records `CANCELLED`, and cannot override acceptance.
+Provider failure conditionally records `DELIVERY_FAILED`. Acceptance requires an
+authenticated verified actor whose canonical email matches, revalidates branch
+scope, and atomically creates membership, assignments, source provenance, an
+`INVITATION_ACCEPTED` event/scope snapshot, and consumption. Same accepted-user
+replay returns the linked current membership without mutation; all other bad
+token states use the generic invalid-invitation family.
+
+Member PATCH and reactivation are full desired-state replacements with exact
+`updatedAt`. Organization-wide results inactivate assignments; branch-role
+results activate exactly the submitted active scope. Deactivation retains role,
+assignment rows, and sessions but immediately removes effective access.
+Reactivation never implicitly restores prior access. Membership mutations and
+invitation lifecycle transitions lock the organization first; invitation
+operations then lock the invitation. Active-owner count is re-read inside that
+transaction so concurrent reductions cannot leave zero active owners.
+
+The schema retains the composite membership primary key and adds a stable
+resource ID, same-tenant invitation issuer/revoker and membership-source keys,
+and narrowly named immutable membership-access event/scope tables. These tables
+cover only T03 access provenance; `OQ-019` remains open for a future generic
+audit design. Management lists use opaque `(createdAt,id)` cursors with default
+25 and maximum 100. Invitation tokens remain transient in the acceptance URL
+and never enter browser storage, logs, list payloads, or UI text.
+
+### Consequences
+
+- Existing users and new users follow the same authenticated, verified-email
+  acceptance contract; the system never creates or links accounts automatically.
+- Session revocation is not a membership lifecycle side effect. Every protected
+  request must re-resolve active membership and branch scope.
+- Cross-tenant provenance and scope are rejected by composite foreign keys as
+  well as server-side authorization.
+- Ownership transfer, generic audit, invitation-specific rate limiting, and
+  distributed/provider abuse controls remain outside T03.
+
 ## 2. Explicitly superseded planning directions
 
 The current ADRs supersede these earlier, unimplemented ideas:

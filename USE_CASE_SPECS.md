@@ -130,17 +130,17 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-IAM-006 — Manage membership and branch assignment
 
-- **Status:** Ready after identity foundation
+- **Status:** Implemented by P2-M3-T03
 - **Actor:** Owner or authorized administrator
 - **Preconditions:** Actor has membership-management permission in the organization.
 - **Trigger:** Actor invites/adds a member, changes role/branch assignment, or deactivates membership.
-- **Main flow:** Validate target email, role, and branch scope; verify the actor's grant authority; issue/reissue the invitation or update membership; record actor/context; revoke newly invalid access; return current member view. Acceptance authenticates and verifies the invited email, then atomically and idempotently creates the organization membership and required branch assignments.
-- **Alternative flows:** An existing user must authenticate as the invited verified email; a new user registers and verifies that same email before acceptance. Changed role/branch scope revokes and replaces the pending invitation.
-- **Error cases:** Duplicate invite/membership; target/branch from another tenant; role escalation beyond actor; removal of the last required owner; expired invite; concurrent update.
-- **Business rules:** Invitations are email-bound, hash-only, single-use opaque tokens that expire in seven days; reissue invalidates the prior active invite. No automatic account creation or naive cross-email account linking occurs. Historical actor references are preserved after deactivation.
+- **Main flow:** Validate canonical target email, role, and full desired branch scope; derive the actor and organization from trusted server state; verify grant authority; issue/reissue, revoke, list, or mutate access; persist bounded issuer/revoker/source/access-event provenance; and return a safe management view. Acceptance locks the organization/invitation, verifies the authenticated canonical email, revalidates active same-tenant branches, and atomically creates the membership, assignments, source provenance, acceptance event/scope snapshot, and invitation consumption.
+- **Alternative flows:** An existing user signs in as the invited verified email; a new user registers and verifies that email, then reopens the link. Reissue always creates a fresh token and marks the prior open row `REPLACED`. A same accepted user may replay the accepted token and receive the current logical membership without mutation. Deactivation retains assignments and sessions but removes effective access; reactivation requires an explicit full desired role/scope.
+- **Error cases:** Existing active/inactive membership; invalid/inactive/cross-tenant branch scope; role escalation; last active owner; stale `updatedAt`; wrong email; unknown, expired, revoked, or replaced invitation; provider failure; acceptance/reissue/revoke/concurrent-update races.
+- **Business rules:** Invitations are email-bound, hash-only opaque tokens that expire in seven days and are single-use for state creation. Organization-wide roles reject branch scope; branch roles require at least one unique active same-organization branch. Membership edits/reactivation are full replacements. Organization-row serialization preserves one active owner. Historical assignment/provenance rows are retained, while `OQ-019` still governs any future generic audit system.
 - **Authorization:** `OWNER` manages owners and OWNER-only ownership actions; `OWNER`/`ADMIN` manage non-owner memberships. No user may grant permissions they do not control, and at least one OWNER must remain.
 - **Expected result:** Membership accurately reflects the accepted role and branch scope without orphaning governance.
-- **Acceptance criteria:** Horizontal/vertical escalation tests; duplicates safe; revoked branch access immediately denied; last-owner invariant tested.
+- **Acceptance criteria:** Horizontal/vertical escalation, duplicate/replay, provider compensation, cross-tenant provenance, optimistic/concurrent mutation, last-owner, session-retention, access-context deauthorization, pagination, and token-leakage tests pass.
 
 ### UC-IAM-007 — Verify an email/password account
 
