@@ -72,6 +72,7 @@ export function startApiServer(
 export function createShutdownHandler(
   runningServer: RunningApiServer,
   logger: ApiLogger,
+  cleanup: () => Promise<void> = () => Promise.resolve(),
 ): (signal: ShutdownSignal) => Promise<void> {
   let shutdownPromise: Promise<void> | undefined;
 
@@ -81,6 +82,7 @@ export function createShutdownHandler(
 
       try {
         await runningServer.stop();
+        await cleanup();
         logger.info({ signal }, "shutdown completed");
       } catch (error) {
         logger.error(

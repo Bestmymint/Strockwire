@@ -31,6 +31,7 @@ describe("API server lifecycle", () => {
 
   it("coalesces repeated shutdown signals into one clean stop", async () => {
     const stop = vi.fn(async () => undefined);
+    const cleanup = vi.fn(async () => undefined);
     const entries: string[] = [];
     const runningServer: RunningApiServer = {
       address: { host: "127.0.0.1", port: 0 },
@@ -44,11 +45,12 @@ describe("API server lifecycle", () => {
         entries.push(message);
       },
     };
-    const shutdown = createShutdownHandler(runningServer, logger);
+    const shutdown = createShutdownHandler(runningServer, logger, cleanup);
 
     await Promise.all([shutdown("SIGTERM"), shutdown("SIGINT")]);
 
     expect(stop).toHaveBeenCalledOnce();
+    expect(cleanup).toHaveBeenCalledOnce();
     expect(entries).toEqual(["shutdown started", "shutdown completed"]);
   });
 

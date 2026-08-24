@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1 planning contract; transport shell and operational probes implemented |
+| Status | Architecture Freeze v1 contract; transport shell, operational probes, and registration implemented |
 | Base path | `/api/v1` |
 | Style | JSON REST |
 | Baseline | Architecture Freeze v1 |
@@ -237,7 +237,7 @@ therefore the sole browser path for the health check.
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `POST /auth/register` | Public | Email and password only | `202 Accepted` account-safe verification-next-step result; no session, token, organization, or branch created | Invalid input/rate limit/database or hashing failure; canonical-email duplicates receive the same public response as new accounts | Planned for P2-M2-T01 |
+| `POST /auth/register` | Public | Email and password only | `202 Accepted` account-safe verification-next-step result; no session, token, organization, or branch created | Invalid input/rate limit/database or hashing failure; canonical-email duplicates receive the same public response as new accounts | Implemented by P2-M2-T01 |
 | `POST /auth/login` | Public | Email, password | Sets rotated opaque session cookie and returns safe user context | Generic invalid credentials, disabled/unverified, rate limit | Planned after identity foundation |
 | `POST /auth/logout` | Authenticated/idempotent | None | Revokes current session and clears its cookie | Invalid/expired state; dependency failure | Planned after identity foundation |
 | `POST /auth/logout-all` | Authenticated | None | Revokes all sessions for current user and clears current cookie | Authentication/dependency failure | Planned after identity foundation |
@@ -271,6 +271,33 @@ There are no Google OAuth endpoints in the MVP contract.
   details are never returned or logged.
 - P2-M2-T03 owns verification-token creation, resend, provider
   integration/delivery, and verification behavior.
+
+New and duplicate registrations use this exact public success envelope; it
+contains no user identifier, email, credential metadata, or indication that a
+row was created:
+
+```json
+{
+  "data": {
+    "nextStep": "verify_email",
+    "status": "accepted"
+  },
+  "meta": {
+    "requestId": "opaque-request-id"
+  }
+}
+```
+
+`nextStep` states the required account lifecycle step. It does not claim that
+P2-M2-T01 created a verification token or sent email; those actions remain
+owned by P2-M2-T03.
+
+The implementation does not perform an account-existence pre-read. Every valid,
+permitted request follows the same Argon2id-and-create path until PostgreSQL
+accepts the insert or reports the canonical-email uniqueness conflict. This is
+the minimal database-authoritative race-safe path, not a synthetic timing delay.
+Runtime and database scheduling can still vary, while distributed/high-cardinality
+abuse and stronger production timing controls remain under `OQ-020`.
 
 ### Registration/login security requirements
 

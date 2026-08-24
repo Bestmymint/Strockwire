@@ -1,19 +1,36 @@
 import { createApp } from "./app.ts";
 import { loadApiEnvironment } from "./environment.ts";
 import { createApiLogger } from "./logger.ts";
+import { argon2PasswordHasher } from "./modules/identity/password-hasher.ts";
+import { createRegistrationLimiter } from "./modules/identity/registration-limiter.ts";
+import { createPrismaRegistrationRepository } from "./modules/identity/registration-repository.ts";
+import { createRegistrationRouter } from "./modules/identity/registration-router.ts";
+import { createRegistrationService } from "./modules/identity/registration-service.ts";
+import { getPrismaClient } from "./prisma/client.ts";
 import { createShutdownHandler, startApiServer } from "./server.ts";
 
 const logger = createApiLogger();
 
 async function main(): Promise<void> {
   const environment = loadApiEnvironment();
+  const prisma = getPrismaClient(environment);
+  const registrationService = createRegistrationService({
+    passwordHasher: argon2PasswordHasher,
+    repository: createPrismaRegistrationRepository(prisma),
+  });
+  const apiRouter = createRegistrationRouter({
+    limiter: createRegistrationLimiter(),
+    registrationService,
+  });
 
-  const app = createApp({ logger });
+  const app = createApp({ apiRouter, logger });
   const runningServer = await startApiServer(app, {
     host: "127.0.0.1",
     port: environment.STOCKWISE_API_PORT,
   });
-  const shutdown = createShutdownHandler(runningServer, logger);
+  const shutdown = createShutdownHandler(runningServer, logger, () =>
+    prisma.$disconnect(),
+  );
 
   logger.info(
     {

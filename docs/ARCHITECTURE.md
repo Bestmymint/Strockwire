@@ -205,6 +205,16 @@ the same generic `202 Accepted` public response. P2-M2-T03 later owns
 verification-token creation, resend, email-provider integration/delivery, and
 verification behavior.
 
+The implemented registration boundary is split into the Express/Zod transport,
+an application service, the centralized Argon2 password boundary, a deterministic
+process-local limiter, and Prisma persistence/error translation. The limiter
+stores only SHA-256-derived in-memory keys for canonical emails and runs before
+Argon2. Persistence performs no existence pre-read: valid permitted requests
+follow the same hash-and-create flow, PostgreSQL remains authoritative under
+races, and only the canonical-email uniqueness conflict is translated to the
+generic success outcome. No synthetic delay, login/session behavior, token
+generation, email provider, or onboarding behavior is part of this boundary.
+
 1. The client sends credentials over TLS.
 2. The API validates the request and verifies the Argon2 password hash.
 3. The API rotates a cryptographically random opaque session, sends it only in an HttpOnly cookie, and stores only its hash in PostgreSQL.
