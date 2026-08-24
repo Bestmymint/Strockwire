@@ -162,6 +162,36 @@ Authenticated actor
 
 Path/query/body fields select a candidate resource; they never grant access. Cross-tenant records should be reported without revealing their existence.
 
+### Authorization policy convention
+
+P2-M1-T03 establishes the API-owned, pure policy foundation at
+`apps/api/src/modules/identity/authorization-policy.ts`. It owns the fixed
+typed permission vocabulary, server-resolved authorization context, trusted
+organization/branch resource scopes, and the centralized `can(context,
+permission, resourceScope)` decision. It issues no database query and is not
+wired into Express until authentication middleware and protected use cases
+exist.
+
+- A trusted context is constructed only from server-resolved actor,
+  membership, and branch-assignment state. It retains the actor and membership
+  identities, active/disabled states, organization role, and active assigned
+  branch IDs; actor/membership or assignment organization mismatches fail
+  closed.
+- A trusted branch scope carries both the requested organization and the
+  branch's resolved owning organization. A mismatch fails before a role can
+  receive organization-wide or branch-assignment access.
+- `OWNER` and `ADMIN` may use organization scope and every branch in their
+  organization. `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER` must use an
+  actively assigned branch scope; organization scope and zero or inactive
+  assignments deny access.
+- The vocabulary includes the accepted catalog, supplier, inventory,
+  purchasing/receiving, checkout, sales-history, analytics, forecast/reorder,
+  AI-summary, and governance capabilities. It excludes refund/void authority
+  until `OQ-009` is resolved. `ADMIN` can manage only non-owner memberships;
+  OWNER membership, ownership transfer, and destructive ownership actions are
+  OWNER-only. The later membership mutation transaction must still preserve the
+  last-active-OWNER invariant.
+
 ## 6. Critical data flows
 
 ### 6.1 Authentication and scope selection
