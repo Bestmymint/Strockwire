@@ -147,9 +147,14 @@ Successful authentication rotates the session. Logout revokes the current sessio
 `Idempotency-Key` is required for checkout, purchase receiving, stock adjustment, and other retry-sensitive creates specified below.
 
 - Key format/length is validated.
+- The key is opaque, bounded, and not unnecessarily logged; persistence uses a
+  deterministic hash and a canonical-request hash.
 - Identity includes trusted tenant/branch and operation type.
 - Same key + semantically same payload returns the same logical outcome.
 - Same key + different payload returns `409 IDEMPOTENCY_CONFLICT`.
+- Concurrent identical requests create at most one physical mutation. Inventory
+  idempotency has no accepted expiry/retention window in MVP because its durable
+  movement retains the necessary provenance.
 - Concurrent requests with the same key create one logical operation.
 - Retention duration is documented before production.
 
@@ -666,9 +671,13 @@ stock, quantity, branch pricing, or hard deletion.
 | `GET /organizations/{organizationId}/branches/{branchId}/inventory` | Branch inventory read | Cursor, product/category/status/stock filters | Product + current balance page | Invalid filter, forbidden branch | Planned; analytic filters blocked `OQ-011` |
 | `GET /organizations/{organizationId}/branches/{branchId}/inventory/{productId}` | Branch inventory read | None | Current balance and product summary | Safe not-found/cross-tenant | Planned |
 | `GET /organizations/{organizationId}/branches/{branchId}/inventory/{productId}/transactions` | Branch inventory read | Cursor, type/date filters | Stable ledger page | Invalid range/cursor | Planned |
-| `POST /organizations/{organizationId}/branches/{branchId}/inventory/adjustments` | Branch stock adjust | `Idempotency-Key`; product, signed quantity, reason | Movement + new balance | Invalid/zero, insufficient stock, duplicate/conflict | Blocked `OQ-007`, `OQ-019`; quantity validation follows `ADR-022` |
+| `POST /organizations/{organizationId}/branches/{branchId}/inventory/adjustments` | Branch stock adjust | `Idempotency-Key`; product, signed `delta`, reason, optional note | Movement + new balance | Invalid/zero/excess-scale delta, inactive/cross-tenant resource, `INSUFFICIENT_STOCK`, `IDEMPOTENCY_CONFLICT` | Planned for P3-M2-T04; `ADR-022`, `ADR-024` |
 
-Adjustment request must not contain an authoritative resulting balance. The server applies a delta within one transaction.
+Adjustment request must not contain an authoritative resulting balance. The server
+applies a signed delta within one PostgreSQL transaction after pessimistically
+serializing the authoritative branch/product balance. A negative result returns
+`409 INSUFFICIENT_STOCK` with no ledger/balance mutation. The exact header grammar
+and length remain a bounded API implementation detail.
 
 No transfer endpoint exists until `OQ-013` is accepted.
 
@@ -691,7 +700,7 @@ No transfer endpoint exists until `OQ-013` is accepted.
 | `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders` | Branch purchasing write | Supplier, lines, quantities, expected costs | Purchase order | Cross-tenant refs, invalid/duplicate lines/cost | Blocked `OQ-010`, `OQ-021`; quantity validation follows `ADR-022` |
 | `GET /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}` | Branch purchasing read | None | Order, snapshots, receipt summary | Safe not-found | Blocked lifecycle representation |
 | `PATCH /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}` | Branch purchasing write | Editable fields/state version | Purchase order | Non-editable/stale/state conflict | Blocked `OQ-021` |
-| `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}/receipts` | Branch receiving | `Idempotency-Key`; received lines/actual cost | Completed receipt + balance effects | State/quantity/cost/idempotency/concurrency | Blocked `OQ-007`, `OQ-010`, `OQ-021`; quantity validation follows `ADR-022` |
+| `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}/receipts` | Branch receiving | `Idempotency-Key`; received lines/actual cost | Completed receipt + balance effects | State/quantity/cost/idempotency/concurrency | Blocked `OQ-010`, `OQ-021`; quantity validation follows `ADR-022`, stock policy `ADR-024` |
 
 Receipt creation is an atomic command. It does not expose a sequence of public endpoints for separately creating a receipt and then mutating stock.
 
@@ -700,7 +709,7 @@ Receipt creation is an atomic command. It does not expose a sequence of public e
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
 | `GET /organizations/{organizationId}/branches/{branchId}/pos/products` | Branch checkout | Query/barcode/cursor | Sellable product summaries with current server price/availability indicator | Invalid query, forbidden branch | Planned; exact availability/price blocked |
-| `POST /organizations/{organizationId}/branches/{branchId}/sales` | Branch checkout | `Idempotency-Key`; cart lines and payment intent | Completed sale + receipt representation | Price/state/stock/payment/idempotency/concurrency | Blocked `OQ-007`, `OQ-008`, `OQ-010`; quantity validation follows `ADR-022` |
+| `POST /organizations/{organizationId}/branches/{branchId}/sales` | Branch checkout | `Idempotency-Key`; cart lines and payment intent | Completed sale + receipt representation | Price/state/stock/payment/idempotency/concurrency | Blocked `OQ-008`, `OQ-010`; quantity validation follows `ADR-022`, stock policy `ADR-024` |
 | `GET /organizations/{organizationId}/branches/{branchId}/sales` | Branch sales read | Cursor/date/user/status filters | Sale summaries | Invalid range/cursor | Planned; statuses blocked `OQ-009` |
 | `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}` | Branch sales read | None | Sale, immutable lines, permitted payment data | Safe not-found | Planned |
 | `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}/receipt` | Branch receipt read | Format/locale if accepted | Receipt view data; not arbitrary HTML from server | Safe not-found/forbidden | Blocked format/numbering `OQ-008` |
@@ -747,7 +756,7 @@ period=<canonical selector derived from OQ-011 and OQ-016>
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
 | `GET /organizations/{organizationId}/analytics/sales` | Analytics read | Scope + canonical period + optional dimensions | Accepted sales metrics/trends | Non-comparable/insufficient/stale/inaccessible | Blocked `OQ-011`, `OQ-016` |
-| `GET /organizations/{organizationId}/analytics/inventory` | Analytics read | Scope + period/cutoff + optional dimensions | Coverage/movement/risk metrics | Insufficient/negative/unknown thresholds | Blocked `OQ-007`, `OQ-011`, `OQ-012` |
+| `GET /organizations/{organizationId}/analytics/inventory` | Analytics read | Scope + period/cutoff + optional dimensions | Coverage/movement/risk metrics | Insufficient/zero/reconciliation anomaly/unknown thresholds | Blocked `OQ-011`, `OQ-012`; stock policy `ADR-024` |
 | `GET /organizations/{organizationId}/analytics/branches` | Organization analytics read | Period + authorized branch set/filter | Comparable branch metrics | Unauthorized branch/non-comparable period | Blocked `OQ-011`, `OQ-016`; authorization follows `ADR-016` |
 | `GET /organizations/{organizationId}/analytics/forecast` | Forecast read | Scope + product/category + horizon | Versioned forecast + data status | Unsupported horizon/insufficient data | Blocked `OQ-012` |
 | `GET /organizations/{organizationId}/analytics/reorder-recommendations` | Reorder read | Scope + horizon/filter | Inputs + deterministic recommendations | Missing lead time/forecast/cost/unit | Blocked `OQ-010`, `OQ-011`, `OQ-012`, `OQ-021`; quantity representation follows `ADR-022` |
@@ -838,9 +847,10 @@ Canonical definitions live in `BUILD_SPEC.md`:
 - Auth/session: `ADR-013`; verification/reset token/provider behavior: `ADR-014`; onboarding: `ADR-015`; invitation/member access lifecycle: `ADR-021`
 - Role/permission exposure: `ADR-016`
 - Product payload: `ADR-022`; cost/valuation remains `OQ-010`, sales monetary behavior remains `OQ-008`
-- Inventory adjustment: `OQ-007`, `OQ-019`; quantity representation is `ADR-022`
+- Inventory adjustment: `ADR-024`; quantity representation is `ADR-022`; generic
+  audit logging remains `OQ-019`
 - Purchasing/receiving: `OQ-010`, `OQ-021`; quantity representation is `ADR-022`
-- Checkout/receipt/payment: `OQ-007`, `OQ-008`, `OQ-010`; quantity representation is `ADR-022`
+- Checkout/receipt/payment: `ADR-024`, `OQ-008`, `OQ-010`; quantity representation is `ADR-022`
 - Void/refund: `OQ-009`
 - Analytics/forecast: `OQ-011`, `OQ-012`, `OQ-016`
 - AI scheduling/provider: `OQ-017`, `OQ-018`

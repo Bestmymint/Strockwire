@@ -243,7 +243,8 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   1. API validates scope, pagination, filters, and sorting.
   2. It returns current balances for accessible branch/product records.
   3. For history, it returns ledger movements in stable chronological order with source/actor context permitted to the role.
-  4. UI distinguishes no balance record, zero balance, and unavailable data.
+  4. UI distinguishes no balance record (quantity zero), a persisted zero balance,
+     and unavailable data.
 - **Alternative flows:** Organization view returns separate/aggregated branch data only when authorized; inactive products can be included by explicit filter.
 - **Error cases:** Invalid cursor/filter; inaccessible branch/product; stale page cursor; database unavailable. Do not leak another tenant's product or movement.
 - **Business rules:** Balance is a projection; ledger explains changes. Low/stockout labels use only accepted analytics definitions.
@@ -253,20 +254,36 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-INV-002 — Adjust branch stock
 
-- **Status:** Blocked by `OQ-007` and audit scope `OQ-019`; quantity validation follows `ADR-022`
-- **Actor:** Authorized inventory staff/manager
-- **Preconditions:** Product and branch are active and in the same organization; actor has adjustment permission.
-- **Trigger:** Actor submits signed adjustment quantity and required reason.
+- **Status:** Ready after P3-M2-T02/T03 persistence/query foundations; quantity
+  validation follows `ADR-022` and signed-ledger/idempotency rules follow `ADR-024`.
+- **Actor:** Authenticated `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or
+  `INVENTORY_STAFF` in trusted branch scope
+- **Preconditions:** Product and branch are `ACTIVE`, belong to the same
+  organization, and the actor has `inventory.adjust`; branch-scoped actors have
+  an effective active assignment.
+- **Trigger:** Actor submits an opaque `Idempotency-Key`, product ID, signed decimal
+  delta, reason, and optional note.
 - **Main flow:**
-  1. Validate quantity/reason and trusted scope.
-  2. Load and concurrency-protect the branch/product balance.
-  3. Enforce negative-stock and approval rules.
-  4. Append one adjustment ledger entry with actor/context.
-  5. Update balance in the same database transaction.
-  6. Return new balance and movement reference.
-- **Alternative flows:** A zero starting balance creates the balance projection if allowed; correction of a wrong adjustment uses a compensating adjustment, not editing history.
-- **Error cases:** Zero/invalid quantity; missing reason; forbidden role; cross-tenant product; inactive resource; insufficient stock under rule; concurrent conflict; duplicate request; database failure.
-- **Business rules:** No direct balance overwrite. No ledger deletion/edit. Idempotent retry must not double-adjust.
+  1. Validate the signed delta against the immutable Product unit, reason/note rules,
+     and trusted scope.
+  2. Claim/check the organization-scoped idempotency identity and canonical request.
+  3. Establish and pessimistically serialize the authoritative branch/product balance.
+  4. Reject a resulting negative quantity with `INSUFFICIENT_STOCK` and no mutation.
+  5. Update the balance and append exactly one `MANUAL_ADJUSTMENT` ledger movement
+     with actor/context in the same database transaction.
+  6. Return the resulting balance and movement reference, or the original logical
+     result for an identical idempotent replay.
+- **Alternative flows:** A first positive movement lazily creates the balance projection.
+  A first negative movement fails without leaving a balance row. A wrong adjustment
+  uses a signed compensating `CORRECTION` movement, not an edit to history.
+- **Error cases:** Zero/invalid/excess-scale delta; non-integral integer-unit delta;
+  missing/invalid reason; blank `OTHER` note; forbidden role; cross-tenant product;
+  inactive product/branch; `INSUFFICIENT_STOCK`; `IDEMPOTENCY_CONFLICT`; database failure.
+- **Business rules:** No direct balance overwrite or ledger deletion/edit. `STOCK_COUNT`,
+  `DAMAGE`, `LOSS`, `FOUND`, `CORRECTION`, and `OTHER` are the accepted reasons;
+  only `OTHER` requires a nonblank note; a blank optional note becomes null. There is no dual-approval workflow and no
+  negative-stock override. InventoryTransaction is the bounded immutable domain
+  provenance record; `OQ-019` remains open for generic audit logging.
 - **Authorization:** Explicit branch stock-adjust permission; view permission alone is insufficient.
 - **Expected result:** Exactly one traceable movement and matching balance change, or no change.
 - **Acceptance criteria:** Atomicity, concurrency, duplicate, negative-stock, permission, tenant, and reconciliation tests pass.
@@ -308,7 +325,8 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-PUR-002 — Receive a purchase order into branch stock
 
-- **Status:** Blocked by `OQ-007`, `OQ-010`, and `OQ-021`; quantity validation follows `ADR-022`
+- **Status:** Blocked by `OQ-010` and `OQ-021`; quantity validation follows
+  `ADR-022` and no-negative stock follows `ADR-024`
 - **Actor:** Authorized receiving/inventory user
 - **Preconditions:** Purchase order is in an accepted receivable state for the actor's branch.
 - **Trigger:** Actor submits received quantities and actual costs with an idempotency key.
@@ -332,7 +350,8 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-SALE-001 — Complete POS checkout
 
-- **Status:** Blocked by `OQ-007`, `OQ-008`, and `OQ-010`; quantity validation follows `ADR-022`
+- **Status:** Blocked by `OQ-008` and `OQ-010`; quantity validation follows
+  `ADR-022` and no-negative stock follows `ADR-024`
 - **Actor:** Authorized cashier/manager
 - **Preconditions:** Actor has checkout permission for an active branch; cart has at least one active same-organization product.
 - **Trigger:** Actor submits cart and payment intent with an idempotency key.
@@ -367,7 +386,8 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-SALE-003 — Void or refund a sale
 
-- **Status:** Blocked by `OQ-009`, `OQ-007`, `OQ-008`, `OQ-010`, `OQ-019`
+- **Status:** Blocked by `OQ-009`, `OQ-008`, `OQ-010`, `OQ-019`; stock availability
+  follows `ADR-024`
 - **Actor:** Role authorized by the future reversal policy
 - **Preconditions:** An eligible sale exists and the accepted time/status/payment rules permit the requested reversal.
 - **Trigger:** Actor submits void/refund intent, amount/items, and reason.
@@ -402,7 +422,8 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-AN-002 — View forecast and reorder recommendation
 
-- **Status:** Blocked by `OQ-007`, `OQ-010`, `OQ-011`, `OQ-012`, and `OQ-021`; quantity inputs follow `ADR-022`
+- **Status:** Blocked by `OQ-010`, `OQ-011`, `OQ-012`, and `OQ-021`; quantity inputs
+  follow `ADR-022` and no-negative stock follows `ADR-024`
 - **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` within the accepted forecast/reorder scope
 - **Preconditions:** Forecasting V1 and input definitions are accepted; actor has scope access.
 - **Trigger:** Actor opens forecast/replenishment view.

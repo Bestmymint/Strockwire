@@ -108,7 +108,7 @@ The backend is one deployable application divided by business capability. Module
 | Identity and access | Email/password identity, Argon2 verification, opaque PostgreSQL-backed sessions, provider-abstracted verification/reset/invitation email, organization membership, branch assignment, fixed RBAC policy | Infer access from client-provided IDs or couple auth-domain behavior directly to Resend |
 | Organizations and branches | Tenant lifecycle, branch lifecycle, active/allowed scope resolution | Own product, sale, or inventory business rules |
 | Catalog | Organization products/categories, SKU/barcode rules, accepted master-data lifecycle, one immutable base unit, and organization-level base price data | Hold branch inventory as `product.stock`, cost/valuation authority, branch-price overrides, or rewrite sale history |
-| Inventory | Branch balances, append-oriented ledger, adjustments, stock availability, movement history | Change balances without ledger records; decide `OQ-007` itself |
+| Inventory | Branch balances, append-oriented signed-delta ledger, adjustments, no-negative stock availability, movement history | Change balances without ledger records; permit a negative-stock override; implement generic audit logging |
 | Suppliers and purchasing | Organization suppliers, branch-targeted purchase orders, receipt lifecycle | Update inventory outside an atomic receiving use case |
 | POS and sales | Server-side cart validation, checkout, immutable line snapshots, payment records, history, receipt views, reversal after rules are accepted | Trust prices/totals from browser; commit a partial checkout |
 | Analytics and forecasting | Accepted metric formulas, period boundaries, branch/organization aggregation, deterministic forecast and evaluation | Ask an LLM to calculate or forecast; invent unresolved formulas |
@@ -346,7 +346,7 @@ sequenceDiagram
     API-->>Web: Return same result on safe retry
 ```
 
-The operation must never leave a completed sale without its matching inventory and payment records. Negative-stock and payment semantics remain blocked by `OQ-007` and `OQ-008`.
+The operation must never leave a completed sale without its matching inventory and payment records. No-negative stock follows `ADR-024`; payment semantics remain blocked by `OQ-008`.
 
 ### 6.4 Deterministic analytics
 
@@ -460,6 +460,10 @@ Avoid a generic repository abstraction that erases query semantics, tenant scope
 ### Derived/read models
 
 - `InventoryBalance` is a transactionally maintained projection of ledger movements.
+- Inventory mutation establishes/locks the affected branch/product balance inside a
+  PostgreSQL transaction, rejects a resulting negative quantity, then updates the
+  projection and appends its immutable signed-delta movement atomically. A missing
+  balance represents zero and is created lazily only by a successful first movement.
 - Analytics snapshots and AI insights are derived and reproducible from operational truth, subject to versioning and retention rules.
 - A stale AI insight is acceptable and must be labeled; a stale or inconsistent stock balance is not.
 
@@ -555,7 +559,6 @@ Scale in measured stages:
 
 This document does not answer the following canonical questions from `BUILD_SPEC.md`:
 
-- `OQ-007` negative stock
 - `OQ-008` payment/tax/discount/receipt rules
 - `OQ-009` refund/void rules
 - `OQ-010` costing model

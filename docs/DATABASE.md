@@ -113,7 +113,9 @@ profile.
 6. Money and costs use PostgreSQL `NUMERIC`/`DECIMAL` and Prisma `Decimal`, never unconstrained binary floating point.
 7. Timestamps are stored in UTC. Reporting timezone semantics remain `OQ-016`.
 8. Stock truth consists of an append-oriented ledger plus a transactionally consistent current-balance projection.
-9. Checkout, receiving, adjustment, and reversal changes are atomic.
+9. Checkout, receiving, adjustment, and reversal changes are atomic. Every accepted
+   stock-decreasing movement rejects a resulting negative quantity inside its
+   authoritative balance transaction; no override exists.
 10. Historical sale and receipt line snapshots do not change when current catalog data changes.
 11. Retried creates and scheduled jobs use stable idempotency keys/uniqueness constraints.
 12. Application validation never substitutes for database constraints.
@@ -565,8 +567,12 @@ Required logical attributes:
 Constraints and indexes:
 
 - Unique `(branch, product)`.
-- Product and branch must belong to the same organization.
-- Quantity constraints follow `OQ-007`; the schema must not assume non-negative values before that decision.
+- Inventory records carry `organizationId` and use composite foreign keys to
+  `Branch(id, organizationId)` and `Product(id, organizationId)`; the Product
+  composite relational key is added with the future inventory schema if absent.
+- A database constraint enforces non-negative quantity. A missing balance row
+  represents zero and balance rows are created lazily only by a successful first
+  movement.
 - Read/update access is normally keyed by `(branch, product)`.
 
 Invariant:
@@ -583,29 +589,40 @@ Required logical attributes:
 - Branch identifier
 - Product identifier
 - Movement type
-- Signed quantity delta as `DECIMAL(18,4)` using the Product's accepted immutable base unit; signed-ledger semantics remain an inventory decision
-- Reason/source type and source identifier
-- Acting user or system actor
-- Optional note/reason code for adjustments
+- Signed, non-zero quantity delta as `DECIMAL(18,4)` using the Product's accepted
+  immutable base unit. Positive increases and negative decreases stock. API output
+  removes meaningless trailing fractional zeros.
+- Reason/source type and source identifier; manual adjustment source is
+  `MANUAL_ADJUSTMENT`
+- Acting human user plus membership/context sufficient for durable attribution, or
+  an explicit trusted system/source identity for future system-created movements
+- Adjustment reason/note where applicable
 - Occurred/created timestamp
-- Idempotency/source uniqueness metadata
+- Idempotency/source uniqueness metadata: deterministic opaque-key hash and canonical
+  request hash scoped to organization and operation
 
 Accepted movement concepts:
 
 - Purchase receipt: positive
 - Sale: negative
-- Approved adjustment: signed
+- Manual adjustment: signed; reason is `STOCK_COUNT`, `DAMAGE`, `LOSS`, `FOUND`,
+  `CORRECTION`, or `OTHER`
 - Refund/void compensation: only after `OQ-009`
 - Transfer out/in: only after `OQ-013`
 
 Constraints and indexes:
 
 - Quantity delta cannot be zero.
-- Branch and product must share organization ownership.
+- Inventory records carry `organizationId` and use the same composite Branch/Product
+  foreign-key strategy as InventoryBalance, so branch and product cannot cross tenants.
 - One source line cannot produce the same movement twice.
 - Index `(branch, product, occurredAt, id)` for history and reconciliation.
 - Index source reference for traceability/idempotency.
 - Ledger rows are not edited or deleted to correct mistakes; create an authorized compensating transaction.
+- `OTHER` requires a nonblank trimmed note. Other adjustment notes are optional;
+  a blank optional note becomes null. Supplied notes trim only surrounding
+  whitespace, preserve internal Unicode and whitespace, and must not contain
+  credentials, tokens, or secrets.
 
 ### 4.4 Purchasing and receiving
 
@@ -825,7 +842,9 @@ The implementation may require records such as idempotency claims, job leases, o
 
 - Idempotency records are scoped so one tenant cannot collide with or discover another tenant's key.
 - Job claims prevent duplicate report generation and expire/recover safely.
-- Audit scope is governed by `OQ-019`.
+- `InventoryTransaction` is the bounded immutable domain provenance record for stock
+  movements, not a replacement for the generic cross-domain audit system governed
+  by `OQ-019`.
 - Support records never replace domain constraints or transactional uniqueness.
 
 ## 5. Cross-tenant constraint strategy
@@ -897,7 +916,7 @@ One database transaction must:
 1. Claim/check the idempotency key.
 2. Load and lock or otherwise concurrency-protect required inventory balances.
 3. Re-read accepted product/price data and verify branch/organization ownership.
-4. Enforce `OQ-007` stock policy and `OQ-008` payment/totals rules.
+4. Enforce the `ADR-024` stock policy and `OQ-008` payment/totals rules.
 5. Create the sale and immutable sale items.
 6. Create payment record(s).
 7. Append one inventory transaction per stock movement.
@@ -920,7 +939,15 @@ One database transaction must:
 
 ### 6.3 Adjustment
 
-One database transaction must validate permission/reason, append the signed adjustment movement, update the balance under the accepted negative-stock rule, and preserve the actor/context. Never overwrite the balance as an untraceable correction.
+One database transaction must re-resolve trusted actor/membership/branch scope and
+active Product/Branch state; validate signed delta, reason/note, and idempotency;
+establish and pessimistically serialize the branch/product balance; reject a
+resulting negative quantity with `INSUFFICIENT_STOCK`; then update the balance and
+append exactly one signed `MANUAL_ADJUSTMENT` movement with durable actor/context
+provenance. Every part succeeds or rolls back. An identical idempotency replay
+returns the original logical result; the same key with a different canonical request
+returns `IDEMPOTENCY_CONFLICT`. Never overwrite the balance as an untraceable
+correction; append a `CORRECTION` movement instead.
 
 ### 6.4 Refund/void and transfer
 
@@ -931,7 +958,8 @@ No transaction contract is accepted yet. They are blocked by `OQ-009` and `OQ-01
 The implementation may choose row locking, conditional/versioned updates, atomic SQL updates with affected-row checks, or another PostgreSQL-safe method. It must prove through integration tests that:
 
 - Concurrent checkout cannot lose an inventory update.
-- Negative stock behavior matches `OQ-007` exactly.
+- Concurrent stock-decreasing operations cannot both succeed from one stale balance;
+  pessimistic branch/product balance serialization enforces the no-negative rule.
 - Duplicate idempotency keys return/recover one logical result.
 - Concurrent receiving cannot exceed accepted quantities or double-count stock.
 - Lock order is deterministic across multiple cart lines to reduce deadlock risk.
@@ -1014,7 +1042,6 @@ At minimum, database-backed tests must cover:
 
 The canonical definitions live in `BUILD_SPEC.md`:
 
-- `OQ-007` negative stock affects balance constraints.
 - `OQ-008` payment, tax, discount, and numbering affect sales/payment fields.
 - `OQ-009` reversal rules affect lifecycle/linkage.
 - `OQ-010` costing affects receipt/sale cost data and later valuation; Product has no authoritative cost/valuation field before that decision.

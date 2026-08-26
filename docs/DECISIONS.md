@@ -193,7 +193,7 @@ Use `InventoryTransaction` as the traceable movement history and `InventoryBalan
 - Direct/unexplained balance overwrites are prohibited.
 - Corrections append compensating movements rather than edit/delete ledger history.
 - Concurrency and reconciliation tests are mandatory.
-- Negative-stock behavior remains `OQ-007`; transfer/refund movement lifecycles remain unresolved.
+- `ADR-024` resolves negative-stock behavior; transfer/refund movement lifecycles remain unresolved.
 
 ## ADR-006 — Compute analytics and forecasts in TypeScript/SQL
 
@@ -1015,6 +1015,119 @@ assignment is protected through the write transaction.
 - No schema/migration, UI, inventory, costing, valuation, or branch-price model
   is introduced by this decision.
 - `OQ-008`, `OQ-010`, and `OQ-011` remain open and do not block catalog CRUD.
+
+## ADR-024 — Use signed deltas, no-negative stock, and a locked balance projection
+
+- **Date:** 2026-08-27
+- **Status:** Accepted
+- **Type:** Inventory quantity, authorization, concurrency, and audit boundary
+
+### Context
+
+Inventory needs a traceable movement history and a fast current quantity, but its
+negative-stock, manual-adjustment, idempotency, lifecycle, and audit boundaries
+were intentionally left open. A client-side expected-version calculation cannot
+protect shared branch stock when adjustments, future receiving, and future sales
+race. The quantity representation established by `ADR-022` also needed an accepted
+signed-ledger interpretation without selecting a costing model, transfer lifecycle,
+or generic audit system.
+
+### Decision
+
+`InventoryTransaction.delta` is the canonical signed decimal-string movement
+quantity, persisted as `DECIMAL(18,4)`: positive increases stock, negative decreases
+stock, and either textual `"0"` or `"-0"` is invalid. Input rejects excess scale and
+non-integral values for `EA`, `PACK`, and `BOX`; canonical inventory output removes
+meaningless trailing fractional zeros. JavaScript numbers are never authoritative
+quantity truth.
+
+MVP forbids negative inventory for every stock-decreasing movement. Within the same
+PostgreSQL transaction and authoritative pessimistic branch/product balance
+serialization boundary, calculate `resultingQuantity = currentQuantity + delta`.
+If it is below zero, return `409 INSUFFICIENT_STOCK` and create neither an
+`InventoryTransaction` nor a changed `InventoryBalance`. No OWNER, ADMIN, manager,
+or other override exists. Client `expectedUpdatedAt` is not the primary stock
+concurrency mechanism.
+
+Inventory retains both an immutable append-only `InventoryTransaction` ledger and a
+persisted `InventoryBalance` projection. Every successful mutation establishes or
+locks balance state, validates the movement, updates balance, and appends exactly one
+ledger row atomically. A balance is lazy: no Product × Branch precreation occurs; a
+missing row reads as zero; a successful first movement creates it transactionally;
+and a rejected first decrement leaves no durable zero row. Reconciliation requires
+balance to equal the accepted projection of ledger deltas.
+
+Manual adjustment accepts product ID, signed delta, reason, optional note, and an
+opaque client-generated `Idempotency-Key`. Its source is `MANUAL_ADJUSTMENT`; ledger
+sources remain extensible without defining transfer semantics. Reasons are
+`STOCK_COUNT`, `DAMAGE`, `LOSS`, `FOUND`, `CORRECTION`, and `OTHER`. No reason has a
+sign restriction beyond no-negative stock. Notes are optional except `OTHER`, whose
+note is required and nonblank; a blank optional note becomes null. Supplied notes
+trim surrounding whitespace, preserve internal Unicode/whitespace, and are not
+Unicode-normalized. Credentials, tokens, and secrets do not belong in notes.
+
+The existing `inventory.adjust` permission is the only MVP approval boundary:
+`OWNER`, `ADMIN`, `BRANCH_MANAGER`, and `INVENTORY_STAFF` may adjust only a trusted
+active branch; `CASHIER` remains view-only. `inventory.view` permits all five roles
+within trusted branch scope. OWNER/ADMIN are organization-wide actors, but every
+inventory adjustment still names and re-resolves one concrete active target branch;
+branch-scoped roles also need an effective active assignment. Every adjustment
+re-resolves active actor, membership, organization, target branch, and active
+same-tenant Product. Product or Branch deactivation preserves balance and ledger
+history but prevents new adjustments; reactivation restores eligibility if all other
+conditions still hold.
+
+Idempotency persists a deterministic key hash and canonical-request hash with
+organization-scoped uniqueness sufficient to prevent duplicate physical movements.
+The same key plus identical canonical request returns the original logical success;
+the same key plus a different request returns `409 IDEMPOTENCY_CONFLICT`; concurrent
+identical requests produce at most one physical balance/ledger mutation. There is no
+accepted expiry window for inventory-mutation idempotency.
+
+Corrections append a signed `CORRECTION` adjustment; historical ledger rows are never
+edited or deleted. This decision does not require a `correctionOfTransactionId`
+relationship; P3-M2-T02 must not add one unless a later accepted schema need
+demonstrates it. InventoryTransaction is the bounded immutable domain provenance
+record: organization, branch, product, delta, reason/note, actor user and membership/
+context, source, idempotency provenance, and timestamp. Manual adjustments always
+have a human authenticated actor. Future system movements need an explicit trusted
+system/source identity. This does not create or resolve generic cross-domain audit
+logging: `OQ-019` remains open.
+
+### Worked boundary examples
+
+| State or request | Result |
+| --- | --- |
+| Current `10`, delta `-3` | Accepted; resulting quantity `7`. |
+| Current `3`, delta `-3` | Accepted; resulting quantity `0`. |
+| Current `3`, delta `-4` | `INSUFFICIENT_STOCK`; no balance or ledger mutation. |
+| Current `5`, concurrent `-4` and `-4` | Only one succeeds; the serialized loser observes the resulting balance and fails. Final quantity is never `-3`. |
+| Current `5`, concurrent `+10` and `-4` | Both may succeed in serialized order; final quantity is `11` with no lost update. |
+| No balance, first `+5` | Create balance and ledger atomically; resulting quantity `5`. |
+| No balance, first `-1` | `INSUFFICIENT_STOCK`; no ledger and no required durable balance row. |
+| `EA` delta `+3` or `-1` | Valid, subject to resulting quantity. `EA` `+1.5` is invalid. |
+| `KG` delta `+0.125` or `-0.1234` | Valid, subject to resulting quantity. `+0.12345` is invalid. |
+| Canonical output `"3.0000"`, `"2.5000"`, `"-2.2500"`, or `"0.1250"` | `"3"`, `"2.5"`, `"-2.25"`, or `"0.125"` respectively. |
+| Key K, `+5`, then identical retry | One movement; retry returns the original logical success. |
+| Key K, `+5`, then `+6` | `IDEMPOTENCY_CONFLICT`; no second mutation. |
+| Wrong prior `+5` adjustment | Append `-5` with reason `CORRECTION`; preserve the original. |
+| Inactive Product or Branch | Reject new adjustment; retain existing balance and ledger history. |
+
+### Consequences
+
+- P3-M2-T02 may design the tenant-safe `InventoryBalance` and
+  `InventoryTransaction` schema/migration: each needs organization, branch, and
+  product ownership; `InventoryBalance` is unique by branch/product; and composite
+  foreign keys must prove the branch and Product share the same organization. Product
+  needs the required composite relational key if it does not already provide one.
+- P3-M2-T04 may implement the adjustment API only after the balance/ledger schema and
+  query/history foundations exist. It must prove no oversell, no lost update, no
+  ledger-without-balance, no balance-without-ledger, and no duplicate idempotent
+  movement.
+- `OQ-010` remains open: this quantity foundation has no unit cost, average cost,
+  valuation, or COGS. `OQ-013` remains open: no transfer behavior or source lifecycle
+  is defined. `OQ-019` remains open for generic audit logging, and `OQ-020` remains
+  open for production hardening.
 
 ## 2. Explicitly superseded planning directions
 

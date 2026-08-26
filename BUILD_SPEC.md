@@ -217,9 +217,12 @@ Branch-level price overrides are out of MVP scope. Every branch uses the Product
 - Maintain a query-efficient balance projection consistent with the ledger.
 - Receive stock, sell stock, adjust stock, and record reversals when the relevant business rules allow them.
 - Show inventory history and low-stock information.
-- Prevent lost updates and overselling according to the selected negative-stock rule.
+- Prevent lost updates and overselling: MVP never permits a resulting negative
+  balance, and no role has an override.
 
-The negative-stock rule and stock-transfer MVP scope are open questions.
+The stock-transfer MVP scope remains an open question. Inventory quantity-only
+foundation deliberately has no cost, valuation, or COGS semantics until `OQ-010`
+is accepted.
 
 ### 10.4 Suppliers and purchasing
 
@@ -359,7 +362,12 @@ multi-instance, production DoS, and long-term telemetry controls remain open in
 - **FR-INV-001:** Stock shall be represented by both a current balance and traceable inventory transactions.
 - **FR-INV-002:** Every balance mutation shall have a corresponding ledger entry created atomically.
 - **FR-INV-003:** Inventory shall be scoped to a branch.
-- **FR-INV-004:** Concurrent mutations shall not lose updates or violate the finalized stock rule.
+- **FR-INV-004:** A successful stock mutation shall use a signed decimal-string delta,
+  atomically update the balance projection and append exactly one immutable ledger
+  movement, and never leave a resulting quantity below zero.
+- **FR-INV-005:** Inventory mutations shall serialize the authoritative
+  branch/product balance inside PostgreSQL; a failed insufficient-stock attempt
+  creates neither a ledger row nor a durable balance change.
 
 ### Purchasing
 
@@ -488,10 +496,10 @@ These decisions are mandatory gates before the affected domain implementation:
 | Profile and organization/first-branch onboarding | `ADR-015` (`OQ-005` resolved) |
 | Authorization policies for accepted MVP roles | `ADR-016` (`OQ-022` resolved) |
 | Catalog schema and management API | `ADR-022` (`OQ-014`, `OQ-023`, `OQ-024` resolved); cost/valuation is excluded pending `OQ-010` |
-| Inventory mutations and stock availability | `OQ-007` plus the accepted quantity contract in `ADR-022` |
-| POS checkout and sales monetary truth | `OQ-007`, `OQ-008`, `OQ-010` plus `ADR-016` and the accepted quantity contract in `ADR-022` |
+| Inventory mutations and stock availability | `ADR-024` plus the accepted quantity contract in `ADR-022` |
+| POS checkout and sales monetary truth | `ADR-024`, `OQ-008`, `OQ-010` plus `ADR-016` and the accepted quantity contract in `ADR-022` |
 | Refund and void | `OQ-009` plus the applicable sales decisions |
-| Purchasing/receiving cost behavior | `OQ-007`, `OQ-010` plus the accepted quantity contract in `ADR-022` |
+| Purchasing/receiving cost behavior | `ADR-024`, `OQ-010` plus the accepted quantity contract in `ADR-022` |
 | Analytics definitions | `OQ-011` |
 | Forecasting V1 and reorder recommendation | `OQ-011`, `OQ-012` plus accepted costing/quantity inputs where used |
 
@@ -511,16 +519,16 @@ This is the canonical list. Other documents reference these IDs and must not red
 | **OQ-004** | Require email verification for email/password accounts. P2-M2-T01 creates an unverified account but no verification token and sends no email; P2-M2-T03 owns token creation, resend, provider integration/delivery, and verification. Verification and reset tokens are opaque, cryptographically random, hash-only, single-use tokens with 24-hour and 30-minute expiry respectively; resend replaces the active verification token; reset revokes all sessions; forgot-password responses are non-disclosing. | `ADR-014`, `ADR-017` |
 | **OQ-005** | Registration accepts only email and password. The platform profile later requires display name, so `User.displayName` remains nullable until profile/onboarding; no placeholder is derived from email. New-organization onboarding requires display name, organization name, and initial branch name. Phone is optional for the platform profile and initial branch; branch address is optional. The creator becomes `OWNER`; the server assigns initial branch code `MAIN`. One persisted per-user provenance row provides request-hash replay and concurrency identity; zero memberships are required when that row does not exist. User identity is platform-level; access derives from memberships. Invitations use their own flow. | `ADR-015`, `ADR-017`, `ADR-019` |
 | **OQ-006** | Use email-bound organization invitations carrying the intended role and branch scope. Their opaque, cryptographically random, hash-only token is single-use for access creation and expires in seven days; reissue invalidates the active invite. The invited email must authenticate and verify before transactional acceptance creates membership, branch assignments, source provenance, and a bounded access event. Same-actor replay returns the existing result without mutation. Existing membership of any status blocks invitation. Full-replacement edits/reactivation use exact optimistic versions; deactivation preserves assignment configuration but immediately removes effective access. No automatic account creation or naive cross-email linking. | `ADR-014`, `ADR-021` |
+| **OQ-007** | MVP forbids negative inventory for every stock-decreasing movement. Inside the same PostgreSQL transaction and authoritative branch/product balance serialization boundary, the service calculates `resultingQuantity = currentQuantity + signedDelta`; a result below zero returns `409 INSUFFICIENT_STOCK` with no ledger or balance mutation. No role has an override. Inventory uses immutable signed-delta ledger movements plus an atomically maintained lazy balance projection; manual adjustments use the accepted reason/note, idempotency, lifecycle, and permission rules in `ADR-024`. | `ADR-024` |
 | **OQ-022** | Use fixed, deny-by-default RBAC with one organization role per user/organization and explicit branch assignments for branch-only roles. `OWNER`/`ADMIN` are organization-wide; `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER` are assigned-branch roles. The role, governance, delegation, capability, analytics, forecast, and AI-summary baseline in section 8 is authoritative; refund/void remains `OQ-009`. | `ADR-016` |
 | **OQ-014** | Branch-level price overrides are out of MVP scope. Each Product has one organization-level required non-negative `basePrice`; its API representation is a decimal string with scale at most 4 and its target persistence representation is `DECIMAL(19,4)`. Inputs with more than four fractional digits are rejected, never rounded. All branches use that base price for future operations, while future sale items snapshot the actual unit price used. Tax, discount, receipt-total, payment, currency, and sales-transaction rounding remain open in `OQ-008`. | `ADR-022` |
-| **OQ-023** | Each Product has exactly one immutable base unit: `EA`, `PACK`, `BOX`, `KG`, `G`, `L`, `ML`, `M`, or `CM`. `EA`, `PACK`, and `BOX` are integer-only; the other units allow up to four fractional digits. Quantity APIs use decimal strings and persistence targets `DECIMAL(18,4)`; values with excess precision are rejected, never rounded. There is no unit conversion, pack-size conversion, or separate purchasing/selling UOM in MVP. Positive requested business-operation quantities must be greater than zero; signed ledger semantics remain owned by inventory work. | `ADR-022` |
+| **OQ-023** | Each Product has exactly one immutable base unit: `EA`, `PACK`, `BOX`, `KG`, `G`, `L`, `ML`, `M`, or `CM`. `EA`, `PACK`, and `BOX` are integer-only; the other units allow up to four fractional digits. Quantity APIs use decimal strings and persistence targets `DECIMAL(18,4)`; values with excess precision are rejected, never rounded. There is no unit conversion, pack-size conversion, or separate purchasing/selling UOM in MVP. Positive requested business-operation quantities must be greater than zero. `ADR-024` applies this boundary to signed inventory-ledger deltas and canonical inventory output. | `ADR-022`, `ADR-024` |
 | **OQ-024** | Product display names are trimmed, nonblank, Unicode-preserving, and may duplicate within an organization. SKU is the required organization business identifier and is canonicalized by trim, Unicode NFKC, then uppercase; it must match `^[A-Z0-9][A-Z0-9._-]{0,63}$` and is unique per organization. Barcode is optional, trimmed with blank mapped to null, exact-match unique when non-null, control-character-free, and at most 128 characters. Categories are flat; their nullable product relation allows uncategorized products. Category identity is a per-organization unique NFKC/trim/collapsed-Unicode-whitespace/lowercase key while display names retain trimmed presentation. Product and Category use `ACTIVE`/`INACTIVE`, allow reactivation, prohibit hard-delete endpoints, and use exact `updatedAt` optimistic concurrency (`PRODUCT_STALE`/`CATEGORY_STALE`). Inactive categories remain referenced but cannot be newly assigned; no merge or bulk reassignment exists. | `ADR-022` |
 
 ### Open Questions
 
 | ID | Question | Blocks | Priority |
 | --- | --- | --- | --- |
-| **OQ-007** | Is negative stock forbidden, allowed by permission, or allowed with warning? | Inventory, receiving, POS | Critical |
 | **OQ-008** | Which payment methods, payment states, tax/VAT, discounts, and receipt-number rules are in the MVP? | POS/sales | Critical |
 | **OQ-009** | What are the exact void, refund, partial-refund, time-limit, approval, and stock-reversal rules? | Sales reversal | Critical |
 | **OQ-010** | Which inventory costing model is used in V1, including the treatment of purchase variances and returns? | Purchasing, margin analytics | Critical |

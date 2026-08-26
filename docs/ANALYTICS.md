@@ -235,10 +235,12 @@ Required states:
 - Positive ADS: numeric days.
 - ADS `0` and on-hand `> 0`: `null` with `NO_RECENT_DEMAND` rather than a fake large number.
 - ADS `0` and on-hand `= 0`: `null` with `NO_STOCK_AND_NO_DEMAND`.
-- Negative on-hand behavior depends on `OQ-007`.
+- Negative on-hand is not an accepted operational state under `ADR-024`; a negative
+  value found during reconciliation is an integrity anomaly, not a normal metric input.
 - Insufficient/partial history: `null` with `INSUFFICIENT_DATA`.
 
-- Status: **Blocked** by `OQ-007`, `OQ-011`; quantity representation is accepted by `ADR-022`.
+- Status: **Blocked** by `OQ-011`; quantity representation is accepted by `ADR-022`
+  and no-negative stock by `ADR-024`.
 
 ### M-103 Fast-moving / slow-moving classification
 
@@ -284,7 +286,7 @@ StockoutRisk = ProjectedEnding < SafetyStock
 
 Optional estimated stockout date comes from cumulative daily forecast crossing available quantity.
 
-- Status: **Blocked** by `OQ-007`, `OQ-011`, `OQ-012`.
+- Status: **Blocked** by `OQ-011`, `OQ-012`; no-negative stock follows `ADR-024`.
 - The LLM must never assign this risk.
 
 ### M-106 Overstock risk
@@ -525,7 +527,7 @@ Before a metric becomes Accepted, add fixed fixtures covering:
 - Product/category changes after historical sale
 - Discounts/tax/refunds after their rules are accepted
 - Decimal rounding
-- Negative/zero stock according to `OQ-007`
+- Zero stock and negative-stock reconciliation anomaly
 - Insufficient history and new product
 - Provider failure independent of deterministic analytics
 
@@ -535,7 +537,6 @@ Expected results must be hand-verifiable and stored with the test. SQL and TypeS
 
 Canonical Open Questions are in `BUILD_SPEC.md`:
 
-- `OQ-007` negative stock
 - `OQ-008` payment, tax, discount, and sale totals
 - `OQ-009` refund/void treatment
 - `OQ-010` costing/COGS
