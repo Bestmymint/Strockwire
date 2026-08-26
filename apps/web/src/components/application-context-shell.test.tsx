@@ -87,6 +87,9 @@ describe("application context shell", () => {
       await screen.findByRole("heading", { name: "Store One" }),
     ).toBeTruthy();
     expect(screen.getByLabelText("Branch")).toHaveProperty("value", BRANCH_A);
+    expect(
+      screen.getByRole("link", { name: "Catalog" }).getAttribute("href"),
+    ).toBe(`/app/catalog?organizationId=${ORG_ONE}&branchId=${BRANCH_A}`);
     await waitFor(() =>
       expect(replace).toHaveBeenCalledWith(
         `/app?organizationId=${ORG_ONE}&branchId=${BRANCH_A}`,
@@ -131,6 +134,10 @@ describe("application context shell", () => {
       ["branch-scoped", ORG_ONE, BRANCH_A, "inventory"],
       { rows: 1 },
     );
+    queryClient.setQueryData(
+      ["branch-scoped", ORG_ONE, BRANCH_A, "catalog", "products"],
+      { rows: 1 },
+    );
 
     const branchSelect = await screen.findByLabelText("Branch");
     fireEvent.change(branchSelect, { target: { value: BRANCH_B } });
@@ -145,6 +152,15 @@ describe("application context shell", () => {
         ORG_ONE,
         BRANCH_A,
         "inventory",
+      ]),
+    ).toBeUndefined();
+    expect(
+      queryClient.getQueryData([
+        "branch-scoped",
+        ORG_ONE,
+        BRANCH_A,
+        "catalog",
+        "products",
       ]),
     ).toBeUndefined();
   });

@@ -169,6 +169,12 @@ export function ApplicationContextShell() {
         </div>
       </div>
       <div className="flex flex-wrap gap-3">
+        <Link
+          className="inline-flex min-h-11 items-center rounded-md bg-foreground px-4 text-sm font-medium text-background"
+          href={`/app/catalog?organizationId=${activeOrganization.id}&branchId=${resolved.branch?.id ?? ""}`}
+        >
+          Catalog
+        </Link>
         {canManage ? (
           <>
             <Link
