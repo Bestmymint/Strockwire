@@ -53,6 +53,7 @@ describe("branch router", () => {
     };
     const service: BranchService = {
       accessContext: vi.fn().mockResolvedValue({
+        firstOrganizationOnboarding: { eligible: true },
         organizations: [],
         user: {
           displayName: "Owner",
@@ -102,7 +103,11 @@ describe("branch router", () => {
     const response = await request(`${url}/me/access-context`);
     expect(response.status).toBe(200);
     expect(service.accessContext).toHaveBeenCalledWith("trusted-user-id");
-    expect(JSON.stringify(await response.json())).not.toContain("session-id");
+    const body = await response.json();
+    expect(body).toMatchObject({
+      data: { firstOrganizationOnboarding: { eligible: true } },
+    });
+    expect(JSON.stringify(body)).not.toContain("session-id");
   });
 
   it("canonicalizes creation, ignores forged headers, and returns 201", async () => {

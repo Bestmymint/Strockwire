@@ -42,6 +42,7 @@ vi.mock("@/branch-api-client", async (importOriginal) => {
 });
 
 const accessContext = {
+  firstOrganizationOnboarding: { eligible: false },
   organizations: [
     {
       branches: [{ code: "MAIN", id: BRANCH_ID, name: "Main" }],

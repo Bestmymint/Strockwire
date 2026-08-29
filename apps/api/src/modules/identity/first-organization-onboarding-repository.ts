@@ -39,6 +39,16 @@ export interface FirstOrganizationOnboardingRepository {
   }): Promise<FirstOrganizationOnboardingOutcome>;
 }
 
+export function firstOrganizationOnboardingIsEligible({
+  membershipCount,
+  onboardingProvenanceExists,
+}: {
+  membershipCount: number;
+  onboardingProvenanceExists: boolean;
+}): boolean {
+  return membershipCount === 0 && !onboardingProvenanceExists;
+}
+
 export type FirstOrganizationOnboardingTransactionStage =
   | "profile_updated"
   | "organization_created"
@@ -161,7 +171,12 @@ export function createPrismaFirstOrganizationOnboardingRepository(
         const membershipCount = await transaction.organizationMembership.count({
           where: { userId: actorUserId },
         });
-        if (membershipCount !== 0) {
+        if (
+          !firstOrganizationOnboardingIsEligible({
+            membershipCount,
+            onboardingProvenanceExists: false,
+          })
+        ) {
           return { kind: "already_has_organization_access" };
         }
 

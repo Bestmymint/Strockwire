@@ -255,7 +255,7 @@ requests.
 | `GET /me` | Authenticated | None | Safe profile and onboarding status | Authentication required | Planned after identity foundation |
 | `PATCH /me/profile` | Authenticated | Required display name; optional phone | Updated safe profile | Validation, stale/conflict | Planned after identity foundation |
 | `GET /me/organizations` | Authenticated | Pagination if needed | Accessible organization summaries | Authentication required | Planned |
-| `GET /me/access-context` | Authenticated | None | Safe active user/organization/role/effective-branch context | Authentication required | Implemented by P2-M3-T02 |
+| `GET /me/access-context` | Authenticated | None | Safe active user/organization/role/effective-branch context plus first-organization onboarding eligibility | Authentication required | Implemented by P2-M3-T02; eligibility added by post-login routing fix |
 | `GET /organizations/{organizationId}/branches` | Organization-scoped | Optional exact `includeInactive=true`; no pagination | Code-ascending accessible branch list | Invalid query/forbidden safely | Implemented by P2-M3-T02 |
 | `POST /organizations/{organizationId}/branches` | `branch.manage` (`OWNER`/`ADMIN`) | Code, name, optional phone/address | `201` safe branch | Validation, forbidden, `BRANCH_CODE_CONFLICT` | Implemented by P2-M3-T02 |
 | `PATCH /organizations/{organizationId}/branches/{branchId}` | `branch.manage` (`OWNER`/`ADMIN`) | Editable name/phone/address plus exact `expectedUpdatedAt` | Updated safe branch | Validation, safe not-found, `BRANCH_STALE` | Implemented by P2-M3-T02 |
@@ -289,6 +289,12 @@ Access-context returns safe actor display data plus active organization
 memberships, role, and effective active branches. It omits sessions, permission
 arrays, assignments, inactive objects, credential data, and tokens. Clients may
 use it to render navigation, never as proof that a later request is authorized.
+It also returns `firstOrganizationOnboarding: { "eligible": boolean }` for the
+authenticated user. `eligible` is true only when no onboarding provenance and
+no organization membership row of any status exists; a pending invitation alone
+does not block it. The value exposes no membership, invitation, or provenance
+details and is not authorization proof for `POST /organizations`, which rechecks
+eligibility transactionally.
 
 ### Registration contract
 

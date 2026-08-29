@@ -16,6 +16,7 @@ const accessBranchSchema = z.object({
 
 const accessContextResponseSchema = z.object({
   data: z.object({
+    firstOrganizationOnboarding: z.object({ eligible: z.boolean() }),
     organizations: z.array(
       z.object({
         branches: z.array(accessBranchSchema),

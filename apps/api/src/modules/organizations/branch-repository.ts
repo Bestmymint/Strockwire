@@ -7,6 +7,7 @@ import {
   type ResolvedAuthorizationState,
   type TrustedAuthorizationContext,
 } from "../identity/authorization-policy.ts";
+import { firstOrganizationOnboardingIsEligible } from "../identity/first-organization-onboarding-repository.ts";
 import type { BranchCreateInput, BranchUpdateInput } from "./branch-schemas.ts";
 
 export interface SafeBranch {
@@ -21,6 +22,7 @@ export interface SafeBranch {
 }
 
 export interface AccessContextResult {
+  firstOrganizationOnboarding: { eligible: boolean };
   organizations: Array<{
     branches: Array<Pick<SafeBranch, "code" | "id" | "name">>;
     id: string;
@@ -241,7 +243,6 @@ export function createPrismaBranchRepository(
           emailVerifiedAt: true,
           id: true,
           memberships: {
-            where: { organization: { status: "ACTIVE" }, status: "ACTIVE" },
             select: {
               branchAssignments: {
                 where: { branch: { status: "ACTIVE" }, status: "ACTIVE" },
@@ -258,9 +259,12 @@ export function createPrismaBranchRepository(
                   },
                   id: true,
                   name: true,
+                  status: true,
                 },
               },
+              firstOrganizationOnboarding: { select: { userId: true } },
               role: true,
+              status: true,
             },
           },
           status: true,
@@ -276,6 +280,11 @@ export function createPrismaBranchRepository(
       }
 
       const organizations = user.memberships
+        .filter(
+          (membership) =>
+            membership.status === "ACTIVE" &&
+            membership.organization.status === "ACTIVE",
+        )
         .map((membership) => {
           const organizationWide =
             membership.role === "OWNER" || membership.role === "ADMIN";
@@ -301,6 +310,15 @@ export function createPrismaBranchRepository(
         );
 
       return {
+        firstOrganizationOnboarding: {
+          eligible: firstOrganizationOnboardingIsEligible({
+            membershipCount: user.memberships.length,
+            onboardingProvenanceExists: user.memberships.some(
+              ({ firstOrganizationOnboarding }) =>
+                firstOrganizationOnboarding !== null,
+            ),
+          }),
+        },
         organizations,
         user: {
           displayName: user.displayName,

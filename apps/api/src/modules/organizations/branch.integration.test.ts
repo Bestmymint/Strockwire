@@ -139,10 +139,99 @@ describe("branch management with PostgreSQL", () => {
       repository.list(manager.id, organization.id, true),
     ).resolves.toEqual({ kind: "forbidden" });
     await expect(repository.accessContext(manager.id)).resolves.toMatchObject({
+      firstOrganizationOnboarding: { eligible: false },
       organizations: [
         { branches: [{ id: activeB.id }], role: "BRANCH_MANAGER" },
       ],
       user: { id: manager.id },
+    });
+  });
+
+  it("derives first-organization eligibility from all memberships and onboarding provenance", async () => {
+    const organization = await prisma.organization.create({
+      data: { name: "Eligibility Store" },
+    });
+    const branch = await prisma.branch.create({
+      data: { code: "MAIN", name: "Main", organizationId: organization.id },
+    });
+    const issuer = await user("eligibility-issuer@example.com");
+    const issuerMembership = await membership(
+      organization.id,
+      issuer.id,
+      "OWNER",
+    );
+    const newUser = await user("eligibility-new@example.com");
+    const invitedUser = await user("eligibility-invited@example.com");
+    const activeUser = await user("eligibility-active@example.com");
+    const inactiveUser = await user("eligibility-inactive@example.com");
+    const onboardedUser = await user("eligibility-onboarded@example.com");
+
+    await prisma.invitation.create({
+      data: {
+        expiresAt: new Date(NOW.getTime() + 7 * DAY_MILLISECONDS),
+        intendedRole: "CASHIER",
+        invitedEmail: invitedUser.email,
+        issuedByMembershipId: issuerMembership.id,
+        organizationId: organization.id,
+        tokenHash: "access-context-pending-invitation",
+      },
+    });
+    await membership(organization.id, activeUser.id, "CASHIER");
+    await prisma.organizationMembership.create({
+      data: {
+        deactivatedAt: NOW,
+        organizationId: organization.id,
+        role: "CASHIER",
+        status: "INACTIVE",
+        userId: inactiveUser.id,
+      },
+    });
+    await membership(organization.id, onboardedUser.id, "OWNER");
+    await prisma.firstOrganizationOnboarding.create({
+      data: {
+        branchId: branch.id,
+        organizationId: organization.id,
+        requestHash: "a".repeat(64),
+        userId: onboardedUser.id,
+      },
+    });
+    await prisma.organizationMembership.update({
+      where: {
+        organizationId_userId: {
+          organizationId: organization.id,
+          userId: onboardedUser.id,
+        },
+      },
+      data: { deactivatedAt: NOW, status: "INACTIVE" },
+    });
+
+    await expect(repository.accessContext(newUser.id)).resolves.toMatchObject({
+      firstOrganizationOnboarding: { eligible: true },
+      organizations: [],
+    });
+    await expect(
+      repository.accessContext(invitedUser.id),
+    ).resolves.toMatchObject({
+      firstOrganizationOnboarding: { eligible: true },
+      organizations: [],
+    });
+    await expect(
+      repository.accessContext(activeUser.id),
+    ).resolves.toMatchObject({
+      firstOrganizationOnboarding: { eligible: false },
+      organizations: [{ id: organization.id }],
+    });
+    await expect(
+      repository.accessContext(inactiveUser.id),
+    ).resolves.toMatchObject({
+      firstOrganizationOnboarding: { eligible: false },
+      organizations: [],
+    });
+    await expect(
+      repository.accessContext(onboardedUser.id),
+    ).resolves.toMatchObject({
+      firstOrganizationOnboarding: { eligible: false },
+      organizations: [],
     });
   });
 

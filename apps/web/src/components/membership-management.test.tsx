@@ -114,6 +114,7 @@ const invitation = {
 
 function context(role: "OWNER" | "ADMIN" | "CASHIER" = "OWNER") {
   return {
+    firstOrganizationOnboarding: { eligible: false },
     organizations: [
       {
         branches: [{ code: branch.code, id: branch.id, name: branch.name }],

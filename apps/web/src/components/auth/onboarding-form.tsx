@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
@@ -33,6 +34,7 @@ function requiredFieldsArePresent(fields: OnboardingFields): boolean {
 
 export function OnboardingForm() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [fields, setFields] = useState(initialFields);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -57,6 +59,7 @@ export function OnboardingForm() {
 
     try {
       await completeFirstOrganizationOnboarding(fields);
+      queryClient.removeQueries({ queryKey: ["access-context"] });
       router.push("/app");
     } catch (requestError: unknown) {
       setError(

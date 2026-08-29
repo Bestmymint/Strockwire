@@ -25,10 +25,11 @@ const ORG_TWO = "10000000-0000-4000-8000-000000000002";
 const BRANCH_A = "20000000-0000-4000-8000-000000000001";
 const BRANCH_B = "20000000-0000-4000-8000-000000000002";
 
-function accessResponse(organizations: unknown[]) {
+function accessResponse(organizations: unknown[], eligible = false) {
   return new Response(
     JSON.stringify({
       data: {
+        firstOrganizationOnboarding: { eligible },
         organizations,
         user: {
           displayName: "Owner",
@@ -76,6 +77,22 @@ afterEach(() => {
 });
 
 describe("application context shell", () => {
+  it("keeps setup hidden while access context is loading", () => {
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
+    renderShell();
+
+    expect(screen.getByText("Loading access…")).toBeTruthy();
+    expect(screen.queryByText("Set up StockWise")).toBeNull();
+  });
+
+  it("routes an eligible zero-organization user to first setup", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(accessResponse([], true)));
+    renderShell();
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/onboarding"));
+    expect(screen.queryByText("No active organization access")).toBeNull();
+  });
+
   it("falls back to the sole organization and first code-sorted branch", async () => {
     vi.stubGlobal(
       "fetch",
@@ -165,7 +182,7 @@ describe("application context shell", () => {
     ).toBeUndefined();
   });
 
-  it("shows a safe no-access state", async () => {
+  it("shows a safe no-access state when first onboarding is not eligible", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(accessResponse([])));
     renderShell();
     expect(
@@ -174,5 +191,15 @@ describe("application context shell", () => {
       }),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
+  });
+
+  it("shows a safe error without rendering setup when access context is unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    renderShell();
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Your access context could not be loaded.",
+    );
+    expect(screen.queryByText("Set up StockWise")).toBeNull();
   });
 });

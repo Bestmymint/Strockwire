@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -9,6 +10,7 @@ import { authErrorMessage } from "./auth-form-support";
 
 export function LogoutButton() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -22,6 +24,7 @@ export function LogoutButton() {
 
     try {
       await logout();
+      queryClient.removeQueries({ queryKey: ["access-context"] });
       router.push("/login");
     } catch (requestError: unknown) {
       setError(authErrorMessage(requestError));

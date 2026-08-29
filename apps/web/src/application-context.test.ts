@@ -9,6 +9,7 @@ import {
 import type { AccessContext } from "./branch-api-client";
 
 const context: AccessContext = {
+  firstOrganizationOnboarding: { eligible: false },
   organizations: [
     {
       branches: [

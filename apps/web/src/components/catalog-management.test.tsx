@@ -97,6 +97,7 @@ function renderCatalog() {
 
 beforeEach(() => {
   vi.mocked(fetchAccessContext).mockImplementation(async () => ({
+    firstOrganizationOnboarding: { eligible: false },
     organizations: [
       {
         branches: [{ code: "MAIN", id: BRANCH_ID, name: "Main" }],

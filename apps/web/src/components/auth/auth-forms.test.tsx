@@ -7,6 +7,8 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -74,6 +76,11 @@ function fillCredentials(password = "  password with Unicode Ω  ") {
   });
 }
 
+function renderWithQueryClient(ui: ReactNode, queryClient = new QueryClient()) {
+  render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  return queryClient;
+}
+
 describe("registration form", () => {
   it("renders only email and password, preserves their values, and shows a generic accepted state", async () => {
     vi.mocked(register).mockResolvedValue({
@@ -124,7 +131,11 @@ describe("registration form", () => {
 });
 
 describe("login form", () => {
-  it("submits exact credentials, prevents a duplicate pending submission, and uses the limited setup destination", async () => {
+  function renderLoginForm(queryClient = new QueryClient()) {
+    return renderWithQueryClient(<LoginForm />, queryClient);
+  }
+
+  it("submits exact credentials, prevents a duplicate pending submission, and enters the access-context flow", async () => {
     let resolveLogin: (() => void) | undefined;
     vi.mocked(login).mockImplementation(
       () =>
@@ -141,7 +152,11 @@ describe("login form", () => {
             });
         }),
     );
-    render(<LoginForm />);
+    const queryClient = renderLoginForm();
+    queryClient.setQueryData(["access-context"], {
+      organizations: [],
+      user: { displayName: null, email: "previous@example.com", id: "old" },
+    });
     fillCredentials();
 
     const form = screen
@@ -157,12 +172,13 @@ describe("login form", () => {
         .hasAttribute("disabled"),
     ).toBe(true);
     resolveLogin?.();
-    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/onboarding"));
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/app"));
+    expect(queryClient.getQueryData(["access-context"])).toBeUndefined();
   });
 
   it("shows generic invalid credentials and rate-limit states", async () => {
     vi.mocked(login).mockRejectedValue(new AuthApiError("invalid_credentials"));
-    render(<LoginForm />);
+    renderLoginForm();
     fillCredentials();
     fireEvent.submit(
       screen.getByRole("button", { name: "Sign in" }).closest("form")!,
@@ -173,7 +189,7 @@ describe("login form", () => {
 
     cleanup();
     vi.mocked(login).mockRejectedValue(new AuthApiError("rate_limited", 15));
-    render(<LoginForm />);
+    renderLoginForm();
     fillCredentials();
     fireEvent.submit(
       screen.getByRole("button", { name: "Sign in" }).closest("form")!,
@@ -185,6 +201,10 @@ describe("login form", () => {
 });
 
 describe("first organization onboarding form", () => {
+  function renderOnboardingForm(queryClient = new QueryClient()) {
+    return renderWithQueryClient(<OnboardingForm />, queryClient);
+  }
+
   function fillOnboarding() {
     fireEvent.change(screen.getByLabelText("Display name"), {
       target: { value: "  Owner  Name  " },
@@ -227,7 +247,12 @@ describe("first organization onboarding form", () => {
             });
         }),
     );
-    render(<OnboardingForm />);
+    const queryClient = renderOnboardingForm();
+    queryClient.setQueryData(["access-context"], {
+      firstOrganizationOnboarding: { eligible: true },
+      organizations: [],
+      user: { displayName: null, email: "person@example.com", id: "user-id" },
+    });
     fillOnboarding();
 
     expect(screen.queryByLabelText(/branch code/i)).toBeNull();
@@ -254,10 +279,11 @@ describe("first organization onboarding form", () => {
     ).toBe(true);
     resolveOnboarding?.();
     await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/app"));
+    expect(queryClient.getQueryData(["access-context"])).toBeUndefined();
   });
 
   it("blocks whitespace-only required values and presents both safe conflict states", async () => {
-    render(<OnboardingForm />);
+    renderOnboardingForm();
     fireEvent.submit(
       screen
         .getByRole("button", { name: "Create organization" })
@@ -272,7 +298,7 @@ describe("first organization onboarding form", () => {
     vi.mocked(completeFirstOrganizationOnboarding).mockRejectedValue(
       new AuthApiError("already_onboarded"),
     );
-    render(<OnboardingForm />);
+    renderOnboardingForm();
     fillOnboarding();
     fireEvent.submit(
       screen
@@ -287,7 +313,7 @@ describe("first organization onboarding form", () => {
     vi.mocked(completeFirstOrganizationOnboarding).mockRejectedValue(
       new AuthApiError("already_has_organization_access"),
     );
-    render(<OnboardingForm />);
+    renderOnboardingForm();
     fillOnboarding();
     fireEvent.submit(
       screen
@@ -440,9 +466,14 @@ describe("password recovery and logout", () => {
 
   it("calls the current-session logout endpoint and leaves cookie handling to the API", async () => {
     vi.mocked(logout).mockResolvedValue(undefined);
-    render(<LogoutButton />);
+    const queryClient = renderWithQueryClient(<LogoutButton />);
+    queryClient.setQueryData(["access-context"], {
+      organizations: [],
+      user: { displayName: null, email: "person@example.com", id: "user-id" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     await waitFor(() => expect(logout).toHaveBeenCalledTimes(1));
     expect(routerPush).toHaveBeenCalledWith("/login");
+    expect(queryClient.getQueryData(["access-context"])).toBeUndefined();
   });
 });

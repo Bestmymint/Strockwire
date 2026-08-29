@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
@@ -14,6 +15,7 @@ import {
 
 export function LoginForm() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +43,8 @@ export function LoginForm() {
 
     try {
       await login({ email, password });
-      router.push("/onboarding");
+      queryClient.removeQueries({ queryKey: ["access-context"] });
+      router.push("/app");
     } catch (requestError: unknown) {
       setError(
         authErrorMessage(requestError, {

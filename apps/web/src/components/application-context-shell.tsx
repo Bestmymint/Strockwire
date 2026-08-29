@@ -57,6 +57,15 @@ export function ApplicationContextShell() {
     router,
   ]);
 
+  useEffect(() => {
+    if (
+      contextQuery.data?.organizations.length === 0 &&
+      contextQuery.data.firstOrganizationOnboarding.eligible
+    ) {
+      router.replace("/onboarding");
+    }
+  }, [contextQuery.data, router]);
+
   async function switchTo(organizationId: string, branchId: string | null) {
     await clearPreviousBranchQueries(
       queryClient,
@@ -71,6 +80,9 @@ export function ApplicationContextShell() {
     return <p role="alert">Your access context could not be loaded.</p>;
   if (resolved?.organization === null) {
     if (contextQuery.data.organizations.length === 0) {
+      if (contextQuery.data.firstOrganizationOnboarding.eligible) {
+        return <p aria-live="polite">Opening setup…</p>;
+      }
       return (
         <section className="space-y-5">
           <h1 className="text-2xl font-semibold">

@@ -787,6 +787,13 @@ response is stored. Success returns only safe user/organization/branch data,
 role `OWNER`, and `nextStep = app`; the web client navigates to a minimal `/app`
 holding route.
 
+`GET /me/access-context` exposes only the derived
+`firstOrganizationOnboarding.eligible` boolean for application entry. It is true
+only when both authoritative blockers are absent: no
+`FirstOrganizationOnboarding` provenance and zero `OrganizationMembership` rows
+of any status. Pending invitations remain irrelevant. This display/navigation
+signal does not replace the command's transactional eligibility check.
+
 ### Consequences
 
 - This endpoint cannot create a second organization; that requires a later
@@ -841,6 +848,12 @@ fresh access context, applies deterministic fallbacks, and canonicalizes with
 `sessionStorage` selection is added. Before transition or revoked-context
 fallback, it cancels and removes the previous TanStack Query prefix
 `["branch-scoped", organizationId, branchId, ...]`.
+
+After authentication, the browser enters `/app`, clears stale access-context
+query state across login/logout boundaries, and waits for fresh access context.
+Zero accessible organizations route to first setup only when the server-derived
+first-onboarding eligibility flag is true; an ineligible zero-access user sees
+the safe no-access state.
 
 ### Consequences
 

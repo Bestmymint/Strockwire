@@ -177,7 +177,11 @@ permission, actor, or tenant ownership as client authority.
 `GET /api/v1/me/access-context` returns only active memberships and currently
 effective active branches. `OWNER`/`ADMIN` receive every active branch in the
 organization; branch-only roles receive only active explicitly assigned
-branches. The response is safe display/navigation data, not a permission token.
+branches. It also returns a server-derived first-organization onboarding
+eligibility boolean computed from all membership statuses and durable onboarding
+provenance. The response is safe display/navigation data, not a permission token,
+and first-organization creation independently rechecks eligibility inside its
+transaction.
 
 The Next.js application uses only `/app?organizationId=<id>&branchId=<id>` for
 selection. Each load resolves those candidates against the newest access
@@ -185,7 +189,9 @@ context, chooses the first code-ascending effective branch when a candidate is
 missing or revoked, and replaces the URL with the canonical result. A switch or
 revocation cancels and removes the old TanStack Query prefix
 `["branch-scoped", organizationId, branchId, ...]` before transition so cached
-data from the prior branch cannot render as current.
+data from the prior branch cannot render as current. A zero-organization context
+enters first setup only when the server eligibility flag is true; otherwise it
+renders the safe no-access state.
 
 ### Authorization policy convention
 
