@@ -674,9 +674,9 @@ stock, quantity, branch pricing, or hard deletion.
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `GET /organizations/{organizationId}/branches/{branchId}/inventory` | Branch inventory read | Cursor, product/category/status/stock filters | Product + current balance page | Invalid filter, forbidden branch | Planned; analytic filters blocked `OQ-011` |
-| `GET /organizations/{organizationId}/branches/{branchId}/inventory/{productId}` | Branch inventory read | None | Current balance and product summary | Safe not-found/cross-tenant | Planned |
-| `GET /organizations/{organizationId}/branches/{branchId}/inventory/{productId}/transactions` | Branch inventory read | Cursor, type/date filters | Stable ledger page | Invalid range/cursor | Planned |
+| `GET /organizations/{organizationId}/branches/{branchId}/inventory` | Branch inventory read | Cursor, category/status filters | Product + current balance page | Invalid filter/cursor, forbidden branch | Implemented in P3-M2-T03; stock classification filters remain blocked `OQ-011` |
+| `GET /organizations/{organizationId}/branches/{branchId}/inventory/{productId}` | Branch inventory read | None | Current balance and product summary | Safe not-found/cross-tenant | Implemented in P3-M2-T03 |
+| `GET /organizations/{organizationId}/branches/{branchId}/inventory/{productId}/transactions` | Branch inventory read | Cursor, source/date filters | Stable ledger page | Invalid range/cursor, safe product not-found | Implemented in P3-M2-T03 |
 | `POST /organizations/{organizationId}/branches/{branchId}/inventory/adjustments` | Branch stock adjust | `Idempotency-Key`; product, signed `delta`, reason, optional note | Movement + new balance | Invalid/zero/excess-scale delta, inactive/cross-tenant resource, `INSUFFICIENT_STOCK`, `IDEMPOTENCY_CONFLICT` | Planned for P3-M2-T04; `ADR-022`, `ADR-024` |
 
 Adjustment request must not contain an authoritative resulting balance. The server
@@ -686,6 +686,28 @@ serializing the authoritative branch/product balance. A negative result returns
 and length remain a bounded API implementation detail.
 
 No transfer endpoint exists until `OQ-013` is accepted.
+
+Inventory reads require a trusted concrete branch scope and `inventory.view`.
+Branch-scoped roles require an active assignment; all five accepted roles may
+read only branches they can effectively access. `OWNER`/`ADMIN` remain
+organization-wide but must still select a concrete branch path. Branch
+deactivation preserves authorized historical readability. Balance list `status`
+is `ACTIVE` by default and accepts `INACTIVE` or
+`ALL`; `categoryId` accepts a same-tenant UUID or `uncategorized`. Its opaque
+cursor is bound to the organization, branch, and filters and orders products by
+`(createdAt ASC, id ASC)`. The result includes every matching Product, even when
+it has no persisted balance: `{ exists: false, quantity: "0", updatedAt: null }`
+represents the accepted lazy zero without creating a row. Direct product detail
+also includes inactive products and preserves this representation.
+
+Transaction history is scoped to one branch/product and orders immutable ledger
+rows by `(occurredAt ASC, id ASC)`, matching the chronological index. Its cursor
+is bound to that scope plus the optional `source`, `occurredAfter`, and
+`occurredBefore` ISO-8601 UTC filters. The current source allow-list is
+`MANUAL_ADJUSTMENT`. History returns its movement ID, canonical decimal-string
+delta, source/reason/note, timestamp, and minimal actor ID/display name. It never
+returns idempotency-key hashes, canonical-request hashes, membership IDs, or
+other internal provenance fields.
 
 ## 10. Supplier and purchasing endpoints
 

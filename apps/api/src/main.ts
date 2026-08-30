@@ -6,6 +6,9 @@ import { createApiLogger } from "./logger.ts";
 import { createPrismaCatalogRepository } from "./modules/catalog/catalog-repository.ts";
 import { createCatalogRouter } from "./modules/catalog/catalog-router.ts";
 import { createCatalogService } from "./modules/catalog/catalog-service.ts";
+import { createPrismaInventoryRepository } from "./modules/inventory/inventory-repository.ts";
+import { createInventoryRouter } from "./modules/inventory/inventory-router.ts";
+import { createInventoryService } from "./modules/inventory/inventory-service.ts";
 import { createPrismaAuthenticationRepository } from "./modules/identity/authentication-repository.ts";
 import { createPrismaAuthenticationSessionRepository } from "./modules/identity/authentication-repository.ts";
 import { createAuthenticationMiddleware } from "./modules/identity/authentication-context.ts";
@@ -93,6 +96,9 @@ async function main(): Promise<void> {
   const catalogService = createCatalogService({
     repository: createPrismaCatalogRepository(prisma),
   });
+  const inventoryService = createInventoryService({
+    repository: createPrismaInventoryRepository(prisma),
+  });
   const apiRouter = Router();
   apiRouter.use(
     createRegistrationRouter({
@@ -144,6 +150,9 @@ async function main(): Promise<void> {
       catalogService,
       publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
     }),
+  );
+  apiRouter.use(
+    createInventoryRouter({ authenticationMiddleware, inventoryService }),
   );
 
   const app = createApp({ apiRouter, logger });
