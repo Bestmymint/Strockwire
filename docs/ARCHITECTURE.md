@@ -56,7 +56,7 @@ flowchart TD
     CW -. job telemetry .- JOB
 ```
 
-The Next.js/Express shells, operational probes, local PostgreSQL/Prisma foundation, identity/access lifecycle, catalog persistence/API/UI, tenant-safe inventory balance/ledger persistence foundation, and read-only branch inventory balance/history API are implemented. Inventory mutations, later retail workflows, analytics/AI integration, AWS resources, and production deployment do not exist yet.
+The Next.js/Express shells, operational probes, local PostgreSQL/Prisma foundation, identity/access lifecycle, catalog persistence/API/UI, tenant-safe inventory balance/ledger persistence foundation, read-only branch inventory balance/history API, and atomic manual inventory adjustment API are implemented. Inventory UI, later retail workflows, analytics/AI integration, AWS resources, and production deployment do not exist yet.
 
 ### Repository boundaries
 
@@ -305,7 +305,26 @@ Invitation tokens remain URL-transient and are never copied to browser storage.
 
 The browser never receives a JWT or refresh token and never stores an auth token in `localStorage` or `sessionStorage`. Session expiry/revocation and disabled actors are evaluated server-side; deauthorized membership is denied later by the separate authorization boundary. The cookie has `Path=/`, is host-only, `SameSite=Lax`, and `Secure` in production but not local HTTP. Configurable timeout baselines are sliding 24 hours idle, fixed seven days absolute, and a 15-minute minimum persisted-touch interval.
 
-### 6.2 Purchase receiving
+### 6.2 Manual inventory adjustment
+
+An authenticated adjustment re-resolves and holds trusted Organization, actor,
+Branch, Product, membership, and assignment state for one PostgreSQL transaction.
+After exact signed-delta validation, it takes a deterministic organization/key
+transaction advisory lock, resolves replay or conflict from the durable ledger,
+then takes a deterministic Branch/Product transaction advisory lock. The latter
+serializes the lazy missing-row case; an existing `InventoryBalance` is also read
+`FOR UPDATE`. The service computes with Prisma Decimal, rejects a negative result,
+updates or creates the balance, and appends one `MANUAL_ADJUSTMENT` movement before
+commit. Any failure rolls both writes back.
+
+The two advisory-lock classes use SHA-256-derived signed 64-bit keys in disjoint
+positive/negative namespaces. A same-class key collision can only serialize
+unrelated operations; tenant keys and database uniqueness still determine business
+identity. Every adjustment acquires idempotency before balance locks, so identical
+and conflicting retries share one lock order. No raw idempotency key or client actor
+provenance is persisted.
+
+### 6.3 Purchase receiving
 
 ```mermaid
 sequenceDiagram
@@ -329,7 +348,7 @@ sequenceDiagram
 
 Any validation, authorization, state, cost, quantity, or database error rolls back the complete operation. Partial/over-receiving and cost behavior are blocked by `OQ-021` and `OQ-010`.
 
-### 6.3 POS checkout
+### 6.4 POS checkout
 
 ```mermaid
 sequenceDiagram
@@ -357,7 +376,7 @@ sequenceDiagram
 
 The operation must never leave a completed sale without its matching inventory and payment records. No-negative stock follows `ADR-024`; payment semantics remain blocked by `OQ-008`.
 
-### 6.4 Deterministic analytics
+### 6.5 Deterministic analytics
 
 1. The actor requests a period, branch, or allowed organization aggregate.
 2. The API resolves authorization and canonical period boundaries.
@@ -368,7 +387,7 @@ The operation must never leave a completed sale without its matching inventory a
 
 `docs/ANALYTICS.md` exclusively owns formulas and period semantics.
 
-### 6.5 Scheduled AI insight
+### 6.6 Scheduled AI insight
 
 ```mermaid
 sequenceDiagram

@@ -152,7 +152,11 @@ async function main(): Promise<void> {
     }),
   );
   apiRouter.use(
-    createInventoryRouter({ authenticationMiddleware, inventoryService }),
+    createInventoryRouter({
+      authenticationMiddleware,
+      inventoryService,
+      publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
+    }),
   );
 
   const app = createApp({ apiRouter, logger });

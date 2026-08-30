@@ -1,13 +1,17 @@
 import { Router, type RequestHandler, type Response } from "express";
 
 import { getTrustedAuthenticationContext } from "../identity/authentication-context.ts";
+import { createCrossSiteRequestProtection } from "../identity/credential-lifecycle-router.ts";
 import type {
+  InventoryAdjustmentOutcome,
   InventoryDetailOutcome,
   InventoryHistoryOutcome,
   InventoryListOutcome,
 } from "./inventory-repository.ts";
 import {
   inventoryHistoryQuerySchema,
+  idempotencyKeySchema,
+  inventoryAdjustmentBodySchema,
   inventoryListQuerySchema,
   inventoryParamsSchema,
   inventoryProductParamsSchema,
@@ -19,6 +23,42 @@ const REQUEST_ID_HEADER = "X-Request-Id";
 function requestId(response: Response): string {
   const value = response.getHeader(REQUEST_ID_HEADER);
   return typeof value === "string" ? value : "unavailable";
+}
+
+function sendAdjustment(
+  response: Response,
+  outcome: InventoryAdjustmentOutcome,
+): void {
+  if (outcome.kind === "success" || outcome.kind === "replay") {
+    response.status(outcome.kind === "success" ? 201 : 200).json({
+      data: outcome.adjustment,
+      meta: { requestId: requestId(response) },
+    });
+    return;
+  }
+  const failures = {
+    branch_inactive: [409, "BRANCH_INACTIVE", "The branch is inactive."],
+    forbidden: [403, "FORBIDDEN", "The operation is not permitted."],
+    idempotency_conflict: [
+      409,
+      "IDEMPOTENCY_CONFLICT",
+      "The idempotency key was already used for another request.",
+    ],
+    insufficient_stock: [
+      409,
+      "INSUFFICIENT_STOCK",
+      "The adjustment would make stock negative.",
+    ],
+    invalid_quantity: [
+      400,
+      "VALIDATION_ERROR",
+      "The adjustment quantity is invalid.",
+    ],
+    not_found: [404, "PRODUCT_NOT_FOUND", "The product was not found."],
+    product_inactive: [409, "PRODUCT_INACTIVE", "The product is inactive."],
+  } as const;
+  const [status, code, message] = failures[outcome.kind];
+  error(response, status, code, message);
 }
 
 function error(
@@ -107,11 +147,55 @@ function sendHistory(
 export function createInventoryRouter({
   authenticationMiddleware,
   inventoryService,
+  publicWebOrigin,
 }: {
   authenticationMiddleware: RequestHandler;
   inventoryService: InventoryService;
+  publicWebOrigin: string;
 }): Router {
   const router = Router();
+  const protectMutation = createCrossSiteRequestProtection(publicWebOrigin);
+
+  router.post(
+    "/organizations/:organizationId/branches/:branchId/inventory/adjustments",
+    protectMutation,
+    authenticationMiddleware,
+    async (request, response, next) => {
+      const id = actorId(response);
+      const params = inventoryParamsSchema.safeParse(request.params);
+      const body = inventoryAdjustmentBodySchema.safeParse(request.body);
+      const idempotencyKey = idempotencyKeySchema.safeParse(
+        request.get("Idempotency-Key"),
+      );
+      if (id === null)
+        return error(
+          response,
+          401,
+          "AUTHENTICATION_REQUIRED",
+          "Authentication is required.",
+        );
+      if (!params.success || !body.success || !idempotencyKey.success)
+        return error(
+          response,
+          400,
+          "VALIDATION_ERROR",
+          "The request is invalid.",
+        );
+      try {
+        sendAdjustment(
+          response,
+          await inventoryService.adjust({
+            actorUserId: id,
+            adjustment: body.data,
+            idempotencyKey: idempotencyKey.data,
+            ...params.data,
+          }),
+        );
+      } catch (cause: unknown) {
+        next(cause);
+      }
+    },
+  );
 
   router.get(
     "/organizations/:organizationId/branches/:branchId/inventory",

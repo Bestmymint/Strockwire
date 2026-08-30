@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { canonicalizeAdjustmentNote } from "./inventory-values.ts";
+
 const limitSchema = z.preprocess(
   (value) => value ?? "25",
   z
@@ -54,5 +56,42 @@ export const inventoryHistoryQuerySchema = z
       value.occurredAfter <= value.occurredBefore,
   );
 
+export const inventoryAdjustmentReasonSchema = z.enum([
+  "STOCK_COUNT",
+  "DAMAGE",
+  "LOSS",
+  "FOUND",
+  "CORRECTION",
+  "OTHER",
+]);
+
+const inventoryDeltaSchema = z
+  .string()
+  .regex(/^[+-]?\d+(?:\.\d{1,4})?$/)
+  .refine((value) => {
+    const integer = value.replace(/^[+-]/, "").split(".")[0] ?? "";
+    return (integer.replace(/^0+/, "") || "0").length <= 14;
+  })
+  .refine((value) => !/^[+-]?0+(?:\.0+)?$/.test(value));
+
+export const inventoryAdjustmentBodySchema = z
+  .object({
+    delta: inventoryDeltaSchema,
+    note: z.string().nullish(),
+    productId: z.string().uuid(),
+    reason: inventoryAdjustmentReasonSchema,
+  })
+  .strict()
+  .transform((value) => ({
+    ...value,
+    note: canonicalizeAdjustmentNote(value.note),
+  }))
+  .refine((value) => value.reason !== "OTHER" || value.note !== null);
+
+export const idempotencyKeySchema = z.string().regex(/^[\x21-\x7e]{1,200}$/);
+
+export type InventoryAdjustmentInput = z.infer<
+  typeof inventoryAdjustmentBodySchema
+>;
 export type InventoryHistoryQuery = z.infer<typeof inventoryHistoryQuerySchema>;
 export type InventoryListQuery = z.infer<typeof inventoryListQuerySchema>;

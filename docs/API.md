@@ -677,13 +677,46 @@ stock, quantity, branch pricing, or hard deletion.
 | `GET /organizations/{organizationId}/branches/{branchId}/inventory` | Branch inventory read | Cursor, category/status filters | Product + current balance page | Invalid filter/cursor, forbidden branch | Implemented in P3-M2-T03; stock classification filters remain blocked `OQ-011` |
 | `GET /organizations/{organizationId}/branches/{branchId}/inventory/{productId}` | Branch inventory read | None | Current balance and product summary | Safe not-found/cross-tenant | Implemented in P3-M2-T03 |
 | `GET /organizations/{organizationId}/branches/{branchId}/inventory/{productId}/transactions` | Branch inventory read | Cursor, source/date filters | Stable ledger page | Invalid range/cursor, safe product not-found | Implemented in P3-M2-T03 |
-| `POST /organizations/{organizationId}/branches/{branchId}/inventory/adjustments` | Branch stock adjust | `Idempotency-Key`; product, signed `delta`, reason, optional note | Movement + new balance | Invalid/zero/excess-scale delta, inactive/cross-tenant resource, `INSUFFICIENT_STOCK`, `IDEMPOTENCY_CONFLICT` | Planned for P3-M2-T04; `ADR-022`, `ADR-024` |
+| `POST /organizations/{organizationId}/branches/{branchId}/inventory/adjustments` | Branch stock adjust | `Idempotency-Key`; product, signed `delta`, reason, optional note | Movement + new balance | Invalid/zero/excess-scale delta, inactive/cross-tenant resource, `INSUFFICIENT_STOCK`, `IDEMPOTENCY_CONFLICT` | Implemented in P3-M2-T04; `ADR-022`, `ADR-024` |
 
 Adjustment request must not contain an authoritative resulting balance. The server
 applies a signed delta within one PostgreSQL transaction after pessimistically
 serializing the authoritative branch/product balance. A negative result returns
 `409 INSUFFICIENT_STOCK` with no ledger/balance mutation. The exact header grammar
-and length remain a bounded API implementation detail.
+is 1–200 visible ASCII characters without spaces; only its SHA-256 hash is persisted.
+New success returns `201`; an identical replay returns `200` and reconstructs the
+original logical result. The accepted request and response shapes are:
+
+```json
+{
+  "productId": "opaque-product-id",
+  "delta": "-2.25",
+  "reason": "DAMAGE",
+  "note": "Damaged during handling"
+}
+```
+
+```json
+{
+  "data": {
+    "balance": { "quantity": "7.75" },
+    "transaction": {
+      "id": "opaque-movement-id",
+      "delta": "-2.25",
+      "source": "MANUAL_ADJUSTMENT",
+      "reason": "DAMAGE",
+      "note": "Damaged during handling",
+      "occurredAt": "2026-08-30T12:00:00.000Z"
+    }
+  },
+  "meta": { "requestId": "opaque-request-id" }
+}
+```
+
+`STOCK_COUNT`, `DAMAGE`, `LOSS`, `FOUND`, `CORRECTION`, and `OTHER` are
+accepted reasons. `OTHER` requires a nonblank note; other blank notes become null.
+Inactive Branch/Product state returns `BRANCH_INACTIVE`/`PRODUCT_INACTIVE` at
+`409`. The response never exposes idempotency hashes or membership provenance.
 
 No transfer endpoint exists until `OQ-013` is accepted.
 

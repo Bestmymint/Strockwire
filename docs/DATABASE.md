@@ -980,6 +980,17 @@ returns the original logical result; the same key with a different canonical req
 returns `IDEMPOTENCY_CONFLICT`. Never overwrite the balance as an untraceable
 correction; append a `CORRECTION` movement instead.
 
+P3-M2-T04 implements this without a schema change. It uses a deterministic
+transaction-scoped organization/idempotency advisory lock followed by a
+transaction-scoped Branch/Product advisory lock. The latter protects lazy creation
+when no balance row exists; an existing balance row is additionally selected `FOR
+UPDATE`. SHA-256-derived signed 64-bit keys place idempotency and balance locks in
+disjoint advisory namespaces. All adjustment paths acquire idempotency before
+balance locks. Organization/User/Branch/Product share locks keep the authorization
+and active-resource facts stable until commit, while existing membership and Branch
+lifecycle writers coordinate through the Organization row. Balance and ledger
+writes remain inside that same transaction.
+
 ### 6.4 Refund/void and transfer
 
 No transaction contract is accepted yet. They are blocked by `OQ-009` and `OQ-013`; do not infer a design from example ledger movement names.
