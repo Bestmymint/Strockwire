@@ -558,11 +558,12 @@ Purpose: query-efficient current quantity for one product at one branch.
 
 Required logical attributes:
 
+- Organization identifier
+- Stable identifier
 - Branch identifier
 - Product identifier
 - Current quantity as `DECIMAL(18,4)` using the Product's accepted immutable base unit
-- Concurrency/version metadata if the chosen locking strategy requires it
-- Updated timestamp
+- Created/updated timestamps
 
 Constraints and indexes:
 
@@ -579,6 +580,15 @@ Invariant:
 
 `InventoryBalance.quantity` must equal the accepted ledger projection for the same branch/product, accounting for any explicitly documented opening/import checkpoint. Reconciliation must detect divergence.
 
+P3-M2-T02 persists this contract in `inventory_balances` with UUID `id`, required
+`organization_id`, `branch_id`, and `product_id`, exact `DECIMAL(18,4)`
+`quantity`, and millisecond UTC timestamps. Unique `(branch_id, product_id)`
+enforces one lazy projection row per Branch/Product. A quantity check rejects
+negative stored balances. Composite restrictive foreign keys bind Branch and
+Product to the row's organization; the Product `(id, organization_id)` key is
+added by the same migration. There is no optimistic version column because the
+accepted mutation design serializes authoritative balance state pessimistically.
+
 #### `InventoryTransaction`
 
 Purpose: append-oriented explanation of every stock change.
@@ -592,8 +602,7 @@ Required logical attributes:
 - Signed, non-zero quantity delta as `DECIMAL(18,4)` using the Product's accepted
   immutable base unit. Positive increases and negative decreases stock. API output
   removes meaningless trailing fractional zeros.
-- Reason/source type and source identifier; manual adjustment source is
-  `MANUAL_ADJUSTMENT`
+- Bounded source; P3-M2-T02 permits only `MANUAL_ADJUSTMENT`
 - Acting human user plus membership/context sufficient for durable attribution, or
   an explicit trusted system/source identity for future system-created movements
 - Adjustment reason/note where applicable
@@ -623,6 +632,23 @@ Constraints and indexes:
   a blank optional note becomes null. Supplied notes trim only surrounding
   whitespace, preserve internal Unicode and whitespace, and must not contain
   credentials, tokens, or secrets.
+
+P3-M2-T02 persists this contract in `inventory_transactions` with UUID `id`,
+required organization/branch/product scope, signed `DECIMAL(18,4)` `delta`,
+bounded `source` and `adjustment_reason` text, nullable note, required human
+`actor_user_id` and `actor_membership_id`, lowercase hexadecimal SHA-256
+`idempotency_key_hash` and `canonical_request_hash`, and millisecond UTC
+`occurred_at`. It deliberately has no `updated_at`, status, soft-delete,
+correction link, generic metadata, cost, valuation, receiving, sale, or transfer
+field.
+
+Database checks reject zero delta, any source other than `MANUAL_ADJUSTMENT`,
+reasons outside `STOCK_COUNT`, `DAMAGE`, `LOSS`, `FOUND`, `CORRECTION`, and
+`OTHER`, an absent/blank/untrimmed `OTHER` note, any other supplied blank or
+untrimmed note, and hashes outside the established 64-character lowercase hex
+shape. Unique `(organization_id, idempotency_key_hash)` is the durable
+successful-movement identity; the same hash may exist in another organization.
+History uses `(branch_id, product_id, occurred_at, id)`.
 
 ### 4.4 Purchasing and receiving
 
@@ -874,6 +900,11 @@ P2-M1-T02 implements the identity/tenancy cases with composite foreign keys:
 - Invitation issuer/revoker membership, membership source invitation,
   access-event target/actor membership, and access-event branch snapshots use
   composite organization keys and reject cross-tenant provenance.
+- InventoryBalance and InventoryTransaction use composite Branch/Product tenant
+  keys. InventoryTransaction additionally references
+  `OrganizationMembership(organization_id, id, user_id)` with its organization,
+  actor membership, and actor user values, so actor identity cannot disagree
+  with membership or tenant provenance.
 
 The repeated `organizationId` values in the two scope tables are deliberate
 referential-integrity keys, not independently trusted tenant state. Application
@@ -971,6 +1002,11 @@ The implementation may choose row locking, conditional/versioned updates, atomic
 - The API must define a canonical decimal string representation; it must not silently convert precise values to JavaScript floating point.
 - Currency, rounding scale/mode, tax allocation, discounts, and cash rounding are governed by `OQ-008` and `OQ-010`.
 - Catalog, inventory, purchasing, and sales quantities use `DECIMAL(18,4)` and decimal-string APIs under `ADR-022`. Inputs with greater scale are rejected, never rounded; integer-only units must be mathematically integral. Derived analytics rounding remains `OQ-011`.
+- PostgreSQL coerces direct writes to the declared inventory scale and can round
+  excess fractional digits before a row check can observe the source value.
+  Therefore excess-scale rejection and EA/PACK/BOX integrality remain mandatory
+  service-boundary validation for the future adjustment implementation; the T02
+  schema does not falsely claim to enforce them.
 - All stored aggregate totals must be reproducible from accepted line-level snapshots and rounding rules.
 
 ## 9. Index plan by access pattern

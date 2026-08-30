@@ -56,7 +56,7 @@ flowchart TD
     CW -. job telemetry .- JOB
 ```
 
-The Next.js/Express shells, operational probes, local PostgreSQL/Prisma identity foundation, pure authorization policy, complete authentication lifecycle/UI, authenticated replay-safe first-organization/`MAIN`-branch onboarding, branch management/URL-owned context switcher, and invitation/membership access management are implemented. No retail domain, analytics/AI integration, AWS resource, or production deployment exists yet.
+The Next.js/Express shells, operational probes, local PostgreSQL/Prisma foundation, identity/access lifecycle, catalog persistence/API/UI, and the tenant-safe inventory balance/ledger persistence foundation are implemented. Inventory queries and mutations, later retail workflows, analytics/AI integration, AWS resources, and production deployment do not exist yet.
 
 ### Repository boundaries
 
@@ -148,6 +148,9 @@ flowchart TD
 7. An organization aggregate is computed only from branches visible to the actor.
 8. Background jobs execute with an explicit organization and report scope, not an unrestricted global query accidentally reused from request code.
 9. Catalog persistence carries `organization_id` on Category and Product; a Product's nullable Category relation uses a composite Category/organization foreign key, so PostgreSQL rejects cross-tenant references independently of application code.
+10. Inventory persistence carries `organization_id` on both balance and ledger rows,
+    uses composite Branch/Product tenant foreign keys, and binds ledger actor
+    membership to the same organization and actor user at the database boundary.
 
 ### Trusted request context
 

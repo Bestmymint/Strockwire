@@ -101,6 +101,11 @@ describe("identity and tenancy database schema", () => {
         finished: true,
         active: true,
       },
+      {
+        migrationName: "20260830113000_inventory_balance_ledger_schema",
+        finished: true,
+        active: true,
+      },
     ]);
     expect(tables.map(({ tableName }) => tableName)).toEqual([
       "branch_assignments",
@@ -108,6 +113,8 @@ describe("identity and tenancy database schema", () => {
       "categories",
       "email_verification_tokens",
       "first_organization_onboardings",
+      "inventory_balances",
+      "inventory_transactions",
       "invitation_branch_scopes",
       "invitations",
       "membership_access_event_branch_scopes",
