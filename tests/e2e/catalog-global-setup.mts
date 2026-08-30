@@ -12,6 +12,7 @@ import {
   E2E_BRANCH_ID,
   E2E_CASHIER_EMAIL,
   E2E_CASHIER_ID,
+  E2E_INVENTORY_PRODUCT_ID,
   E2E_ORGANIZATION_ID,
   E2E_OWNER_EMAIL,
   E2E_OWNER_ID,
@@ -76,6 +77,16 @@ export default async function globalSetup(): Promise<void> {
         branchId: E2E_BRANCH_ID,
         organizationId: E2E_ORGANIZATION_ID,
         userId: E2E_CASHIER_ID,
+      },
+    });
+    await prisma.product.create({
+      data: {
+        basePrice: "10.0000",
+        id: E2E_INVENTORY_PRODUCT_ID,
+        name: "Inventory test tea",
+        organizationId: E2E_ORGANIZATION_ID,
+        sku: "INVENTORY-E2E-01",
+        unit: "EA",
       },
     });
   } finally {

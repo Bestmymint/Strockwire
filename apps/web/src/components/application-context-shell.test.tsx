@@ -107,6 +107,9 @@ describe("application context shell", () => {
     expect(
       screen.getByRole("link", { name: "Catalog" }).getAttribute("href"),
     ).toBe(`/app/catalog?organizationId=${ORG_ONE}&branchId=${BRANCH_A}`);
+    expect(
+      screen.getByRole("link", { name: "Inventory" }).getAttribute("href"),
+    ).toBe(`/app/inventory?organizationId=${ORG_ONE}&branchId=${BRANCH_A}`);
     await waitFor(() =>
       expect(replace).toHaveBeenCalledWith(
         `/app?organizationId=${ORG_ONE}&branchId=${BRANCH_A}`,

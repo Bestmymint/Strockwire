@@ -56,7 +56,7 @@ flowchart TD
     CW -. job telemetry .- JOB
 ```
 
-The Next.js/Express shells, operational probes, local PostgreSQL/Prisma foundation, identity/access lifecycle, catalog persistence/API/UI, tenant-safe inventory balance/ledger persistence foundation, read-only branch inventory balance/history API, and atomic manual inventory adjustment API are implemented. Inventory UI, later retail workflows, analytics/AI integration, AWS resources, and production deployment do not exist yet.
+The Next.js/Express shells, operational probes, local PostgreSQL/Prisma foundation, identity/access lifecycle, catalog persistence/API/UI, tenant-safe inventory balance/ledger persistence foundation, read-only branch inventory balance/history API, atomic manual inventory adjustment API, and responsive role-aware branch inventory balance/history/adjustment UI are implemented. Later retail workflows, analytics/AI integration, AWS resources, and production deployment do not exist yet.
 
 ### Repository boundaries
 
