@@ -1138,9 +1138,46 @@ logging: `OQ-019` remains open.
   ledger-without-balance, no balance-without-ledger, and no duplicate idempotent
   movement.
 - `OQ-010` remains open: this quantity foundation has no unit cost, average cost,
-  valuation, or COGS. `OQ-013` remains open: no transfer behavior or source lifecycle
-  is defined. `OQ-019` remains open for generic audit logging, and `OQ-020` remains
+  valuation, or COGS. `OQ-013` is deferred from MVP by `ADR-025`: no transfer behavior
+  or source lifecycle is defined. `OQ-019` remains open for generic audit logging, and `OQ-020` remains
   open for production hardening.
+
+## ADR-025 — Defer inter-branch stock transfer from MVP
+
+- **Date:** 2026-08-31
+- **Status:** Accepted
+- **Type:** Product scope and inventory delivery boundary
+
+### Context
+
+Inter-branch stock transfer remained an explicit high-priority decision gate after
+the quantity-only inventory foundation. Its physical in-transit lifecycle,
+authorization, persistence, idempotency, and ledger relationship were not accepted.
+
+### Decision
+
+Resolve `OQ-013` as **DEFERRED FROM MVP**. Inter-branch stock transfer remains
+broader/full product scope, but the current MVP has no transfer schema, API, UI,
+permission, lifecycle, ledger-source, or idempotency contract. P3-M3-T02 is deferred
+without implementation.
+
+The previously discussed `SEND → IN_TRANSIT → RECEIVE → RECEIVED` direction, with
+exact quantity and no partial/discrepancy workflow, is non-binding future guidance
+only. It must be re-reviewed and accepted before transfer implementation resumes.
+
+### Why selected
+
+The completed balance/ledger and adjustment capabilities provide a safe quantity-only
+foundation, but a transfer lifecycle would add durable product and operational choices
+outside the current MVP without an accepted contract.
+
+### Consequences
+
+- Do not add transfer fields, tables, endpoints, permissions, ledger sources, or
+  idempotency behavior speculatively.
+- Do not model a transfer as unrelated manual adjustments.
+- Continue with P4-M1-T01; a future transfer restart requires a new decision review
+  and a separately bounded implementation plan.
 
 ## 2. Explicitly superseded planning directions
 

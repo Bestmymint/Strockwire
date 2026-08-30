@@ -591,7 +591,6 @@ This document does not answer the following canonical questions from `BUILD_SPEC
 - `OQ-009` refund/void rules
 - `OQ-010` costing model
 - `OQ-012` forecasting V1
-- `OQ-013` stock transfer MVP
 - `OQ-015` exact production hosting
 - `OQ-016` timezone
 - `OQ-017` schedule timing
@@ -600,3 +599,8 @@ This document does not answer the following canonical questions from `BUILD_SPEC
 - `OQ-021` receiving lifecycle
 
 Implementation touching one of these areas must stop at its accepted boundary until the referenced question is resolved and all affected documents are updated.
+
+Stock transfer is **DEFERRED FROM MVP** by `ADR-025`. It remains broader/full future
+scope, but no transfer component, API, persistence, authorization, lifecycle, or
+ledger contract is part of the current architecture. Any future direction must be
+re-reviewed before implementation.

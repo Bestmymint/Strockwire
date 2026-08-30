@@ -718,7 +718,8 @@ accepted reasons. `OTHER` requires a nonblank note; other blank notes become nul
 Inactive Branch/Product state returns `BRANCH_INACTIVE`/`PRODUCT_INACTIVE` at
 `409`. The response never exposes idempotency hashes or membership provenance.
 
-No transfer endpoint exists until `OQ-013` is accepted.
+Stock transfer is **DEFERRED FROM MVP** by `ADR-025`. No transfer endpoint or future
+endpoint contract is defined.
 
 Inventory reads require a trusted concrete branch scope and `inventory.view`.
 Branch-scoped roles require an active assignment; all five accepted roles may

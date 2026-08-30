@@ -476,14 +476,10 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-INV-003 — Transfer stock between branches
 
-- **Status:** Blocked by `OQ-013`; do not implement from the example ledger types
-- **Actor:** Future authorized inventory role
-- **Preconditions/trigger/main flow:** Not accepted. Must define requested, approved, dispatched/in-transit, received, rejected/cancelled, loss/damage, and ownership states if included.
-- **Alternative/error cases:** Partial receipt, concurrent cancellation, source shortage, destination mismatch, different actors, and in-transit stock all require explicit rules.
-- **Business rules:** A transfer cannot be modeled as two unrelated manual adjustments.
-- **Authorization:** Must cover both source and destination branches and role delegation.
-- **Expected result:** No MVP behavior until `OQ-013` is accepted.
-- **Acceptance criteria:** To be added with the decision.
+- **Status:** Deferred from MVP by `ADR-025`.
+- **MVP behavior:** None. No transfer schema, API, UI, permission, lifecycle, ledger-source, or idempotency contract exists.
+- **Future direction:** `SEND → IN_TRANSIT → RECEIVE → RECEIVED` with exact quantity and no partial/discrepancy workflow is non-binding guidance only. It must be re-reviewed and accepted before StockWise resumes this use case.
+- **Expected result:** Stock transfer remains broader/full future scope without affecting current inventory behavior.
 
 ### UC-CAT-002 — Override product price by branch
 

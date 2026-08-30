@@ -617,7 +617,7 @@ Accepted movement concepts:
 - Manual adjustment: signed; reason is `STOCK_COUNT`, `DAMAGE`, `LOSS`, `FOUND`,
   `CORRECTION`, or `OTHER`
 - Refund/void compensation: only after `OQ-009`
-- Transfer out/in: only after `OQ-013`
+- Transfer out/in: deferred from MVP by `ADR-025`; no transfer ledger source exists
 
 Constraints and indexes:
 
@@ -991,9 +991,11 @@ and active-resource facts stable until commit, while existing membership and Bra
 lifecycle writers coordinate through the Organization row. Balance and ledger
 writes remain inside that same transaction.
 
-### 6.4 Refund/void and transfer
+### 6.4 Refund/void and deferred transfer
 
-No transaction contract is accepted yet. They are blocked by `OQ-009` and `OQ-013`; do not infer a design from example ledger movement names.
+No refund/void transaction contract is accepted yet; it remains blocked by `OQ-009`.
+Stock transfer is **DEFERRED FROM MVP** by `ADR-025`; no transfer transaction contract,
+record, or ledger source is defined. Do not infer either design from example movement names.
 
 ## 7. Concurrency strategy requirements
 
@@ -1085,7 +1087,7 @@ At minimum, database-backed tests must cover:
 - Decimal precision and accepted rounding
 - Daily/monthly/yearly timezone and boundary fixtures after `OQ-016`
 
-## 13. Blocking Open Questions
+## 13. Blocking Open Questions and deferred scope
 
 The canonical definitions live in `BUILD_SPEC.md`:
 
@@ -1094,7 +1096,8 @@ The canonical definitions live in `BUILD_SPEC.md`:
 - `OQ-010` costing affects receipt/sale cost data and later valuation; Product has no authoritative cost/valuation field before that decision.
 - `OQ-011` completed-sale and metric definitions affect indexes/snapshots.
 - `OQ-012` forecast definition affects forecast storage.
-- `OQ-013` transfer lifecycle affects inventory records.
+- Stock transfer is deferred from MVP by `ADR-025`; inventory records intentionally
+  contain no transfer lifecycle, source, or linkage.
 - `OQ-016` timezone affects period/schedule fields.
 - `OQ-017` schedule affects job identity.
 - `OQ-018` provider/fallback/retention affects AI report fields.
