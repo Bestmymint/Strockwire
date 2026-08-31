@@ -85,7 +85,7 @@ For a requested scope `S` and period `P`:
 - `LineDiscount_i`: allocated discount for line `i`.
 - `LineTax_i`: allocated tax for line `i`.
 - `LineNet_i`: recognized sales amount for line `i` according to `OQ-008`/`OQ-011`.
-- `UnitCost_i`: historical unit-cost snapshot under the accepted costing model.
+- `UnitCost_i`: historical Branch/Product moving-weighted-average unit-cost snapshot used by the completed sale after `ADR-026` is implemented. It is unavailable when the consumed stock has no initialized authoritative cost basis.
 - `OnHand(b,p,t)`: branch `b` balance of product `p` at cutoff `t`.
 - `Incoming(b,p,H)`: confirmed inbound quantity expected in horizon `H`, once purchase lifecycle is accepted.
 
@@ -207,8 +207,8 @@ GrossMarginPercent = GrossMargin / NetSales * 100
 ```
 
 - Zero net sales: percentage `null`.
-- Status: **Blocked** by `OQ-009`, `OQ-010`, `OQ-011`.
-- Not displayable until the costing model and historical unit-cost snapshot are validated.
+- Status: **Blocked** by `OQ-009` and `OQ-011`, and by the later sales/cost implementation that persists historical unit-cost snapshots.
+- `ADR-026` fixes the future moving-weighted-average method. Do not display or coerce to zero any COGS/gross-margin fact whose underlying cost basis was `UNKNOWN` before initialization.
 
 ## 8. Product movement and inventory metrics
 
@@ -322,8 +322,8 @@ Potential rounding:
 Round up to purchasing unit/case size after the raw quantity is computed.
 ```
 
-- Status: **Blocked** by `OQ-010`, `OQ-011`, `OQ-012`, `OQ-021`; quantity representation is accepted by `ADR-022`.
-- Must decide lead-time source, safety-stock formula, incoming PO states, order multiples, minimum order quantity, and unavailable-data behavior.
+- Status: **Blocked** by `OQ-011` and `OQ-012`; quantity representation is accepted by `ADR-022` and future confirmed incoming semantics follow `ADR-026`.
+- Must decide lead-time source, safety-stock formula, accepted incoming PO state (`ORDERED`), order multiples, minimum order quantity, and unavailable-data behavior.
 - Output is a recommendation, not an automatic purchase order.
 
 ## 9. Trend and seasonal analysis
@@ -539,11 +539,9 @@ Canonical Open Questions are in `BUILD_SPEC.md`:
 
 - `OQ-008` payment, tax, discount, and sale totals
 - `OQ-009` refund/void treatment
-- `OQ-010` costing/COGS
 - `OQ-011` exact metric definitions, thresholds, comparison windows, and eligible states
 - `OQ-012` Forecasting V1
 - `OQ-016` reporting timezone and period boundaries
 - `OQ-017` generation schedule and retries
 - `OQ-018` OpenRouter model/fallback/budget/retention
 - `OQ-020` performance and retention targets
-- `OQ-021` inbound quantity states

@@ -332,6 +332,7 @@ sequenceDiagram
     participant API as Express API
     participant PUR as Purchasing module
     participant INV as Inventory module
+    participant COST as Costing state
     participant DB as PostgreSQL
 
     Staff->>API: Receive PO quantities for branch
@@ -341,12 +342,16 @@ sequenceDiagram
     PUR->>DB: Create receipt and receipt-line snapshots
     PUR->>INV: Record PURCHASE_RECEIVE movements
     INV->>DB: Append ledger entries and update locked balances
-    PUR->>DB: Update PO/receipt state and accepted costing data
+    PUR->>COST: Update locked Branch/Product moving-average state
+    COST->>DB: Persist cost basis/value/average projection
+    PUR->>DB: Update PO/receipt state
     DB-->>PUR: Commit all changes
     PUR-->>API: Completed receipt representation
 ```
 
-Any validation, authorization, state, cost, quantity, or database error rolls back the complete operation. Partial/over-receiving and cost behavior are blocked by `OQ-021` and `OQ-010`.
+Receiving remains planned, not implemented. `ADR-026` fixes the future flow: one `ORDERED` PO produces at most one all-at-once immutable receipt; receipt quantities are server-derived from frozen lines; and `DRAFT` → `ORDERED` → `RECEIVED` / `CANCELLED` is the accepted lifecycle. Partial/over/short/multiple receipt, discrepancy handling, receiving without a PO, supplier returns, receipt correction, and receipt reversal are excluded.
+
+Costing is a future Branch/Product projection owned separately from Product catalog data. Receipt `actualUnitCost` is the authoritative intake; PO `expectedUnitCost` remains planning/history data. A first receipt initializes a previously `UNKNOWN` Branch/Product basis for all then-on-hand quantity without inventing or backfilling historical acquisition cost. Before that initialization, cost-dependent valuation/COGS remain unavailable rather than zero. Any validation, authorization, state, cost, quantity, or database error rolls back the complete operation.
 
 ### 6.4 POS checkout
 
@@ -589,16 +594,18 @@ This document does not answer the following canonical questions from `BUILD_SPEC
 
 - `OQ-008` payment/tax/discount/receipt rules
 - `OQ-009` refund/void rules
-- `OQ-010` costing model
 - `OQ-012` forecasting V1
 - `OQ-015` exact production hosting
 - `OQ-016` timezone
 - `OQ-017` schedule timing
 - `OQ-018` OpenRouter model/fallback/budget
 - `OQ-020` production targets
-- `OQ-021` receiving lifecycle
 
 Implementation touching one of these areas must stop at its accepted boundary until the referenced question is resolved and all affected documents are updated.
+
+Future purchasing/receiving costing and receipt lifecycle are accepted by `ADR-026`;
+they remain unimplemented and retain the documented `UNKNOWN`/`KNOWN` cost-basis
+boundary.
 
 Stock transfer is **DEFERRED FROM MVP** by `ADR-025`. It remains broader/full future
 scope, but no transfer component, API, persistence, authorization, lifecycle, or

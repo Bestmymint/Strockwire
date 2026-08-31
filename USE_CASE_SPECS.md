@@ -195,7 +195,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-CAT-001 — Create or update a product
 
-- **Status:** Implemented by P3-M1-T03; cost/valuation remains excluded pending `OQ-010`
+- **Status:** Implemented by P3-M1-T03; cost/valuation remains excluded from Product and belongs to future Branch/Product state under `ADR-026`
 - **Actor:** Authorized owner/admin/inventory staff
 - **Preconditions:** Actor has catalog permission in the organization; referenced category is accessible and active as required.
 - **Trigger:** Actor submits product details.
@@ -208,7 +208,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   6. Return a safe product representation.
 - **Alternative flows:** Deactivate/reactivate a product; omit optional barcode/category; explicitly reassign to an active category or null. Unit is immutable after creation. Direct detail and authorized `includeInactive=true` lists retain inactive visibility. An unrelated edit may preserve the Product's current inactive Category.
 - **Error cases:** Invalid or excess-scale base price/quantity; fractional integer-only quantity; unsupported unit; duplicate SKU/barcode; inactive/cross-tenant category; stale update (`PRODUCT_STALE`); product referenced by history; database failure.
-- **Business rules:** Product is organization-level with one base price shared by every branch; no branch-price override exists in MVP. Base price accepts at most four decimal places and is rejected rather than rounded. Product has no authoritative cost, average-cost, COGS, or valuation field before `OQ-010`. Updating catalog data never rewrites historical sale/receipt snapshots.
+- **Business rules:** Product is organization-level with one base price shared by every branch; no branch-price override exists in MVP. Base price accepts at most four decimal places and is rejected rather than rounded. Product has no authoritative cost, average-cost, COGS, or valuation field; future cost state is Branch/Product-owned under `ADR-026`. Updating catalog data never rewrites historical sale/receipt snapshots.
 - **Authorization:** Product create/edit is allowed to `OWNER`, `ADMIN`, `BRANCH_MANAGER`, and `INVENTORY_STAFF` in their allowed scope; product lifecycle excludes `INVENTORY_STAFF`. Branch-scoped roles supply an active assigned `branchId` candidate that the API re-resolves; `OWNER`/`ADMIN` may use organization scope.
 - **Expected result:** One valid organization product is stored without cross-tenant references.
 - **Acceptance criteria:** Validation, uniqueness, tenant, immutable-history, and unauthorized-role tests pass.
@@ -312,37 +312,36 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-PUR-001 — Create or edit a purchase order
 
-- **Status:** Blocked in detail by `OQ-010` and `OQ-021`; product quantity validation follows `ADR-022`
+- **Status:** Planned; lifecycle and costing contract accepted by `ADR-026`; product quantity validation follows `ADR-022`
 - **Actor:** Authorized inventory/purchasing user
-- **Preconditions:** Supplier, products, and target branch are active and belong to the same organization.
+- **Preconditions:** Supplier, products, and target branch are active and belong to the same organization. An inactive Supplier blocks a new PO or DRAFT Supplier selection; a later-inactive Supplier does not prevent receipt of its already ORDERED PO.
 - **Trigger:** Actor saves a new purchase order or edits an editable one.
-- **Main flow:** Validate branch/supplier/products/quantities/costs; derive organization; compute accepted totals; create order and line snapshots; return current order.
-- **Alternative flows:** Save draft and later submit if lifecycle accepts both; remove/edit lines only in accepted editable states.
-- **Error cases:** Empty/duplicate line behavior; invalid quantity/cost; cross-tenant supplier/product/branch; non-editable state; stale update; numbering conflict; database failure.
-- **Business rules:** Purchase order targets one branch. Historical line snapshots survive catalog changes. State transitions and totals must follow accepted purchasing/costing rules.
+- **Main flow:** Validate trusted branch/supplier/products, one unique Product line per PO, positive accepted quantities, expected unit costs, and THB-only values; create a server-referenced `DRAFT` with snapshots; allow only `DRAFT` edits; atomically transition `DRAFT` to `ORDERED` or `CANCELLED`; then freeze Supplier, Branch, lines, quantities, expected costs, and commercial snapshots.
+- **Alternative flows:** An `ORDERED` PO may transition only to `RECEIVED` through receiving or to `CANCELLED`; `RECEIVED` and `CANCELLED` are terminal.
+- **Error cases:** Empty/duplicate Product lines; invalid quantity/cost; cross-tenant supplier/product/branch; inactive creation target; non-editable/terminal state; stale update; reference conflict; database failure.
+- **Business rules:** Purchase order targets one branch and does not move stock. Historical line snapshots survive catalog changes. Human-readable PO references are server-generated, immutable, and unique within Organization in the PO namespace.
 - **Authorization:** Purchasing-write permission for target branch.
 - **Expected result:** One consistent branch purchase order without inventory movement until receiving.
 - **Acceptance criteria:** Tenant constraints; state/validation tests; no stock change on order creation; decimal behavior; immutable state enforcement.
 
 ### UC-PUR-002 — Receive a purchase order into branch stock
 
-- **Status:** Blocked by `OQ-010` and `OQ-021`; quantity validation follows
-  `ADR-022` and no-negative stock follows `ADR-024`
+- **Status:** Planned; exact receipt, cost, and atomicity contract accepted by `ADR-026`; quantity validation follows `ADR-022` and no-negative stock follows `ADR-024`
 - **Actor:** Authorized receiving/inventory user
-- **Preconditions:** Purchase order is in an accepted receivable state for the actor's branch.
-- **Trigger:** Actor submits received quantities and actual costs with an idempotency key.
+- **Preconditions:** The PO is `ORDERED`, targets the trusted active branch, has no completed receipt, and every referenced Product is active. A later-inactive Supplier does not block this receipt.
+- **Trigger:** Actor submits receipt actual unit costs, bounded document-level Input VAT snapshots where applicable, and an idempotency key; quantities are not client-entered.
 - **Main flow:**
   1. Validate request and authorization.
   2. Lock/protect the purchase-order receive state and required balances.
-  3. Enforce remaining/over/partial receiving rules.
-  4. Create receipt and immutable receipt items.
-  5. Append `PURCHASE_RECEIVE` ledger entries.
-  6. Update inventory balances and accepted costing state.
-  7. Update order status.
+  3. Derive one receipt item per PO line with exactly its frozen ordered quantity; reject any partial, over, short, duplicate, or no-PO receipt intent.
+  4. Create the single immutable completed receipt and receipt items.
+  5. Append one positive `PURCHASE_RECEIVE` ledger entry per receipt item with direct purchasing provenance.
+  6. Update inventory balances and the Branch/Product moving weighted-average cost state.
+  7. Transition the PO to `RECEIVED`.
   8. Commit everything and return the receipt.
-- **Alternative flows:** Partial receiving, if accepted; safe retry returns the same receipt; concurrent receipt either serializes or conflicts safely.
-- **Error cases:** Non-receivable/cancelled order; excessive/zero quantity; product mismatch; forbidden branch; duplicate idempotency key with different payload; cost invalid; transaction/deadlock failure.
-- **Business rules:** Receipt, ledger, balance, cost, and order status are one transaction. Completed receipt is corrected through a future accepted reversal/return, not edited.
+- **Alternative flows:** An identical retry returns the original receipt; concurrent requests serialize to one logical receipt. Supplier returns, receipt correction, and receipt reversal are future scope, not alternatives.
+- **Error cases:** Non-ORDERED/cancelled/received order; existing receipt; inactive Product/Branch; product mismatch; forbidden branch; duplicate idempotency key with different payload; invalid THB cost/Input VAT snapshot; transaction/deadlock failure.
+- **Business rules:** Receipt, receipt-level idempotency, receipt-item snapshots, ledger, balance, cost, and order status are one transaction. The current manual-adjustment idempotency row is not copied per receipt item; receiving needs receipt-level identity plus unique receipt-item-to-ledger linkage. Before a Branch/Product basis is known, valuation/COGS for uncosted stock is unavailable; the first authoritative receipt initializes the basis for all then-on-hand quantity without fabricating or backfilling historical cost. Completed receipts are immutable and have no MVP correction/reversal path.
 - **Authorization:** Receiving permission at the target branch.
 - **Expected result:** One durable receipt and exactly matching stock/cost changes, or full rollback.
 - **Acceptance criteria:** Failure injection at each step; duplicate/concurrent receiving tests; balance-ledger consistency; cross-tenant rejection; historical snapshots verified.
@@ -351,7 +350,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-SALE-001 — Complete POS checkout
 
-- **Status:** Blocked by `OQ-008` and `OQ-010`; quantity validation follows
+- **Status:** Blocked by remaining sales-side `OQ-008`; future cost snapshots follow `ADR-026`; quantity validation follows
   `ADR-022` and no-negative stock follows `ADR-024`
 - **Actor:** Authorized cashier/manager
 - **Preconditions:** Actor has checkout permission for an active branch; cart has at least one active same-organization product.
@@ -387,7 +386,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-SALE-003 — Void or refund a sale
 
-- **Status:** Blocked by `OQ-009`, `OQ-008`, `OQ-010`, `OQ-019`; stock availability
+- **Status:** Blocked by `OQ-009`, remaining sales-side `OQ-008`, and `OQ-019`; future cost snapshots follow `ADR-026`; stock availability
   follows `ADR-024`
 - **Actor:** Role authorized by the future reversal policy
 - **Preconditions:** An eligible sale exists and the accepted time/status/payment rules permit the requested reversal.
@@ -423,7 +422,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-AN-002 — View forecast and reorder recommendation
 
-- **Status:** Blocked by `OQ-010`, `OQ-011`, `OQ-012`, and `OQ-021`; quantity inputs
+- **Status:** Blocked by `OQ-011` and `OQ-012`; future costing and incoming-order semantics follow `ADR-026`; quantity inputs
   follow `ADR-022` and no-negative stock follows `ADR-024`
 - **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` within the accepted forecast/reorder scope
 - **Preconditions:** Forecasting V1 and input definitions are accepted; actor has scope access.

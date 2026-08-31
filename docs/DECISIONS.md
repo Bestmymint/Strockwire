@@ -953,7 +953,7 @@ Product names are trimmed, nonblank, Unicode-preserving, and non-unique. SKU is 
 
 Products and Categories use `ACTIVE`/`INACTIVE`, may reactivate, and have no hard-delete endpoint. An inactive category retains references but cannot receive a new product assignment; it does not deactivate or silently reassign products. Product reassignment to another active category or null is explicit. Category merge/bulk reassignment is excluded. Category and Product mutations use exact `updatedAt` optimistic concurrency and return `CATEGORY_STALE` or `PRODUCT_STALE` on stale state.
 
-Product has no authoritative cost, average-cost, COGS, or inventory-valuation field. `OQ-010` remains open and governs later receiving valuation, inventory valuation, COGS, and authoritative purchasing-cost behavior.
+Product has no organization-wide cost, average-cost, COGS, or inventory-valuation field. The later Branch/Product receipt, valuation, COGS, and purchasing-cost boundary is now governed by `ADR-026`.
 
 ### Worked boundary examples
 
@@ -969,18 +969,18 @@ Product has no authoritative cost, average-cost, COGS, or inventory-valuation fi
 | Categories `"Food"`, `" food "`, and `"FOOD"` in one organization | All have the same normalized identity; only one may exist. |
 | An inactive Category referenced by active Products | References remain and products remain active, but the category cannot be assigned to another product until reactivated. |
 | Product deactivation or base-price edit | Existing historical records remain unchanged; a later sale snapshots the unit price actually used. |
-| Cost, average cost, COGS, or inventory valuation on Product | Not modeled in P3-M1-T02; authority remains blocked by `OQ-010`. |
+| Cost, average cost, COGS, or inventory valuation on Product | Not modeled in P3-M1-T02; future Branch/Product cost state follows `ADR-026`. |
 
 ### Why selected
 
 - One base price and one base unit fit the MVP without introducing conversion, time-effective pricing, or costing machinery.
 - Database-enforced organization uniqueness and explicit lifecycle rules protect catalog identity and historical references.
-- Deferring transaction pricing and costing keeps unresolved sales/purchasing behavior from becoming accidental catalog truth.
+- Deferring transaction pricing and Product-level costing keeps sales/purchasing behavior from becoming accidental catalog truth; `ADR-026` later selects Branch/Product moving weighted-average cost.
 
 ### Consequences
 
 - P3-M1-T02 may model Category and Product with accepted base price, unit, normalization, lifecycle, and tenant constraints, but without cost/valuation or branch-price fields.
-- Future inventory, purchasing, sales, and analytics implementations must consume the accepted unit precision while retaining their own unresolved stock, cost, transaction-rounding, and metric rules.
+- Future inventory, purchasing, sales, and analytics implementations must consume the accepted unit precision, `ADR-026` cost boundary, and their remaining sales/metric rules.
 - A post-MVP branch-price feature requires a new accepted decision, schema/API/UI scope, and sale-price snapshot compatibility review.
 
 ## ADR-023 — Bind organization catalog capabilities to revalidated branch context
@@ -1027,7 +1027,7 @@ assignment is protected through the write transaction.
   and barcode races, while the API returns only accepted domain conflict codes.
 - No schema/migration, UI, inventory, costing, valuation, or branch-price model
   is introduced by this decision.
-- `OQ-008`, `OQ-010`, and `OQ-011` remain open and do not block catalog CRUD.
+- The remaining sales-side `OQ-008` and `OQ-011` remain open and do not block catalog CRUD; `ADR-026` governs later purchasing/receiving cost without changing this catalog decision.
 
 ## ADR-024 — Use signed deltas, no-negative stock, and a locked balance projection
 
@@ -1137,8 +1137,8 @@ logging: `OQ-019` remains open.
   query/history foundations exist. It must prove no oversell, no lost update, no
   ledger-without-balance, no balance-without-ledger, and no duplicate idempotent
   movement.
-- `OQ-010` remains open: this quantity foundation has no unit cost, average cost,
-  valuation, or COGS. `OQ-013` is deferred from MVP by `ADR-025`: no transfer behavior
+- This quantity foundation intentionally implements no unit cost, average cost,
+  valuation, or COGS; `ADR-026` now governs future Branch/Product cost state and receipt integration. `OQ-013` is deferred from MVP by `ADR-025`: no transfer behavior
   or source lifecycle is defined. `OQ-019` remains open for generic audit logging, and `OQ-020` remains
   open for production hardening.
 
@@ -1176,8 +1176,94 @@ outside the current MVP without an accepted contract.
 - Do not add transfer fields, tables, endpoints, permissions, ledger sources, or
   idempotency behavior speculatively.
 - Do not model a transfer as unrelated manual adjustments.
-- Continue with P4-M1-T01; a future transfer restart requires a new decision review
+- P4-M1-T01 is complete as a documentation gate; P4-M1-T02 is the next planned task. A future transfer restart requires a new decision review
   and a separately bounded implementation plan.
+
+## ADR-026 — Use exact one-shot receipts and Branch/Product moving weighted-average cost
+
+- **Date:** 2026-08-31
+- **Status:** Accepted
+- **Type:** Purchasing, receiving, costing, and bounded Input VAT decision gate
+
+### Context
+
+Purchasing and receiving needed a complete lifecycle and historical-cost contract
+before Supplier, purchase-order, receipt, or cost persistence can be implemented.
+The completed inventory foundation is quantity-only and permits manual positive stock
+adjustment without acquisition cost, so a future cost design must preserve unknown
+cost basis rather than fabricate zero value or rewrite history.
+
+### Decision
+
+Resolve `OQ-021` with the following MVP purchase-order contract:
+
+- States are `DRAFT`, `ORDERED`, `RECEIVED`, and `CANCELLED`.
+- Allowed transitions are `DRAFT → ORDERED`, `DRAFT → CANCELLED`, `ORDERED → RECEIVED`, and `ORDERED → CANCELLED`. `DRAFT` is editable; `ORDERED` freezes Supplier, Branch, Product lines, quantities, expected unit costs, and accepted commercial snapshots; `RECEIVED` and `CANCELLED` are terminal.
+- One PO targets exactly one Branch. One `ORDERED` PO produces at most one immutable completed Receipt. The server derives each receipt quantity exactly from the frozen PO line.
+- Partial, over, short, multiple-event, damaged/discrepancy receiving; receiving without a PO; supplier returns; receipt correction; and receipt reversal are out of MVP. Manual adjustment is not a semantic receipt cost/VAT correction.
+- An inactive Supplier blocks new PO creation and DRAFT Supplier selection, but an already `ORDERED` PO may be received. Inactive Product or Branch blocks receiving until reactivation. Historical records remain readable.
+- A Product occurs once per PO. PO and Receipt references are server-generated, immutable, Organization-unique, and in separate logical namespaces; no generic accounting/document-numbering engine or visual format is selected.
+
+Resolve `OQ-010` with Branch/Product moving weighted-average cost. PO
+`expectedUnitCost` is planning/history data; Receipt `actualUnitCost` is the
+authoritative inventory cost-basis input. Purchase variance is actual less expected
+cost for reporting only and never changes quantity. Use exact PostgreSQL
+`NUMERIC`/Prisma `Decimal`, not JavaScript `number`; Receipt/PO unit costs target
+`DECIMAL(19,4)`, moving-average unit cost targets `DECIMAL(19,6)`, and
+`ROUND_HALF_UP` applies at required persisted/display scales. MVP currency is THB
+only. FIFO and cost layers are rejected.
+
+For a known basis, receiving uses:
+
+```text
+oldInventoryValue = oldQuantity * oldAverageCost
+receivedValue = receivedQuantity * actualUnitCost
+newQuantity = oldQuantity + receivedQuantity
+newInventoryValue = oldInventoryValue + receivedValue
+newAverageCost = newInventoryValue / newQuantity
+```
+
+Cost basis is Branch/Product `UNKNOWN` or `KNOWN`. `UNKNOWN` means stock exists but
+its authoritative acquisition basis is unavailable; it never means zero cost. If
+positive uncosted stock exists, the first authoritative receipt initializes the known
+basis for all resulting on-hand quantity at that receipt's `actualUnitCost`. This is
+prospective valuation-basis initialization only: it neither backfills historical
+ledger movements nor reconstructs historical acquisition cost, COGS, or valuation.
+Before initialization, cost-dependent reporting is unavailable. After initialization,
+manual positive/negative adjustments use current/last-known average cost; before it,
+they change quantity only. At zero quantity, inventory value is exactly zero while
+last-known average cost is retained; a later receipt from zero adopts its actual unit
+cost as the new current average. No Opening Cost or Recost workflow is accepted.
+
+For the bounded purchasing-side part of `OQ-008`, a Receipt may snapshot, where
+applicable, organization VAT-registration state, Input VAT rate and amount, and
+supplier tax-document number/date. These are document-level immutable snapshots only.
+They neither create a generic Tax or allocation engine nor derive/rewrite
+`actualUnitCost`. Sales payment, Output VAT, discount ordering, tender/change, sales
+receipt numbering/display, and sales monetary rules remain open in `OQ-008`; this
+decision makes no legal/tax-compliance claim.
+
+Receiving is a future single PostgreSQL transaction: receipt-level idempotency,
+receipt/items, positive purchasing-provenance ledger movements, balance updates,
+cost-state updates, and PO transition all commit or roll back together. Multi-line
+receiving needs operation-level receipt idempotency plus unique receipt-item-to-ledger
+linkage; current single-manual-movement idempotency cannot be copied to every line.
+The existing purchasing authorization remains: `OWNER`, `ADMIN`, `BRANCH_MANAGER`,
+and `INVENTORY_STAFF` in trusted branch scope may view purchasing costs and perform
+purchasing/receiving; `CASHIER` has neither permission.
+
+### Consequences
+
+- P4-M1-T01 is complete as a decision/documentation gate only. It creates no code,
+  schema, migration, endpoint, UI, Supplier, PO, Receipt, cost, COGS, valuation, or
+  VAT-processing implementation.
+- Later schema work must represent `UNKNOWN` versus `KNOWN` Branch/Product cost basis
+  without changing the existing manual-adjustment API; the exact physical model is a
+  bounded implementation detail of that later task.
+- Future sale items snapshot the cost used at checkout when the sales milestone
+  implements COGS. Analytics still requires its own accepted metric/state rules.
+- P4-M1-T02 — Supplier model/API/UI is next. It must not begin until separately
+  authorized.
 
 ## 2. Explicitly superseded planning directions
 

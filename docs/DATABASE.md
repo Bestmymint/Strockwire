@@ -122,6 +122,7 @@ profile.
 13. No hard deletion of completed operational history or inventory ledger entries is allowed.
 14. Browser sessions and one-time identity tokens persist only cryptographic token hashes; raw session, verification, reset, and invitation tokens are never stored.
 15. Every organization has at least one active `OWNER`; one organization role belongs to each user/organization membership, while branch access for branch-only roles is represented by assignments.
+16. Future purchase receiving uses THB only, exact Decimal values, `ROUND_HALF_UP` at an accepted persisted/display scale, and one atomic receipt/ledger/balance/cost/PO transition according to `ADR-026`.
 
 ## 3. Conceptual relationship model
 
@@ -518,7 +519,7 @@ Lifecycle:
 - Product deactivation preserves historical references. Category deactivation neither deletes nor deactivates products and never silently reassigns them.
 - Base-price changes affect future operations only. Branch price overrides are out of MVP scope.
 - Product and Category mutations use their exact prior millisecond UTC `updatedAt`; stale writes map to `PRODUCT_STALE` and `CATEGORY_STALE`.
-- Product has no authoritative cost, average cost, COGS, or inventory valuation attribute until `OQ-010` is accepted.
+- Product has no organization-wide cost, average-cost, COGS, or inventory-valuation attribute. `ADR-026` assigns future cost state to Branch/Product; no such projection is implemented yet.
 
 P3-M1-T03 implements these as service/database boundaries without a schema
 change. Mutations condition on `(id, organization_id, updated_at)` and assign a
@@ -589,6 +590,15 @@ Product to the row's organization; the Product `(id, organization_id)` key is
 added by the same migration. There is no optimistic version column because the
 accepted mutation design serializes authoritative balance state pessimistically.
 
+`ADR-026` does not retrofit cost into this implemented quantity projection. A later
+costing implementation must maintain a tenant-safe Branch/Product projection that
+distinguishes `UNKNOWN` from `KNOWN` cost basis, records inventory value and the
+moving-average unit cost at the accepted scale, and participates in the same receipt
+and later cost-dependent operation transaction. The exact table/nullable-field/state
+representation is deliberately assigned to the later schema task. `UNKNOWN` is not
+zero cost: it means authoritative valuation, COGS, and gross margin are unavailable
+for cost-dependent operations involving that stock.
+
 #### `InventoryTransaction`
 
 Purpose: append-oriented explanation of every stock change.
@@ -602,17 +612,17 @@ Required logical attributes:
 - Signed, non-zero quantity delta as `DECIMAL(18,4)` using the Product's accepted
   immutable base unit. Positive increases and negative decreases stock. API output
   removes meaningless trailing fractional zeros.
-- Bounded source; P3-M2-T02 permits only `MANUAL_ADJUSTMENT`
+- Bounded source; the implemented P3-M2-T02 schema permits only `MANUAL_ADJUSTMENT`, while a later purchasing migration must add `PURCHASE_RECEIVE`
 - Acting human user plus membership/context sufficient for durable attribution, or
   an explicit trusted system/source identity for future system-created movements
 - Adjustment reason/note where applicable
 - Occurred/created timestamp
 - Idempotency/source uniqueness metadata: deterministic opaque-key hash and canonical
-  request hash scoped to organization and operation
+  request hash scoped to organization and operation, plus later direct source-line linkage where one operation creates multiple movements
 
 Accepted movement concepts:
 
-- Purchase receipt: positive
+- Purchase receipt: positive `PURCHASE_RECEIVE`, linked uniquely to one immutable receipt item
 - Sale: negative
 - Manual adjustment: signed; reason is `STOCK_COUNT`, `DAMAGE`, `LOSS`, `FOUND`,
   `CORRECTION`, or `OTHER`
@@ -650,6 +660,12 @@ shape. Unique `(organization_id, idempotency_key_hash)` is the durable
 successful-movement identity; the same hash may exist in another organization.
 History uses `(branch_id, product_id, occurred_at, id)`.
 
+The existing schema is intentionally manual-adjustment-only. A future receiving
+migration must not copy one receipt idempotency hash to every receipt-item movement:
+it needs receipt-level operation idempotency plus unique receipt-item-to-movement
+provenance. It must also make adjustment-only reason/note constraints conditional on
+the source. No receiving schema is created by this document.
+
 ### 4.4 Purchasing and receiving
 
 #### `PurchaseOrder`
@@ -660,11 +676,11 @@ Required logical attributes:
 
 - Organization and target branch identifiers
 - Supplier identifier
-- Stable identifier and human-facing order number after numbering rules are accepted
-- Lifecycle status accepted through `OQ-021`
+- Stable identifier and immutable human-readable server-generated reference, unique within Organization in the PO namespace
+- Lifecycle status: `DRAFT`, `ORDERED`, `RECEIVED`, or `CANCELLED`
 - Order date and optional expected date
-- Currency if multi-currency is ever accepted; current scope should not imply multi-currency
-- Aggregate amounts stored/recomputed according to the accepted contract
+- THB-only currency context; no multi-currency model
+- Aggregate amounts stored/recomputed using accepted Decimal and `ROUND_HALF_UP` rules where a persisted/document scale requires rounding
 - Creator and relevant actor timestamps
 - Created/updated timestamps
 
@@ -673,7 +689,8 @@ Constraints and indexes:
 - Branch and supplier must belong to the order's organization.
 - Human number, if used, is unique within its accepted scope.
 - Index `(organization, branch, status, orderDate)`.
-- A received order cannot be silently edited into a different historical order.
+- `DRAFT` is editable. `ORDERED` freezes Supplier, Branch, Product lines, quantities, expected unit costs, and accepted commercial snapshots. `RECEIVED` and `CANCELLED` are terminal.
+- One ordered PO produces at most one completed receipt. PO and Receipt references are separate Organization-unique namespaces; no generic numbering engine is implied.
 
 #### `PurchaseOrderItem`
 
@@ -685,15 +702,15 @@ Required logical attributes:
 - Product identifier from the same organization
 - Product/SKU/name snapshots needed for historical readability
 - Ordered quantity
-- Expected unit cost as Prisma `Decimal`
-- Discount/tax/line total only if accepted by `OQ-010`/`OQ-021`
+- Expected unit cost as `DECIMAL(19,4)` Decimal planning/history data
+- Only accepted commercial snapshots; no line-level VAT allocation engine
 - Created/updated timestamps
 
 Constraints:
 
 - Positive quantity.
 - Product organization equals purchase-order organization.
-- Duplicate product-line behavior must be deliberately selected; do not rely on accidental duplicates.
+- Unique `(purchase_order_id, product_id)` is required: one Product equals one PO line.
 
 #### `PurchaseReceipt`
 
@@ -702,8 +719,8 @@ Purpose: immutable record of a receiving event against one purchase order and br
 Required logical attributes:
 
 - Purchase order and branch identifiers
-- Stable receipt identifier/number
-- Receipt status
+- Stable immutable human-readable server-generated reference, unique within Organization in the Receipt namespace
+- Completed receipt state only in MVP; no correction/reversal lifecycle
 - Received-at time and receiving actor
 - Idempotency key/source metadata
 - Created/updated timestamps
@@ -711,9 +728,10 @@ Required logical attributes:
 Constraints and indexes:
 
 - Receipt branch equals purchase-order branch.
-- Idempotency key is unique in the accepted organization/branch scope.
-- A completed receipt is not edited; corrections use an accepted reversal/return flow.
-- Partial/over-receipt and cancellation rules are blocked by `OQ-021`.
+- Receipt-level operation idempotency is unique within the accepted Organization/operation scope; its canonical request represents actual costs and accepted document-level VAT snapshots, never client-supplied quantities.
+- A completed receipt is immutable. Supplier returns, receipt correction, and receipt reversal are future scope.
+- Its PO must be `ORDERED`, receipt branch equals PO branch, and no other completed receipt may exist for that PO. Receipt item quantities are server-derived exactly from frozen PO quantities; partial/over/short/multiple receipt and receiving without a PO are excluded.
+- Preserve only the accepted document-level Input VAT snapshots where applicable: organization VAT-registration state, rate, amount, supplier tax-document number, and supplier tax-document date. These fields do not create a generic Tax or VAT-allocation engine and do not derive/rewrite `actualUnitCost`.
 
 #### `PurchaseReceiptItem`
 
@@ -725,14 +743,47 @@ Required logical attributes:
 - Product identifier
 - Product/SKU/name snapshots
 - Received quantity
-- Actual unit cost as Prisma `Decimal`
+- Actual unit cost as authoritative `DECIMAL(19,4)` inventory cost-basis input
 - Created timestamp
 
 Constraints:
 
 - Positive quantity.
 - Product/order/receipt organizations and branches agree.
-- A completed receipt item maps uniquely to its inventory movement(s).
+- Received quantity equals the frozen PO-line quantity and is positive.
+- A completed receipt item maps uniquely to exactly one positive `PURCHASE_RECEIVE` movement.
+
+#### Future `InventoryCostState` concept
+
+Purpose: transactionally maintained Branch/Product moving weighted-average valuation
+projection after `ADR-026` is implemented. This is a logical contract only; no model,
+table, or migration exists yet.
+
+- Scope: Organization, Branch, and Product with the same tenant-safe relationship
+  strategy as inventory balances.
+- Basis state: `UNKNOWN` or `KNOWN`. `UNKNOWN` never means zero acquisition cost.
+- Known state: inventory value and current/last-known moving-average unit cost,
+  targeting `DECIMAL(19,6)` for the latter.
+- Receipt authority: `actualUnitCost`; `expectedUnitCost` affects planning/variance
+  reporting only, never received quantity.
+- Moving weighted average uses exact Decimal arithmetic:
+
+  ```text
+  oldInventoryValue = oldQuantity * oldAverageCost
+  receivedValue = receivedQuantity * actualUnitCost
+  newInventoryValue = oldInventoryValue + receivedValue
+  newAverageCost = newInventoryValue / newQuantity
+  ```
+
+- If a Branch/Product has positive on-hand quantity but no known basis, its first
+  authoritative receipt initializes the basis for all resulting on-hand quantity at
+  that receipt's `actualUnitCost`. This is prospective valuation initialization; it
+  neither backfills nor fabricates historical acquisition cost/COGS.
+- Once known, manual positive/negative adjustments use current/last-known average
+  cost. Before known, they change quantity only and cost-dependent reporting remains
+  unavailable. When quantity reaches zero, value is exactly zero and the last-known
+  average cost remains. A later receipt from zero uses its actual unit cost as the
+  new current average.
 
 ### 4.5 Sales and payment
 
@@ -960,12 +1011,12 @@ One database transaction must:
 
 1. Claim/check the idempotency key.
 2. Load the purchase order and protect its receive state from concurrent writes.
-3. Enforce `OQ-021` quantity/lifecycle rules.
-4. Create receipt and immutable receipt-line snapshots.
-5. Append purchase-receive inventory transactions.
-6. Update balances.
-7. Apply costing changes from `OQ-010`.
-8. Update purchase-order state.
+3. Require `ORDERED`, no prior receipt, active Branch/Product, and exact server-derived quantities from frozen PO lines.
+4. Create one immutable receipt, receipt-line snapshots, and bounded document-level Input VAT snapshots where applicable.
+5. Append one positive purchase-receive inventory transaction per receipt item with unique source linkage.
+6. Update balances using deterministic multi-product lock order.
+7. Update the Branch/Product moving weighted-average state, including `UNKNOWN` → `KNOWN` initialization when required.
+8. Update the purchase-order state to `RECEIVED`.
 9. Commit all records or roll back all records.
 
 ### 6.3 Adjustment
@@ -1013,14 +1064,14 @@ The implementation may choose row locking, conditional/versioned updates, atomic
 
 - Money and costs use `Decimal` through validation, calculation, persistence, and serialization.
 - The API must define a canonical decimal string representation; it must not silently convert precise values to JavaScript floating point.
-- Currency, rounding scale/mode, tax allocation, discounts, and cash rounding are governed by `OQ-008` and `OQ-010`.
+- Purchasing/receiving uses THB only. PO/Receipt unit costs target `DECIMAL(19,4)`; moving-average unit cost targets `DECIMAL(19,6)`; and `ROUND_HALF_UP` applies when an accepted persisted or document presentation scale requires rounding. Customer/document monetary presentation requiring a monetary result uses two decimal places. Sales VAT, discount, tender/change, receipt display, and sales rounding remain in `OQ-008`.
 - Catalog, inventory, purchasing, and sales quantities use `DECIMAL(18,4)` and decimal-string APIs under `ADR-022`. Inputs with greater scale are rejected, never rounded; integer-only units must be mathematically integral. Derived analytics rounding remains `OQ-011`.
 - PostgreSQL coerces direct writes to the declared inventory scale and can round
   excess fractional digits before a row check can observe the source value.
   Therefore excess-scale rejection and EA/PACK/BOX integrality remain mandatory
   service-boundary validation for the future adjustment implementation; the T02
   schema does not falsely claim to enforce them.
-- All stored aggregate totals must be reproducible from accepted line-level snapshots and rounding rules.
+- All stored aggregate totals must be reproducible from accepted snapshots and rounding rules. An intermediate calculation may retain precision beyond a persisted/displayed scale; it must use exact Decimal arithmetic and round only at the accepted boundary.
 
 ## 9. Index plan by access pattern
 
@@ -1091,9 +1142,9 @@ At minimum, database-backed tests must cover:
 
 The canonical definitions live in `BUILD_SPEC.md`:
 
-- `OQ-008` payment, tax, discount, and numbering affect sales/payment fields.
+- The remaining sales-side `OQ-008` payment, Output VAT, discount, tender/change, sales numbering/display, and sales rounding rules affect sales/payment fields. P4 Input VAT snapshots and purchasing currency/rounding are accepted by `ADR-026`.
 - `OQ-009` reversal rules affect lifecycle/linkage.
-- `OQ-010` costing affects receipt/sale cost data and later valuation; Product has no authoritative cost/valuation field before that decision.
+- `ADR-026` fixes future receipt/sale cost data and later valuation on a Branch/Product moving weighted-average basis; Product remains without an organization-wide cost/valuation field.
 - `OQ-011` completed-sale and metric definitions affect indexes/snapshots.
 - `OQ-012` forecast definition affects forecast storage.
 - Stock transfer is deferred from MVP by `ADR-025`; inventory records intentionally
@@ -1103,4 +1154,3 @@ The canonical definitions live in `BUILD_SPEC.md`:
 - `OQ-018` provider/fallback/retention affects AI report fields.
 - `OQ-019` audit scope affects operational support records.
 - `OQ-020` retention/recovery targets affect lifecycle.
-- `OQ-021` receiving behavior affects purchase state and quantities.

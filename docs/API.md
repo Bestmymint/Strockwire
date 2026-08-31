@@ -206,7 +206,7 @@ The accepted fixed RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY
 }
 ```
 
-`basePrice` is the required organization-level configured amount shared by every branch. It is a non-negative decimal string with at most four fractional digits; inputs with greater scale are rejected rather than rounded. It does not define sales tax, discounts, currency, receipt totals, payment behavior, or transaction rounding, which remain blocked by `OQ-008`. Cost/valuation fields remain blocked by `OQ-010`; branch overrides are out of MVP scope by `ADR-022`.
+`basePrice` is the required organization-level configured amount shared by every branch. It is a non-negative decimal string with at most four fractional digits; inputs with greater scale are rejected rather than rounded. It does not define sales tax, discounts, receipt totals, payment behavior, or sales monetary rounding, which remain blocked by the remaining sales-side `OQ-008`. Product has no organization-wide cost/valuation field; future Branch/Product cost state follows `ADR-026`. Branch overrides are out of MVP scope by `ADR-022`.
 
 ## 5. Health and service endpoints
 
@@ -758,20 +758,20 @@ other internal provenance fields.
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `GET /organizations/{organizationId}/branches/{branchId}/purchase-orders` | Branch purchasing read | Cursor/status/date/supplier | Purchase order summaries | Invalid range/cursor | Blocked lifecycle details `OQ-021` |
-| `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders` | Branch purchasing write | Supplier, lines, quantities, expected costs | Purchase order | Cross-tenant refs, invalid/duplicate lines/cost | Blocked `OQ-010`, `OQ-021`; quantity validation follows `ADR-022` |
-| `GET /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}` | Branch purchasing read | None | Order, snapshots, receipt summary | Safe not-found | Blocked lifecycle representation |
-| `PATCH /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}` | Branch purchasing write | Editable fields/state version | Purchase order | Non-editable/stale/state conflict | Blocked `OQ-021` |
-| `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}/receipts` | Branch receiving | `Idempotency-Key`; received lines/actual cost | Completed receipt + balance effects | State/quantity/cost/idempotency/concurrency | Blocked `OQ-010`, `OQ-021`; quantity validation follows `ADR-022`, stock policy `ADR-024` |
+| `GET /organizations/{organizationId}/branches/{branchId}/purchase-orders` | Branch purchasing read | Cursor/status/date/supplier | Purchase order summaries | Invalid range/cursor | Planned; lifecycle accepted by `ADR-026` |
+| `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders` | Branch purchasing write | Supplier, one line per Product, quantities, expected THB costs | Purchase order | Cross-tenant/inactive refs, invalid/duplicate lines/cost | Planned; `DRAFT` lifecycle follows `ADR-026`, quantity follows `ADR-022` |
+| `GET /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}` | Branch purchasing read | None | Order, immutable snapshots, receipt summary | Safe not-found | Planned |
+| `PATCH /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}` | Branch purchasing write | DRAFT fields or accepted state intent/version | Purchase order | Non-editable/stale/terminal-state conflict | Planned; lifecycle follows `ADR-026` |
+| `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}/receipts` | Branch receiving | `Idempotency-Key`; actual THB costs and bounded document-level Input VAT snapshot, no received quantities | Completed receipt + balance/cost effects | ORDERED/exact-quantity/cost/idempotency/concurrency | Planned; `ADR-022`, `ADR-024`, and `ADR-026` |
 
-Receipt creation is an atomic command. It does not expose a sequence of public endpoints for separately creating a receipt and then mutating stock.
+Receipt creation is a future atomic command. It derives every receipt quantity from the frozen ORDERED PO, creates at most one immutable receipt, and does not expose a sequence of public endpoints for separately creating a receipt and then mutating stock. Partial/over/short/multiple receipt, receiving without a PO, supplier returns, and receipt correction/reversal have no MVP endpoint.
 
 ## 11. POS and sales endpoints
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
 | `GET /organizations/{organizationId}/branches/{branchId}/pos/products` | Branch checkout | Query/barcode/cursor | Sellable product summaries with current server price/availability indicator | Invalid query, forbidden branch | Planned; exact availability/price blocked |
-| `POST /organizations/{organizationId}/branches/{branchId}/sales` | Branch checkout | `Idempotency-Key`; cart lines and payment intent | Completed sale + receipt representation | Price/state/stock/payment/idempotency/concurrency | Blocked `OQ-008`, `OQ-010`; quantity validation follows `ADR-022`, stock policy `ADR-024` |
+| `POST /organizations/{organizationId}/branches/{branchId}/sales` | Branch checkout | `Idempotency-Key`; cart lines and payment intent | Completed sale + receipt representation | Price/state/stock/payment/idempotency/concurrency | Blocked remaining sales-side `OQ-008`; future cost snapshots follow `ADR-026`; quantity validation follows `ADR-022`, stock policy `ADR-024` |
 | `GET /organizations/{organizationId}/branches/{branchId}/sales` | Branch sales read | Cursor/date/user/status filters | Sale summaries | Invalid range/cursor | Planned; statuses blocked `OQ-009` |
 | `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}` | Branch sales read | None | Sale, immutable lines, permitted payment data | Safe not-found | Planned |
 | `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}/receipt` | Branch receipt read | Format/locale if accepted | Receipt view data; not arbitrary HTML from server | Safe not-found/forbidden | Blocked format/numbering `OQ-008` |
@@ -821,7 +821,7 @@ period=<canonical selector derived from OQ-011 and OQ-016>
 | `GET /organizations/{organizationId}/analytics/inventory` | Analytics read | Scope + period/cutoff + optional dimensions | Coverage/movement/risk metrics | Insufficient/zero/reconciliation anomaly/unknown thresholds | Blocked `OQ-011`, `OQ-012`; stock policy `ADR-024` |
 | `GET /organizations/{organizationId}/analytics/branches` | Organization analytics read | Period + authorized branch set/filter | Comparable branch metrics | Unauthorized branch/non-comparable period | Blocked `OQ-011`, `OQ-016`; authorization follows `ADR-016` |
 | `GET /organizations/{organizationId}/analytics/forecast` | Forecast read | Scope + product/category + horizon | Versioned forecast + data status | Unsupported horizon/insufficient data | Blocked `OQ-012` |
-| `GET /organizations/{organizationId}/analytics/reorder-recommendations` | Reorder read | Scope + horizon/filter | Inputs + deterministic recommendations | Missing lead time/forecast/cost/unit | Blocked `OQ-010`, `OQ-011`, `OQ-012`, `OQ-021`; quantity representation follows `ADR-022` |
+| `GET /organizations/{organizationId}/analytics/reorder-recommendations` | Reorder read | Scope + horizon/filter | Inputs + deterministic recommendations | Missing lead time/forecast/cost/unit | Blocked `OQ-011`, `OQ-012`; future cost/incoming-order semantics follow `ADR-026`; quantity representation follows `ADR-022` |
 
 Analytics error/null semantics:
 
@@ -908,11 +908,11 @@ Canonical definitions live in `BUILD_SPEC.md`:
 
 - Auth/session: `ADR-013`; verification/reset token/provider behavior: `ADR-014`; onboarding: `ADR-015`; invitation/member access lifecycle: `ADR-021`
 - Role/permission exposure: `ADR-016`
-- Product payload: `ADR-022`; cost/valuation remains `OQ-010`, sales monetary behavior remains `OQ-008`
+- Product payload: `ADR-022`; Product has no organization-wide cost/valuation field, future Branch/Product cost state follows `ADR-026`, sales monetary behavior remains in the unresolved portions of `OQ-008`
 - Inventory adjustment: `ADR-024`; quantity representation is `ADR-022`; generic
   audit logging remains `OQ-019`
-- Purchasing/receiving: `OQ-010`, `OQ-021`; quantity representation is `ADR-022`
-- Checkout/receipt/payment: `ADR-024`, `OQ-008`, `OQ-010`; quantity representation is `ADR-022`
+- Purchasing/receiving: `ADR-026`; quantity representation is `ADR-022`, stock policy is `ADR-024`
+- Checkout/receipt/payment: `ADR-024`, `ADR-026`, `OQ-008`; quantity representation is `ADR-022`
 - Void/refund: `OQ-009`
 - Analytics/forecast: `OQ-011`, `OQ-012`, `OQ-016`
 - AI scheduling/provider: `OQ-017`, `OQ-018`
