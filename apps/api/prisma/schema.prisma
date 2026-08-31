@@ -59,6 +59,13 @@ enum CatalogStatus {
   @@map("catalog_status")
 }
 
+enum SupplierStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("supplier_status")
+}
+
 enum ProductUnit {
   EA
   PACK
@@ -129,10 +136,30 @@ model Organization {
   invitations           Invitation[]
   categories            Category[]
   products              Product[]
+  suppliers             Supplier[]
   inventoryBalances     InventoryBalance[]
   inventoryTransactions InventoryTransaction[]
 
   @@map("organizations")
+}
+
+model Supplier {
+  id          String         @id @default(uuid()) @db.Uuid
+  organizationId String      @map("organization_id") @db.Uuid
+  name        String         @db.VarChar(160)
+  contactName String?        @map("contact_name") @db.VarChar(120)
+  email       String?        @db.VarChar(254)
+  phone       String?        @db.VarChar(40)
+  address     String?        @db.VarChar(500)
+  status      SupplierStatus @default(ACTIVE)
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([id, organizationId], map: "suppliers_id_organization_id_key")
+  @@index([organizationId, status, createdAt, id], map: "suppliers_organization_id_status_created_at_id_idx")
+  @@map("suppliers")
 }
 
 model Category {

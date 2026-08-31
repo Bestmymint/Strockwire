@@ -541,15 +541,16 @@ Required logical attributes:
 - Stable identifier
 - Name
 - Contact details appropriate to the accepted product scope
-- Optional default lead time when forecasting/reorder definitions require it
+- No lead time in P4-M1-T02; it remains deferred until forecasting/reorder rules are accepted
 - Status
 - Created/updated timestamps
 
 Constraints and indexes:
 
 - Supplier belongs to one organization.
-- Supplier-specific normalization, duplicate, and lifecycle fields are assigned to the later purchasing milestone; names are not assumed globally unique until that scoped contract is recorded.
-- Any later deactivation/deletion behavior must preserve purchase history.
+- Supplier business fields are not unique; duplicate names, emails, and phone numbers are allowed. Lifecycle is `ACTIVE`/`INACTIVE`, with no hard-delete endpoint; inactive Suppliers remain historically readable.
+
+P4-M1-T02 records the bounded Supplier contract: `name` (trimmed, 1–160), optional trimmed `contactName` (120), lowercase valid `email` (254), trimmed `phone` (40), and trimmed `address` (500), with blanks stored as `NULL`. No optimistic version applies. The indexed list is organization/status/newest-first.
 
 ### 4.3 Inventory
 

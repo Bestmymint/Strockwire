@@ -293,20 +293,20 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-SUP-001 — Manage suppliers
 
-- **Status:** Sequenced for P4; supplier-specific behavior remains outside P3-M1-T01
+- **Status:** Implemented by P4-M1-T02
 - **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` in allowed scope
 - **Preconditions:** The actor is authenticated in an active organization and has supplier-management permission.
 - **Trigger:** The actor creates, updates, or deactivates an organization supplier.
 - **Main flow:**
   1. The API derives the organization from trusted membership and validates accepted supplier fields.
-  2. It applies the supplier contract assigned to the purchasing milestone; P3-M1-T01 does not implement or extend supplier behavior.
+  2. It applies the bounded Supplier contract: name plus optional contact name, email, phone, and address; duplicates are allowed.
   3. For update/deactivation, it loads the supplier within the same organization and verifies current state.
   4. It creates or updates/deactivates the supplier while retaining all Purchase Order and receipt references.
   5. It returns the current supplier representation.
-- **Alternative flows:** Supplier reactivation, merge, or replacement is assigned to the purchasing milestone; inactive suppliers remain readable in historical Purchase Orders.
-- **Error cases:** Invalid/missing fields; duplicate according to accepted normalization; cross-tenant supplier; unauthorized role; stale update; attempted unsafe deletion of a referenced supplier; database failure.
+- **Alternative flows:** OWNER/ADMIN lifecycle commands reactivate an inactive Supplier; inactive suppliers remain readable in historical Purchase Orders. Merge and replacement are excluded.
+- **Error cases:** Invalid/missing fields; cross-tenant supplier; unauthorized role; attempted unsafe deletion of a referenced supplier; database failure.
 - **Business rules:** Supplier is organization-scoped. A supplier referenced by purchasing history must not be hard-deleted or rewritten to alter historical Purchase Orders/receipts. Supplier CRUD is not part of P3-M1-T01.
-- **Authorization:** Supplier create/edit is allowed to `OWNER`, `ADMIN`, `BRANCH_MANAGER`, and `INVENTORY_STAFF`; deactivation follows the applicable accepted lifecycle and role policy.
+- **Authorization:** Supplier create/edit is allowed to `OWNER`, `ADMIN`, `BRANCH_MANAGER`, and `INVENTORY_STAFF`; the branch-scoped roles need an active assignment but receive organization-wide Supplier access. Only `OWNER`/`ADMIN` may deactivate/reactivate.
 - **Expected result:** One valid organization supplier is created or safely updated/deactivated, or no mutation occurs.
 - **Acceptance criteria:** Tenant, permission, accepted duplicate/normalization, stale-update, deactivation/history, unsafe-delete, and failure tests pass.
 

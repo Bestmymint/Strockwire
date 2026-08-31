@@ -147,7 +147,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
 | [x] **P4-M1-T01 — Close costing and receiving decisions** | Unblock historical cost and receipt lifecycle | Resolved `OQ-010`/`OQ-021`: exact one-shot receipt, no returns/reversal, Branch/Product moving weighted average, THB, rounding, and bounded Input VAT snapshots | Phase 3 | `ADR-026` and affected contracts updated; sales-side `OQ-008` remains open | Worked examples, state-transition, uncosted-basis, atomicity, and concurrency review completed 2026-08-31 |
-| [ ] **P4-M1-T02 — Supplier model/API/UI** | Manage organization suppliers | Schema/migration, scoped CRUD/deactivation, responsive UI | Phase 2, P3-M1-T01, T01 | Same-tenant scope; history-safe deactivate | DB/API/UI/security tests |
+| [x] **P4-M1-T02 — Supplier model/API/UI** | Manage organization suppliers | Organization-scoped Supplier schema/migration, CRUD/lifecycle API, and responsive `/app/suppliers` UI; no PO/receiving/costing scope | Phase 2, P3-M1-T01, T01 | Server-derived tenant/role scope; immutable history-safe lifecycle; committed and history-safe deactivate | 530 Vitest tests across 67 files; 8 Chromium E2E scenarios including Supplier desktop/mobile axe coverage |
 
 ### Milestone 4.2 — Purchase orders
 
@@ -327,7 +327,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 ## 2. Next Codex task
 
-Phase 1, the Phase 2 documentation decision gate, Milestone 2.1, Milestone 2.2, and Milestone 2.3 through **P2-M3-T03 — Membership invitation/assignment** are complete. Milestone 3.1 is complete through **P3-M1-T04 — Catalog UI** and Milestone 3.2 is complete through **P3-M2-T05 — Inventory UI**. **P3-M3-T01 — Branch transfer decision gate** is complete: `OQ-013` is **DEFERRED FROM MVP**, and **P3-M3-T02** is deferred without implementation. **P4-M1-T01 — Close costing and receiving decisions** is complete as a documentation-only gate: `ADR-026` resolves `OQ-010` and `OQ-021`, while sales-side `OQ-008` remains open. The next planned task is **P4-M1-T02 — Supplier model/API/UI**; this status update does not authorize starting it.
+Phase 1, the Phase 2 documentation decision gate, Milestone 2.1, Milestone 2.2, and Milestone 2.3 through **P2-M3-T03 — Membership invitation/assignment** are complete. Milestone 3.1 is complete through **P3-M1-T04 — Catalog UI** and Milestone 3.2 is complete through **P3-M2-T05 — Inventory UI**. **P3-M3-T01 — Branch transfer decision gate** is complete: `OQ-013` is **DEFERRED FROM MVP**, and **P3-M3-T02** is deferred without implementation. **P4-M1-T01 — Close costing and receiving decisions** is complete as a documentation-only gate: `ADR-026` resolves `OQ-010` and `OQ-021`, while sales-side `OQ-008` remains open. **P4-M1-T02 — Supplier model/API/UI** is committed and complete; it adds no PO, receiving, costing, or valuation scope. The next planned task is **P4-M2-T01 — Purchase order schema/lifecycle**; this status update does not authorize starting it.
 
 Current-state constraints that the next task must preserve:
 

@@ -12,7 +12,10 @@ import {
   E2E_BRANCH_ID,
   E2E_CASHIER_EMAIL,
   E2E_CASHIER_ID,
+  E2E_MANAGER_EMAIL,
+  E2E_MANAGER_ID,
   E2E_INVENTORY_PRODUCT_ID,
+  E2E_OTHER_ORGANIZATION_ID,
   E2E_ORGANIZATION_ID,
   E2E_OWNER_EMAIL,
   E2E_OWNER_ID,
@@ -31,6 +34,9 @@ export default async function globalSetup(): Promise<void> {
     const passwordHash = await hashPassword(E2E_PASSWORD);
     await prisma.organization.create({
       data: { id: E2E_ORGANIZATION_ID, name: "Catalog E2E Store" },
+    });
+    await prisma.organization.create({
+      data: { id: E2E_OTHER_ORGANIZATION_ID, name: "Other E2E Store" },
     });
     await prisma.branch.create({
       data: {
@@ -51,6 +57,15 @@ export default async function globalSetup(): Promise<void> {
     });
     await prisma.user.create({
       data: {
+        displayName: "Catalog Manager",
+        email: E2E_MANAGER_EMAIL,
+        emailVerifiedAt: new Date("2026-08-26T12:00:00.000Z"),
+        id: E2E_MANAGER_ID,
+        passwordHash,
+      },
+    });
+    await prisma.user.create({
+      data: {
         displayName: "Catalog Cashier",
         email: E2E_CASHIER_EMAIL,
         emailVerifiedAt: new Date("2026-08-26T12:00:00.000Z"),
@@ -66,9 +81,19 @@ export default async function globalSetup(): Promise<void> {
           userId: E2E_OWNER_ID,
         },
         {
+          organizationId: E2E_OTHER_ORGANIZATION_ID,
+          role: "OWNER",
+          userId: E2E_OWNER_ID,
+        },
+        {
           organizationId: E2E_ORGANIZATION_ID,
           role: "CASHIER",
           userId: E2E_CASHIER_ID,
+        },
+        {
+          organizationId: E2E_ORGANIZATION_ID,
+          role: "BRANCH_MANAGER",
+          userId: E2E_MANAGER_ID,
         },
       ],
     });
@@ -77,6 +102,13 @@ export default async function globalSetup(): Promise<void> {
         branchId: E2E_BRANCH_ID,
         organizationId: E2E_ORGANIZATION_ID,
         userId: E2E_CASHIER_ID,
+      },
+    });
+    await prisma.branchAssignment.create({
+      data: {
+        branchId: E2E_BRANCH_ID,
+        organizationId: E2E_ORGANIZATION_ID,
+        userId: E2E_MANAGER_ID,
       },
     });
     await prisma.product.create({

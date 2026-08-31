@@ -84,6 +84,11 @@ const PERMISSION_MATRIX = [
     scope: "organization-or-branch",
   },
   {
+    permission: PERMISSIONS.SUPPLIER_DEACTIVATE,
+    allowedRoles: ORGANIZATION_ADMINISTRATION_ROLES,
+    scope: "organization",
+  },
+  {
     permission: PERMISSIONS.INVENTORY_VIEW,
     allowedRoles: ALL_ROLES,
     scope: "branch",

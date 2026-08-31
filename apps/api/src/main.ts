@@ -6,6 +6,9 @@ import { createApiLogger } from "./logger.ts";
 import { createPrismaCatalogRepository } from "./modules/catalog/catalog-repository.ts";
 import { createCatalogRouter } from "./modules/catalog/catalog-router.ts";
 import { createCatalogService } from "./modules/catalog/catalog-service.ts";
+import { createPrismaSupplierRepository } from "./modules/suppliers/supplier-repository.ts";
+import { createSupplierRouter } from "./modules/suppliers/supplier-router.ts";
+import { createSupplierService } from "./modules/suppliers/supplier-service.ts";
 import { createPrismaInventoryRepository } from "./modules/inventory/inventory-repository.ts";
 import { createInventoryRouter } from "./modules/inventory/inventory-router.ts";
 import { createInventoryService } from "./modules/inventory/inventory-service.ts";
@@ -99,6 +102,9 @@ async function main(): Promise<void> {
   const inventoryService = createInventoryService({
     repository: createPrismaInventoryRepository(prisma),
   });
+  const supplierService = createSupplierService({
+    repository: createPrismaSupplierRepository(prisma),
+  });
   const apiRouter = Router();
   apiRouter.use(
     createRegistrationRouter({
@@ -149,6 +155,13 @@ async function main(): Promise<void> {
       authenticationMiddleware,
       catalogService,
       publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
+    }),
+  );
+  apiRouter.use(
+    createSupplierRouter({
+      authenticationMiddleware,
+      publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
+      supplierService,
     }),
   );
   apiRouter.use(

@@ -106,6 +106,11 @@ describe("identity and tenancy database schema", () => {
         finished: true,
         active: true,
       },
+      {
+        migrationName: "20260831032637_add_supplier_model",
+        finished: true,
+        active: true,
+      },
     ]);
     expect(tables.map(({ tableName }) => tableName)).toEqual([
       "branch_assignments",
@@ -124,6 +129,7 @@ describe("identity and tenancy database schema", () => {
       "password_reset_tokens",
       "products",
       "sessions",
+      "suppliers",
       "users",
     ]);
   });

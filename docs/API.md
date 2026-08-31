@@ -749,10 +749,12 @@ other internal provenance fields.
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `GET /organizations/{organizationId}/suppliers` | Purchasing read | Cursor/search/status | Suppliers | Invalid cursor/filter | Planned |
-| `POST /organizations/{organizationId}/suppliers` | Purchasing write | Supplier fields assigned to purchasing scope | Supplier | Validation/duplicate/lifecycle policy | Sequenced for P4 |
-| `GET /organizations/{organizationId}/suppliers/{supplierId}` | Purchasing read | None | Supplier | Safe not-found | Planned |
-| `PATCH /organizations/{organizationId}/suppliers/{supplierId}` | Purchasing write | Editable fields | Supplier | Stale/inactive/history rules | Sequenced for P4 |
+| `GET /organizations/{organizationId}/suppliers` | Supplier view | Cursor/search/status | Suppliers | Invalid cursor/filter | Implemented by P4-M1-T02 |
+| `POST /organizations/{organizationId}/suppliers` | Supplier create/edit | Bounded Supplier fields | Supplier | Validation | Implemented by P4-M1-T02 |
+| `GET /organizations/{organizationId}/suppliers/{supplierId}` | Supplier view | None | Supplier | Safe not-found | Implemented by P4-M1-T02 |
+| `PATCH /organizations/{organizationId}/suppliers/{supplierId}` | Supplier create/edit | Mutable bounded fields | Supplier | Validation/safe not-found | Implemented by P4-M1-T02 |
+| `POST /organizations/{organizationId}/suppliers/{supplierId}/deactivate` | Supplier deactivate (`OWNER`/`ADMIN`) | Empty body | Supplier | Safe not-found | Implemented by P4-M1-T02 |
+| `POST /organizations/{organizationId}/suppliers/{supplierId}/reactivate` | Supplier deactivate (`OWNER`/`ADMIN`) | Empty body | Supplier | Safe not-found | Implemented by P4-M1-T02 |
 
 ### Purchase orders and receipts
 

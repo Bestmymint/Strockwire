@@ -14,6 +14,7 @@ export const PERMISSIONS = {
   CATALOG_DEACTIVATE: "catalog.deactivate",
   SUPPLIER_VIEW: "supplier.view",
   SUPPLIER_CREATE_EDIT: "supplier.create-edit",
+  SUPPLIER_DEACTIVATE: "supplier.deactivate",
   INVENTORY_VIEW: "inventory.view",
   INVENTORY_ADJUST: "inventory.adjust",
   PURCHASE_ORDER_VIEW: "purchase-order.view",
@@ -112,6 +113,10 @@ const PERMISSION_RULES = {
   [PERMISSIONS.SUPPLIER_CREATE_EDIT]: {
     roles: OPERATIONAL_MANAGEMENT_ROLES,
     scope: "organization-or-branch",
+  },
+  [PERMISSIONS.SUPPLIER_DEACTIVATE]: {
+    roles: ORGANIZATION_ADMINISTRATION_ROLES,
+    scope: "organization",
   },
   [PERMISSIONS.INVENTORY_VIEW]: {
     roles: ALL_ROLES,
