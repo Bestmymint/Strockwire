@@ -760,13 +760,37 @@ other internal provenance fields.
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `GET /organizations/{organizationId}/branches/{branchId}/purchase-orders` | Branch purchasing read | Cursor/status/date/supplier | Purchase order summaries | Invalid range/cursor | Planned; lifecycle accepted by `ADR-026` |
-| `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders` | Branch purchasing write | Supplier, one line per Product, quantities, expected THB costs | Purchase order | Cross-tenant/inactive refs, invalid/duplicate lines/cost | Planned; `DRAFT` lifecycle follows `ADR-026`, quantity follows `ADR-022` |
-| `GET /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}` | Branch purchasing read | None | Order, immutable snapshots, receipt summary | Safe not-found | Planned |
-| `PATCH /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}` | Branch purchasing write | DRAFT fields or accepted state intent/version | Purchase order | Non-editable/stale/terminal-state conflict | Planned; lifecycle follows `ADR-026` |
+| `GET /organizations/{organizationId}/branches/{branchId}/purchase-orders` | Branch purchasing read | `cursor`, `limit`, `status`, `supplierId`, inclusive `orderDateFrom`/`orderDateTo` | Purchase order summaries | Invalid range/filter-bound cursor | Implemented by P4-M2-T02 |
+| `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders` | Branch purchasing write | Supplier, one line per Product, quantities, expected THB costs | Server-referenced `DRAFT` purchase order | Cross-tenant/inactive refs, invalid/duplicate lines/cost | Implemented by P4-M2-T02; `DRAFT` lifecycle follows `ADR-026`, quantity follows `ADR-022` |
+| `GET /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}` | Branch purchasing read | None | Order and immutable item snapshots | Safe not-found | Implemented by P4-M2-T02 |
+| `PATCH /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}` | Branch purchasing write | DRAFT field replacement or accepted state intent plus exact `expectedUpdatedAt` | Purchase order | Non-editable/stale/terminal-state conflict | Implemented by P4-M2-T02; lifecycle follows `ADR-026` |
 | `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}/receipts` | Branch receiving | `Idempotency-Key`; actual THB costs and bounded document-level Input VAT snapshot, no received quantities | Completed receipt + balance/cost effects | ORDERED/exact-quantity/cost/idempotency/concurrency | Planned; `ADR-022`, `ADR-024`, and `ADR-026` |
 
 Receipt creation is a future atomic command. It derives every receipt quantity from the frozen ORDERED PO, creates at most one immutable receipt, and does not expose a sequence of public endpoints for separately creating a receipt and then mutating stock. Partial/over/short/multiple receipt, receiving without a PO, supplier returns, and receipt correction/reversal have no MVP endpoint.
+
+Purchase-order creation is server-authorized for the concrete active branch and
+creates a THB-only `DRAFT` with a server-generated immutable PO reference.
+Expected unit cost and quantity are decimal strings with at most four fractional
+places; `EA`, `PACK`, and `BOX` quantities are integral. The server derives the
+four-place `expectedTotal` from the submitted lines and persists product SKU/name
+snapshots. Client totals and references are not accepted.
+
+Lists sort by descending `(createdAt,id)` and use opaque cursors bound to the
+organization, route branch, status, supplier, and inclusive order-date filters.
+`status` defaults to `all`; every cursor reuse with different filters returns
+`400 INVALID_CURSOR`. Detail and write access re-authorize the concrete persisted
+branch, not client-provided scope.
+
+PATCH accepts either one or more DRAFT fields (`branchId`, `supplierId`,
+`orderDate`, nullable `expectedDate`, and full replacement `items`) or exactly
+one lifecycle intent (`ORDERED` or `CANCELLED`), always with the exact
+millisecond `expectedUpdatedAt`. It returns `409 PURCHASE_ORDER_STALE` for a
+version mismatch. Only `DRAFT` may be edited. `DRAFT -> ORDERED`,
+`DRAFT -> CANCELLED`, and `ORDERED -> CANCELLED` are accepted; `RECEIVED` and
+`CANCELLED` are terminal. ORDERED state freezes branch, supplier, lines,
+quantities, expected costs, and snapshots. Ordering revalidates the referenced
+Supplier and Products, recalculates the expected total, and creates no receipt,
+inventory transaction, stock movement, cost update, or VAT record.
 
 ## 11. POS and sales endpoints
 

@@ -677,8 +677,11 @@ Implemented by P4-M2-T01 as `purchase_orders`: organization/branch/supplier and
 creator-membership provenance, organization-unique `reference`, accepted
 status enum, order/expected dates, THB-only currency, expected total, and lifecycle
 timestamps. It has composite tenant-safe Branch/Supplier/creator foreign keys and the
-required `(organization, branch, status, orderDate)` index. Runtime lifecycle
-transitions and immutability enforcement remain P4-M2-T02 work.
+required `(organization, branch, status, orderDate)` index. P4-M2-T02 implements
+the API lifecycle: DRAFT-only edits with exact `updatedAt` optimistic concurrency,
+`DRAFT -> ORDERED`, `DRAFT -> CANCELLED`, and `ORDERED -> CANCELLED`; ORDERED
+snapshots are frozen and RECEIVED/CANCELLED are terminal. Receiving, stock, costing,
+and VAT writes remain later work.
 
 Required logical attributes:
 

@@ -9,6 +9,9 @@ import { createCatalogService } from "./modules/catalog/catalog-service.ts";
 import { createPrismaSupplierRepository } from "./modules/suppliers/supplier-repository.ts";
 import { createSupplierRouter } from "./modules/suppliers/supplier-router.ts";
 import { createSupplierService } from "./modules/suppliers/supplier-service.ts";
+import { createPrismaPurchaseOrderRepository } from "./modules/purchasing/purchase-order-repository.ts";
+import { createPurchaseOrderRouter } from "./modules/purchasing/purchase-order-router.ts";
+import { createPurchaseOrderService } from "./modules/purchasing/purchase-order-service.ts";
 import { createPrismaInventoryRepository } from "./modules/inventory/inventory-repository.ts";
 import { createInventoryRouter } from "./modules/inventory/inventory-router.ts";
 import { createInventoryService } from "./modules/inventory/inventory-service.ts";
@@ -105,6 +108,9 @@ async function main(): Promise<void> {
   const supplierService = createSupplierService({
     repository: createPrismaSupplierRepository(prisma),
   });
+  const purchaseOrderService = createPurchaseOrderService({
+    repository: createPrismaPurchaseOrderRepository(prisma),
+  });
   const apiRouter = Router();
   apiRouter.use(
     createRegistrationRouter({
@@ -162,6 +168,13 @@ async function main(): Promise<void> {
       authenticationMiddleware,
       publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
       supplierService,
+    }),
+  );
+  apiRouter.use(
+    createPurchaseOrderRouter({
+      authenticationMiddleware,
+      publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
+      purchaseOrderService,
     }),
   );
   apiRouter.use(
