@@ -1,0 +1,1044 @@
+"use client";
+
+import {
+  type InfiniteData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useId, useRef, useState } from "react";
+
+import {
+  applicationContextUrl,
+  resolveApplicationContext,
+} from "@/application-context";
+import {
+  type AccessibleOrganization,
+  fetchAccessContext,
+} from "@/branch-api-client";
+import {
+  listProducts,
+  type CatalogProduct,
+  type CatalogRequestContext,
+  type ProductUnit,
+} from "@/catalog-api-client";
+import {
+  createPurchaseOrder,
+  getPurchaseOrder,
+  listPurchaseOrders,
+  PurchaseOrderApiError,
+  purchaseOrderScopeKey,
+  transitionPurchaseOrder,
+  type PurchaseOrder,
+  type PurchaseOrderInput,
+  type PurchaseOrderRequestContext,
+  type PurchaseOrderStatus,
+  updatePurchaseOrder,
+} from "@/purchase-order-api-client";
+import { listSuppliers, type Supplier } from "@/supplier-api-client";
+import { cn } from "@/lib/utils";
+
+type PurchaseOrderRole = AccessibleOrganization["role"];
+type DraftLine = PurchaseOrderInput["items"][number];
+type DraftInput = PurchaseOrderInput;
+type LifecycleIntent = "ORDERED" | "CANCELLED";
+type PurchaseOrderPage = Awaited<ReturnType<typeof listPurchaseOrders>>;
+
+const MANAGEMENT_ROLES = new Set<PurchaseOrderRole>([
+  "OWNER",
+  "ADMIN",
+  "BRANCH_MANAGER",
+  "INVENTORY_STAFF",
+]);
+const INTEGER_UNITS = new Set<ProductUnit>(["EA", "PACK", "BOX"]);
+const STATUS_OPTIONS: Array<PurchaseOrderStatus | "all"> = [
+  "all",
+  "DRAFT",
+  "ORDERED",
+  "RECEIVED",
+  "CANCELLED",
+];
+
+function purchaseOrdersUrl(organizationId: string, branchId: string | null) {
+  const params = new URLSearchParams({ organizationId });
+  if (branchId !== null) params.set("branchId", branchId);
+  return `/app/purchase-orders?${params.toString()}`;
+}
+
+function emptyDraft(): DraftInput {
+  return {
+    expectedDate: null,
+    items: [{ expectedUnitCost: "", productId: "", quantity: "" }],
+    orderDate: new Date().toISOString().slice(0, 10),
+    supplierId: "",
+  };
+}
+
+function draftFromOrder(order: PurchaseOrder | null): DraftInput {
+  if (order === null) return emptyDraft();
+  return {
+    expectedDate: order.expectedDate,
+    items: order.items.map(({ expectedUnitCost, productId, quantity }) => ({
+      expectedUnitCost,
+      productId,
+      quantity,
+    })),
+    orderDate: order.orderDate,
+    supplierId: order.supplierId,
+  };
+}
+
+function errorMessage(error: unknown): string {
+  if (!(error instanceof PurchaseOrderApiError)) {
+    return "Purchase order data is temporarily unavailable. Try again.";
+  }
+  const messages: Record<PurchaseOrderApiError["kind"], string> = {
+    authentication_required: "Sign in again to continue.",
+    branch_inactive:
+      "This branch is inactive and cannot accept purchase orders.",
+    forbidden:
+      "Purchase order management is not available for your current access.",
+    invalid_cursor: "This list changed. Refresh the latest purchase orders.",
+    not_found: "That purchase order is no longer available.",
+    product_inactive:
+      "A selected product is inactive. Review the draft before trying again.",
+    product_not_found: "A selected product is no longer available.",
+    stale:
+      "This purchase order changed elsewhere. The current server state was refreshed; review it before retrying.",
+    state_conflict:
+      "This purchase order can no longer make that transition. Refresh and review it.",
+    supplier_inactive:
+      "The selected supplier is inactive. Choose an active supplier.",
+    supplier_not_found: "The selected supplier is no longer available.",
+    unavailable: "Purchase order data is temporarily unavailable. Try again.",
+    validation: "Check the purchase order values and try again.",
+  };
+  return messages[error.kind];
+}
+
+function validCost(value: string): boolean {
+  return /^\d+(?:\.\d{1,4})?$/.test(value);
+}
+
+function validQuantity(value: string, unit: ProductUnit | undefined): boolean {
+  if (!/^\d+(?:\.\d{1,4})?$/.test(value)) return false;
+  if (/^0+(?:\.0+)?$/.test(value)) return false;
+  const fraction = value.split(".")[1];
+  return !(
+    unit !== undefined &&
+    INTEGER_UNITS.has(unit) &&
+    fraction !== undefined &&
+    !/^0+$/.test(fraction)
+  );
+}
+
+function statusLabel(status: PurchaseOrderStatus): string {
+  return status[0] + status.slice(1).toLowerCase();
+}
+
+function StatusBadge({ status }: { status: PurchaseOrderStatus }) {
+  return (
+    <span className="rounded-full border px-2 py-1 text-xs font-medium">
+      {statusLabel(status)}
+    </span>
+  );
+}
+
+function PrimaryButton({
+  className,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      className={cn(
+        "min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+function SecondaryButton({
+  className,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      className={cn(
+        "min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export function PurchaseOrderManagement() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const requestedOrganizationId = params.get("organizationId");
+  const requestedBranchId = params.get("branchId");
+  const access = useQuery({
+    queryFn: fetchAccessContext,
+    queryKey: ["access-context"],
+  });
+  const resolved = access.data
+    ? resolveApplicationContext(
+        access.data,
+        requestedOrganizationId,
+        requestedBranchId,
+      )
+    : null;
+
+  useEffect(() => {
+    if (resolved?.organization === null || resolved?.organization === undefined)
+      return;
+    const canonical = purchaseOrdersUrl(
+      resolved.organization.id,
+      resolved.branch?.id ?? null,
+    );
+    const current = purchaseOrdersUrl(
+      requestedOrganizationId ?? "",
+      requestedBranchId,
+    );
+    if (canonical !== current) router.replace(canonical);
+  }, [requestedBranchId, requestedOrganizationId, resolved, router]);
+
+  if (access.isPending) return <p aria-live="polite">Loading access…</p>;
+  if (access.isError)
+    return <p role="alert">Your access context could not be loaded.</p>;
+  if (resolved?.organization === null) {
+    return (
+      <section className="space-y-4">
+        <h1 className="text-2xl font-semibold">Purchase orders unavailable</h1>
+        <p className="text-muted-foreground">
+          Choose an active organization from the workspace first.
+        </p>
+        <Link className="underline" href="/app">
+          Return to workspace
+        </Link>
+      </section>
+    );
+  }
+  if (resolved === null) return null;
+  if (resolved.branch === null) {
+    return (
+      <section className="space-y-4">
+        <h1 className="text-2xl font-semibold">Branch context required</h1>
+        <p className="text-muted-foreground">
+          Choose an active branch before managing purchase orders.
+        </p>
+        <Link
+          className="underline"
+          href={applicationContextUrl(resolved.organization.id, null)}
+        >
+          Return to workspace
+        </Link>
+      </section>
+    );
+  }
+  if (!MANAGEMENT_ROLES.has(resolved.organization.role)) {
+    return (
+      <section className="space-y-4">
+        <Link
+          className="text-sm underline"
+          href={applicationContextUrl(
+            resolved.organization.id,
+            resolved.branch.id,
+          )}
+        >
+          Back to workspace
+        </Link>
+        <h1 className="text-2xl font-semibold">Purchase orders</h1>
+        <p role="alert">
+          You do not have permission to manage purchase orders.
+        </p>
+      </section>
+    );
+  }
+  return (
+    <PurchaseOrderContent
+      branch={resolved.branch}
+      organization={resolved.organization}
+    />
+  );
+}
+
+function PurchaseOrderContent({
+  branch,
+  organization,
+}: {
+  branch: AccessibleOrganization["branches"][number];
+  organization: AccessibleOrganization;
+}) {
+  const queryClient = useQueryClient();
+  const context: PurchaseOrderRequestContext = {
+    branchId: branch.id,
+    organizationId: organization.id,
+  };
+  const catalogContext: CatalogRequestContext = {
+    branchId: branch.id,
+    organizationId: organization.id,
+  };
+  const scope = purchaseOrderScopeKey(context);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [status, setStatus] = useState<PurchaseOrderStatus | "all">("all");
+  const [supplierId, setSupplierId] = useState("");
+  const [orderDateFrom, setOrderDateFrom] = useState("");
+  const [orderDateTo, setOrderDateTo] = useState("");
+
+  const supplierQuery = useQuery({
+    queryFn: () =>
+      listSuppliers(organization.id, { limit: 100, status: "all" }),
+    queryKey: [
+      "organization-scoped",
+      organization.id,
+      "suppliers",
+      "purchase-order-options",
+    ],
+  });
+  const productQuery = useQuery({
+    queryFn: () => listProducts(catalogContext, { limit: 100 }),
+    queryKey: [
+      "branch-scoped",
+      organization.id,
+      branch.id,
+      "catalog",
+      "purchase-order-options",
+    ],
+  });
+  const orders = useInfiniteQuery<
+    PurchaseOrderPage,
+    Error,
+    InfiniteData<PurchaseOrderPage>,
+    readonly unknown[],
+    string | null
+  >({
+    getNextPageParam: (page) => page.meta.nextCursor,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) =>
+      listPurchaseOrders(context, {
+        cursor: pageParam,
+        ...(orderDateFrom === "" ? {} : { orderDateFrom }),
+        ...(orderDateTo === "" ? {} : { orderDateTo }),
+        status,
+        ...(supplierId === "" ? {} : { supplierId }),
+      }),
+    queryKey: [
+      ...scope,
+      "list",
+      { orderDateFrom, orderDateTo, status, supplierId },
+    ],
+  });
+  const detailKey =
+    selectedId === null ? null : [...scope, "detail", selectedId];
+  const detail = useQuery({
+    enabled: selectedId !== null,
+    queryFn: () => getPurchaseOrder(context, selectedId as string),
+    queryKey: detailKey ?? [...scope, "detail", "none"],
+  });
+  const suppliers = supplierQuery.data?.data.suppliers ?? [];
+  const activeSuppliers = suppliers.filter(
+    (supplier) => supplier.status === "ACTIVE",
+  );
+  const products = productQuery.data?.data.products ?? [];
+  const records =
+    orders.data?.pages.flatMap((page) => page.data.purchaseOrders) ?? [];
+  const supplierNames = new Map(
+    suppliers.map((supplier) => [supplier.id, supplier.name]),
+  );
+
+  const refresh = async () => {
+    setNotice(null);
+    await queryClient.invalidateQueries({ queryKey: scope });
+  };
+  const applyServerOrder = async (order: PurchaseOrder) => {
+    setSelectedId(order.id);
+    queryClient.setQueryData([...scope, "detail", order.id], order);
+    await queryClient.invalidateQueries({ queryKey: [...scope, "list"] });
+  };
+  const handleError = (error: unknown, purchaseOrderId?: string) => {
+    setNotice(errorMessage(error));
+    if (
+      error instanceof PurchaseOrderApiError &&
+      error.kind === "stale" &&
+      purchaseOrderId !== undefined
+    ) {
+      void queryClient.invalidateQueries({
+        queryKey: [...scope, "detail", purchaseOrderId],
+      });
+      void queryClient.invalidateQueries({ queryKey: [...scope, "list"] });
+    }
+  };
+
+  return (
+    <section className="w-full space-y-6">
+      <header className="space-y-2">
+        <Link
+          className="text-sm underline"
+          href={applicationContextUrl(organization.id, branch.id)}
+        >
+          Back to workspace
+        </Link>
+        <h1 className="text-2xl font-semibold">Purchase orders</h1>
+        <p className="text-muted-foreground">
+          Manage branch orders for {branch.name}. Totals are calculated by the
+          server in THB.
+        </p>
+      </header>
+      {notice ? <p role="alert">{notice}</p> : null}
+
+      <PurchaseOrderForm
+        activeSuppliers={activeSuppliers}
+        label="Create draft purchase order"
+        onError={handleError}
+        onSave={async (input) => {
+          const order = await createPurchaseOrder(context, input);
+          await applyServerOrder(order);
+        }}
+        products={products}
+      />
+
+      <div className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-5">
+        <label className="grid gap-1 text-sm font-medium">
+          Status filter
+          <select
+            className="min-h-11 rounded-md border bg-background px-3"
+            onChange={(event) =>
+              setStatus(event.target.value as PurchaseOrderStatus | "all")
+            }
+            value={status}
+          >
+            {STATUS_OPTIONS.map((value) => (
+              <option key={value} value={value}>
+                {value === "all" ? "All statuses" : statusLabel(value)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm font-medium">
+          Supplier filter
+          <select
+            className="min-h-11 rounded-md border bg-background px-3"
+            onChange={(event) => setSupplierId(event.target.value)}
+            value={supplierId}
+          >
+            <option value="">All suppliers</option>
+            {suppliers.map((supplier) => (
+              <option key={supplier.id} value={supplier.id}>
+                {supplier.name}
+                {supplier.status === "INACTIVE" ? " (inactive)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm font-medium">
+          Order date from
+          <input
+            className="min-h-11 rounded-md border bg-background px-3"
+            onChange={(event) => setOrderDateFrom(event.target.value)}
+            type="date"
+            value={orderDateFrom}
+          />
+        </label>
+        <label className="grid gap-1 text-sm font-medium">
+          Order date to
+          <input
+            className="min-h-11 rounded-md border bg-background px-3"
+            onChange={(event) => setOrderDateTo(event.target.value)}
+            type="date"
+            value={orderDateTo}
+          />
+        </label>
+        <SecondaryButton
+          className="self-end"
+          onClick={() => void refresh()}
+          type="button"
+        >
+          Refresh orders
+        </SecondaryButton>
+      </div>
+
+      {orders.isPending ? (
+        <p aria-live="polite">Loading purchase orders…</p>
+      ) : null}
+      {orders.isError ? <p role="alert">{errorMessage(orders.error)}</p> : null}
+      {!orders.isPending && !orders.isError && records.length === 0 ? (
+        <p>No purchase orders match this view.</p>
+      ) : null}
+      <div className="grid gap-3 lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]">
+        <div className="grid content-start gap-3">
+          {records.map((order) => (
+            <button
+              className="rounded-lg border bg-card p-4 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              key={order.id}
+              onClick={() => setSelectedId(order.id)}
+              type="button"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold">{order.reference}</span>
+                <StatusBadge status={order.status} />
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {supplierNames.get(order.supplierId) ?? "Historical supplier"} ·{" "}
+                {order.orderDate}
+              </p>
+              <p className="mt-1 text-sm">
+                Expected total: {order.expectedTotal} THB
+              </p>
+            </button>
+          ))}
+          {orders.hasNextPage ? (
+            <SecondaryButton
+              disabled={orders.isFetchingNextPage}
+              onClick={() => void orders.fetchNextPage()}
+              type="button"
+            >
+              {orders.isFetchingNextPage ? "Loading…" : "Load more orders"}
+            </SecondaryButton>
+          ) : null}
+        </div>
+        <div>
+          {selectedId === null ? (
+            <p className="rounded-lg border p-5 text-muted-foreground">
+              Select a purchase order to view its details.
+            </p>
+          ) : null}
+          {detail.isPending ? (
+            <p aria-live="polite">Loading purchase order…</p>
+          ) : null}
+          {detail.isError ? (
+            <p role="alert">{errorMessage(detail.error)}</p>
+          ) : null}
+          {detail.data ? (
+            <PurchaseOrderEditor
+              activeSuppliers={activeSuppliers}
+              allSuppliers={suppliers}
+              onError={handleError}
+              onSaved={applyServerOrder}
+              order={detail.data}
+              products={products}
+              requestContext={context}
+            />
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PurchaseOrderForm({
+  activeSuppliers,
+  initialOrder = null,
+  label,
+  onError,
+  onSave,
+  products,
+}: {
+  activeSuppliers: Supplier[];
+  initialOrder?: PurchaseOrder | null;
+  label: string;
+  onError: (error: unknown) => void;
+  onSave: (input: DraftInput) => Promise<void>;
+  products: CatalogProduct[];
+}) {
+  const [input, setInput] = useState<DraftInput>(() =>
+    draftFromOrder(initialOrder),
+  );
+  const [validation, setValidation] = useState<string | null>(null);
+  const mutation = useMutation({ mutationFn: onSave });
+  const supplierId = useId();
+  const orderDateId = useId();
+  const expectedDateId = useId();
+  const validationId = useId();
+
+  useEffect(() => {
+    setInput(draftFromOrder(initialOrder));
+    setValidation(null);
+  }, [initialOrder?.id, initialOrder?.updatedAt]);
+
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const updateLine = (index: number, change: Partial<DraftLine>) => {
+    setInput((current) => ({
+      ...current,
+      items: current.items.map((line, lineIndex) =>
+        lineIndex === index ? { ...line, ...change } : line,
+      ),
+    }));
+  };
+  const addLine = () =>
+    setInput((current) => ({
+      ...current,
+      items: [
+        ...current.items,
+        { expectedUnitCost: "", productId: "", quantity: "" },
+      ],
+    }));
+  const removeLine = (index: number) =>
+    setInput((current) => ({
+      ...current,
+      items: current.items.filter((_, lineIndex) => lineIndex !== index),
+    }));
+  const validate = (): string | null => {
+    if (input.supplierId === "") return "Choose an active supplier.";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.orderDate))
+      return "Enter a valid order date.";
+    if (
+      input.expectedDate !== null &&
+      !/^\d{4}-\d{2}-\d{2}$/.test(input.expectedDate)
+    )
+      return "Enter a valid expected date.";
+    if (input.items.length === 0) return "Add at least one product line.";
+    const seen = new Set<string>();
+    for (const line of input.items) {
+      if (line.productId === "") return "Choose a product for every line.";
+      if (seen.has(line.productId))
+        return "Each product may appear only once. Edit the existing line instead.";
+      seen.add(line.productId);
+      if (!validQuantity(line.quantity, productById.get(line.productId)?.unit))
+        return "Each quantity must be positive and follow its product unit.";
+      if (!validCost(line.expectedUnitCost))
+        return "Each expected unit cost must be a non-negative decimal with up to four places.";
+    }
+    return null;
+  };
+  const describedBy = validation === null ? undefined : validationId;
+
+  return (
+    <form
+      aria-label={label}
+      className="rounded-lg border bg-card p-5"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const message = validate();
+        setValidation(message);
+        if (message !== null) return;
+        void mutation
+          .mutateAsync(input)
+          .then(() => {
+            if (initialOrder === null) setInput(emptyDraft());
+          })
+          .catch((error: unknown) => onError(error));
+      }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-semibold">{label}</h2>
+        {initialOrder ? <StatusBadge status={initialOrder.status} /> : null}
+      </div>
+      {validation ? (
+        <p className="mt-3" id={validationId} role="alert">
+          {validation}
+        </p>
+      ) : null}
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <label className="grid gap-1 text-sm font-medium" htmlFor={supplierId}>
+          Supplier
+          <select
+            aria-describedby={describedBy}
+            aria-invalid={validation !== null}
+            className="min-h-11 rounded-md border bg-background px-3"
+            id={supplierId}
+            onChange={(event) =>
+              setInput((current) => ({
+                ...current,
+                supplierId: event.target.value,
+              }))
+            }
+            value={input.supplierId}
+          >
+            <option value="">Choose an active supplier</option>
+            {initialOrder !== null &&
+            input.supplierId !== "" &&
+            !activeSuppliers.some(
+              (supplier) => supplier.id === input.supplierId,
+            ) ? (
+              <option value={input.supplierId}>
+                Historical inactive supplier
+              </option>
+            ) : null}
+            {activeSuppliers.map((supplier) => (
+              <option key={supplier.id} value={supplier.id}>
+                {supplier.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm font-medium" htmlFor={orderDateId}>
+          Order date
+          <input
+            aria-describedby={describedBy}
+            aria-invalid={validation !== null}
+            className="min-h-11 rounded-md border bg-background px-3"
+            id={orderDateId}
+            onChange={(event) =>
+              setInput((current) => ({
+                ...current,
+                orderDate: event.target.value,
+              }))
+            }
+            type="date"
+            value={input.orderDate}
+          />
+        </label>
+        <label
+          className="grid gap-1 text-sm font-medium"
+          htmlFor={expectedDateId}
+        >
+          Expected date (optional)
+          <input
+            aria-describedby={describedBy}
+            aria-invalid={validation !== null}
+            className="min-h-11 rounded-md border bg-background px-3"
+            id={expectedDateId}
+            onChange={(event) =>
+              setInput((current) => ({
+                ...current,
+                expectedDate: event.target.value || null,
+              }))
+            }
+            type="date"
+            value={input.expectedDate ?? ""}
+          />
+        </label>
+      </div>
+      <div className="mt-5 space-y-3">
+        <h3 className="font-medium">Product lines</h3>
+        {input.items.map((line, index) => {
+          const availableProducts = products.filter(
+            (product) =>
+              product.id === line.productId ||
+              !input.items.some(
+                (other, otherIndex) =>
+                  otherIndex !== index && other.productId === product.id,
+              ),
+          );
+          const selected = productById.get(line.productId);
+          return (
+            <fieldset
+              className="grid gap-3 rounded-md border p-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_9rem_10rem_auto]"
+              key={`${line.productId}-${index}`}
+            >
+              <legend className="sr-only">Product line {index + 1}</legend>
+              <label className="grid gap-1 text-sm font-medium">
+                Product
+                <select
+                  aria-describedby={describedBy}
+                  aria-invalid={validation !== null}
+                  aria-label={`Product line ${index + 1} product`}
+                  className="min-h-11 rounded-md border bg-background px-3"
+                  onChange={(event) =>
+                    updateLine(index, { productId: event.target.value })
+                  }
+                  value={line.productId}
+                >
+                  <option value="">Choose a product</option>
+                  {line.productId !== "" && selected === undefined ? (
+                    <option value={line.productId}>Historical product</option>
+                  ) : null}
+                  {availableProducts.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.name} · {product.sku} ({product.unit})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1 text-sm font-medium">
+                Quantity{selected ? ` (${selected.unit})` : ""}
+                <input
+                  aria-describedby={describedBy}
+                  aria-invalid={validation !== null}
+                  aria-label={`Product line ${index + 1} quantity${selected ? ` (${selected.unit})` : ""}`}
+                  className="min-h-11 rounded-md border bg-background px-3"
+                  inputMode="decimal"
+                  onChange={(event) =>
+                    updateLine(index, { quantity: event.target.value })
+                  }
+                  value={line.quantity}
+                />
+              </label>
+              <label className="grid gap-1 text-sm font-medium">
+                Expected unit cost (THB)
+                <input
+                  aria-describedby={describedBy}
+                  aria-invalid={validation !== null}
+                  aria-label={`Product line ${index + 1} expected unit cost (THB)`}
+                  className="min-h-11 rounded-md border bg-background px-3"
+                  inputMode="decimal"
+                  onChange={(event) =>
+                    updateLine(index, { expectedUnitCost: event.target.value })
+                  }
+                  value={line.expectedUnitCost}
+                />
+              </label>
+              <SecondaryButton
+                aria-label={`Remove product line ${index + 1}`}
+                className="self-end"
+                disabled={input.items.length === 1}
+                onClick={() => removeLine(index)}
+                type="button"
+              >
+                Remove
+              </SecondaryButton>
+            </fieldset>
+          );
+        })}
+        <SecondaryButton
+          disabled={input.items.length >= products.length}
+          onClick={addLine}
+          type="button"
+        >
+          Add product line
+        </SecondaryButton>
+      </div>
+      {initialOrder ? (
+        <p className="mt-4 text-sm text-muted-foreground">
+          Server-calculated expected total: {initialOrder.expectedTotal} THB
+        </p>
+      ) : null}
+      <PrimaryButton
+        aria-busy={mutation.isPending}
+        className="mt-5"
+        disabled={mutation.isPending}
+        type="submit"
+      >
+        {mutation.isPending ? "Saving…" : label}
+      </PrimaryButton>
+    </form>
+  );
+}
+
+function PurchaseOrderEditor({
+  activeSuppliers,
+  allSuppliers,
+  onError,
+  onSaved,
+  order,
+  products,
+  requestContext,
+}: {
+  activeSuppliers: Supplier[];
+  allSuppliers: Supplier[];
+  onError: (error: unknown, purchaseOrderId?: string) => void;
+  onSaved: (order: PurchaseOrder) => Promise<void>;
+  order: PurchaseOrder;
+  products: CatalogProduct[];
+  requestContext: PurchaseOrderRequestContext;
+}) {
+  const [intent, setIntent] = useState<LifecycleIntent | null>(null);
+  const update = useMutation({
+    mutationFn: (input: DraftInput) =>
+      updatePurchaseOrder(requestContext, order.id, {
+        ...input,
+        expectedUpdatedAt: order.updatedAt,
+      }),
+    onSuccess: onSaved,
+  });
+  const lifecycle = useMutation({
+    mutationFn: (status: LifecycleIntent) =>
+      transitionPurchaseOrder(requestContext, order, status),
+    onSuccess: onSaved,
+  });
+  const supplierName =
+    allSuppliers.find((supplier) => supplier.id === order.supplierId)?.name ??
+    "Historical supplier";
+  const pending = update.isPending || lifecycle.isPending;
+  return (
+    <article className="space-y-4 rounded-lg border bg-card p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">{order.reference}</h2>
+          <p className="text-sm text-muted-foreground">
+            Supplier: {supplierName} · Expected total: {order.expectedTotal} THB
+          </p>
+        </div>
+        <StatusBadge status={order.status} />
+      </div>
+      {order.status === "DRAFT" ? (
+        <>
+          <PurchaseOrderForm
+            activeSuppliers={activeSuppliers}
+            initialOrder={order}
+            label="Save draft changes"
+            onError={(error) => onError(error, order.id)}
+            onSave={(input) => update.mutateAsync(input).then(() => undefined)}
+            products={products}
+          />
+          <p className="rounded-md border p-3 text-sm text-muted-foreground">
+            Ordering freezes the supplier, branch, dates, product lines,
+            quantities, and expected costs.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <PrimaryButton
+              disabled={pending}
+              onClick={() => setIntent("ORDERED")}
+              type="button"
+            >
+              Order purchase order
+            </PrimaryButton>
+            <SecondaryButton
+              disabled={pending}
+              onClick={() => setIntent("CANCELLED")}
+              type="button"
+            >
+              Cancel purchase order
+            </SecondaryButton>
+          </div>
+        </>
+      ) : (
+        <ReadOnlyPurchaseOrder order={order} supplierName={supplierName} />
+      )}
+      {order.status === "ORDERED" ? (
+        <SecondaryButton
+          disabled={pending}
+          onClick={() => setIntent("CANCELLED")}
+          type="button"
+        >
+          Cancel purchase order
+        </SecondaryButton>
+      ) : null}
+      <ConfirmationDialog
+        action={intent}
+        busy={lifecycle.isPending}
+        onCancel={() => setIntent(null)}
+        onConfirm={() => {
+          if (intent === null) return;
+          const action = intent;
+          void lifecycle
+            .mutateAsync(action)
+            .then(() => setIntent(null))
+            .catch((error: unknown) => onError(error, order.id));
+        }}
+      />
+    </article>
+  );
+}
+
+function ReadOnlyPurchaseOrder({
+  order,
+  supplierName,
+}: {
+  order: PurchaseOrder;
+  supplierName: string;
+}) {
+  return (
+    <div className="space-y-4">
+      <dl className="grid gap-3 text-sm sm:grid-cols-2">
+        <div>
+          <dt className="text-muted-foreground">Supplier</dt>
+          <dd>{supplierName}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Order date</dt>
+          <dd>{order.orderDate}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Expected date</dt>
+          <dd>{order.expectedDate ?? "Not set"}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Expected total</dt>
+          <dd>{order.expectedTotal} THB</dd>
+        </div>
+      </dl>
+      <div className="space-y-2">
+        <h3 className="font-medium">Frozen product lines</h3>
+        {order.items.map((item) => (
+          <div className="rounded-md border p-3 text-sm" key={item.id}>
+            {item.productNameSnapshot} · {item.productSkuSnapshot}
+            <br />
+            {item.quantity} × {item.expectedUnitCost} THB
+          </div>
+        ))}
+      </div>
+      <p className="text-sm text-muted-foreground">
+        Commercial fields are read-only in {statusLabel(order.status)} status.
+      </p>
+    </div>
+  );
+}
+
+function ConfirmationDialog({
+  action,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  action: LifecycleIntent | null;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const cancel = useRef<HTMLButtonElement>(null);
+  const confirm = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (action !== null) cancel.current?.focus();
+  }, [action]);
+  if (action === null) return null;
+  const ordering = action === "ORDERED";
+  return (
+    <div
+      aria-describedby="purchase-order-confirmation-description"
+      aria-labelledby="purchase-order-confirmation-title"
+      aria-modal="true"
+      className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !busy) onCancel();
+        if (event.key === "Tab") {
+          event.preventDefault();
+          if (event.shiftKey) confirm.current?.focus();
+          else cancel.current?.focus();
+        }
+      }}
+      role="dialog"
+    >
+      <div className="w-full max-w-md rounded-lg bg-card p-5 shadow-lg">
+        <h2
+          className="text-lg font-semibold"
+          id="purchase-order-confirmation-title"
+        >
+          {ordering
+            ? "Order this purchase order?"
+            : "Cancel this purchase order?"}
+        </h2>
+        <p
+          className="mt-2 text-sm text-muted-foreground"
+          id="purchase-order-confirmation-description"
+        >
+          {ordering
+            ? "Ordering freezes all commercial fields. Review the current server state before continuing."
+            : "Cancellation is terminal and cannot be undone."}
+        </p>
+        <div className="mt-5 flex flex-wrap justify-end gap-3">
+          <button
+            className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+            disabled={busy}
+            onClick={onCancel}
+            ref={cancel}
+            type="button"
+          >
+            Keep editing
+          </button>
+          <button
+            aria-busy={busy}
+            className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+            disabled={busy}
+            onClick={onConfirm}
+            ref={confirm}
+            type="button"
+          >
+            {busy
+              ? "Saving…"
+              : ordering
+                ? "Confirm order"
+                : "Confirm cancellation"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

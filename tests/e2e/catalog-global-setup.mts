@@ -20,6 +20,8 @@ import {
   E2E_OWNER_EMAIL,
   E2E_OWNER_ID,
   E2E_PASSWORD,
+  E2E_PURCHASE_PRODUCT_ID,
+  E2E_SUPPLIER_ID,
 } from "./catalog-fixtures.ts";
 
 export default async function globalSetup(): Promise<void> {
@@ -119,6 +121,23 @@ export default async function globalSetup(): Promise<void> {
         organizationId: E2E_ORGANIZATION_ID,
         sku: "INVENTORY-E2E-01",
         unit: "EA",
+      },
+    });
+    await prisma.supplier.create({
+      data: {
+        id: E2E_SUPPLIER_ID,
+        name: "Purchase order E2E supplier",
+        organizationId: E2E_ORGANIZATION_ID,
+      },
+    });
+    await prisma.product.create({
+      data: {
+        basePrice: "20.0000",
+        id: E2E_PURCHASE_PRODUCT_ID,
+        name: "Purchase order E2E coffee",
+        organizationId: E2E_ORGANIZATION_ID,
+        sku: "PURCHASE-E2E-02",
+        unit: "KG",
       },
     });
   } finally {

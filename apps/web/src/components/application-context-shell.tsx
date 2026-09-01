@@ -201,6 +201,14 @@ export function ApplicationContextShell() {
             Suppliers
           </Link>
         ) : null}
+        {activeOrganization.role !== "CASHIER" ? (
+          <Link
+            className="inline-flex min-h-11 items-center rounded-md bg-foreground px-4 text-sm font-medium text-background"
+            href={`/app/purchase-orders?organizationId=${activeOrganization.id}&branchId=${resolved.branch?.id ?? ""}`}
+          >
+            Purchase orders
+          </Link>
+        ) : null}
         {canManage ? (
           <>
             <Link
