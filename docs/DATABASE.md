@@ -673,6 +673,13 @@ the source. No receiving schema is created by this document.
 
 Purpose: records an order from an organization supplier for delivery to one branch.
 
+Implemented by P4-M2-T01 as `purchase_orders`: organization/branch/supplier and
+creator-membership provenance, organization-unique `reference`, accepted
+status enum, order/expected dates, THB-only currency, expected total, and lifecycle
+timestamps. It has composite tenant-safe Branch/Supplier/creator foreign keys and the
+required `(organization, branch, status, orderDate)` index. Runtime lifecycle
+transitions and immutability enforcement remain P4-M2-T02 work.
+
 Required logical attributes:
 
 - Organization and target branch identifiers
@@ -696,6 +703,12 @@ Constraints and indexes:
 #### `PurchaseOrderItem`
 
 Purpose: requested product and commercial snapshot within a purchase order.
+
+Implemented by P4-M2-T01 as `purchase_order_items`: same-organization PO/Product
+composite foreign keys, non-null SKU/name snapshots, `DECIMAL(18,4)` quantity,
+`DECIMAL(19,4)` expected unit cost, and one Product per PO. Quantity and monetary
+checks are database-enforced; API decimal-string scale validation remains a later
+boundary because PostgreSQL coerces excess scale before a row check can observe it.
 
 Required logical attributes:
 

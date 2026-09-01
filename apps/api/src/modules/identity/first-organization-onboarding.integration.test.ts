@@ -26,7 +26,7 @@ import { hashSessionToken } from "./session-token.ts";
 
 const environment = loadTestDatabaseEnvironment();
 const prisma = createTestPrismaClient(environment);
-const NOW = new Date("2026-08-24T12:00:00.000Z");
+const NOW = new Date();
 const DAY_MILLISECONDS = 24 * 60 * 60 * 1000;
 const PASSWORD_HASH_FIXTURE =
   "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$c2NoZW1hLXRlc3Q";

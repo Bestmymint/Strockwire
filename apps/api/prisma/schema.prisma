@@ -66,6 +66,15 @@ enum SupplierStatus {
   @@map("supplier_status")
 }
 
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  RECEIVED
+  CANCELLED
+
+  @@map("purchase_order_status")
+}
+
 enum ProductUnit {
   EA
   PACK
@@ -137,6 +146,7 @@ model Organization {
   categories            Category[]
   products              Product[]
   suppliers             Supplier[]
+  purchaseOrders        PurchaseOrder[]
   inventoryBalances     InventoryBalance[]
   inventoryTransactions InventoryTransaction[]
 
@@ -156,6 +166,7 @@ model Supplier {
   updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  purchaseOrders PurchaseOrder[]
 
   @@unique([id, organizationId], map: "suppliers_id_organization_id_key")
   @@index([organizationId, status, createdAt, id], map: "suppliers_organization_id_status_created_at_id_idx")
@@ -199,6 +210,7 @@ model Product {
   category              Category?              @relation(fields: [categoryId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
   inventoryBalances     InventoryBalance[]
   inventoryTransactions InventoryTransaction[]
+  purchaseOrderItems    PurchaseOrderItem[]
 
   @@unique([organizationId, sku], map: "products_organization_id_sku_key")
   @@unique([organizationId, barcode], map: "products_organization_id_barcode_key")
@@ -206,6 +218,56 @@ model Product {
   @@index([organizationId, status, name], map: "products_organization_id_status_name_idx")
   @@index([categoryId, organizationId], map: "products_category_id_organization_id_idx")
   @@map("products")
+}
+
+model PurchaseOrder {
+  id                    String              @id @default(uuid()) @db.Uuid
+  organizationId        String              @map("organization_id") @db.Uuid
+  branchId              String              @map("branch_id") @db.Uuid
+  supplierId            String              @map("supplier_id") @db.Uuid
+  reference             String              @db.Text
+  status                PurchaseOrderStatus @default(DRAFT)
+  orderDate             DateTime            @map("order_date") @db.Date
+  expectedDate          DateTime?           @map("expected_date") @db.Date
+  currency              String              @default("THB") @db.Char(3)
+  expectedTotal         Decimal             @map("expected_total") @db.Decimal(19, 4)
+  createdByUserId       String              @map("created_by_user_id") @db.Uuid
+  createdByMembershipId String              @map("created_by_membership_id") @db.Uuid
+  orderedAt             DateTime?           @map("ordered_at") @db.Timestamptz(3)
+  cancelledAt           DateTime?           @map("cancelled_at") @db.Timestamptz(3)
+  receivedAt            DateTime?           @map("received_at") @db.Timestamptz(3)
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization        Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  branch              Branch                 @relation(fields: [branchId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
+  supplier            Supplier               @relation(fields: [supplierId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
+  createdByMembership OrganizationMembership @relation("PurchaseOrderCreator", fields: [organizationId, createdByMembershipId, createdByUserId], references: [organizationId, id, userId], onDelete: Restrict, onUpdate: Restrict)
+  items               PurchaseOrderItem[]
+
+  @@unique([id, organizationId], map: "purchase_orders_id_organization_id_key")
+  @@unique([organizationId, reference], map: "purchase_orders_organization_id_reference_key")
+  @@index([organizationId, branchId, status, orderDate], map: "purchase_orders_organization_branch_status_order_date_idx")
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id                  String   @id @default(uuid()) @db.Uuid
+  purchaseOrderId     String   @map("purchase_order_id") @db.Uuid
+  organizationId      String   @map("organization_id") @db.Uuid
+  productId           String   @map("product_id") @db.Uuid
+  productSkuSnapshot  String   @map("product_sku_snapshot") @db.VarChar(64)
+  productNameSnapshot String   @map("product_name_snapshot") @db.Text
+  quantity            Decimal  @db.Decimal(18, 4)
+  expectedUnitCost    Decimal  @map("expected_unit_cost") @db.Decimal(19, 4)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
+  product       Product       @relation(fields: [productId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([purchaseOrderId, productId], map: "purchase_order_items_purchase_order_id_product_id_key")
+  @@map("purchase_order_items")
 }
 
 model OrganizationMembership {
@@ -229,6 +291,7 @@ model OrganizationMembership {
   targetAccessEvents          MembershipAccessEvent[]      @relation("MembershipAccessEventTarget")
   actorAccessEvents           MembershipAccessEvent[]      @relation("MembershipAccessEventActor")
   actorInventoryTransactions  InventoryTransaction[]       @relation("InventoryTransactionActorMembership")
+  createdPurchaseOrders       PurchaseOrder[]              @relation("PurchaseOrderCreator")
 
   @@id([organizationId, userId], map: "organization_memberships_pkey")
   @@unique([organizationId, id], map: "organization_memberships_organization_id_id_key")
@@ -257,6 +320,7 @@ model Branch {
   firstOrganizationOnboarding FirstOrganizationOnboarding?
   inventoryBalances           InventoryBalance[]
   inventoryTransactions       InventoryTransaction[]
+  purchaseOrders              PurchaseOrder[]
 
   @@unique([organizationId, code], map: "branches_organization_id_code_key")
   @@unique([id, organizationId], map: "branches_id_organization_id_key")
