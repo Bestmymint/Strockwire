@@ -39,6 +39,11 @@ import {
   updatePurchaseOrder,
 } from "@/purchase-order-api-client";
 import { listSuppliers, type Supplier } from "@/supplier-api-client";
+import {
+  receivePurchaseOrder,
+  ReceivingApiError,
+  type Receipt,
+} from "@/receiving-api-client";
 import { cn } from "@/lib/utils";
 
 type PurchaseOrderRole = AccessibleOrganization["role"];
@@ -115,6 +120,29 @@ function errorMessage(error: unknown): string {
     supplier_not_found: "The selected supplier is no longer available.",
     unavailable: "Purchase order data is temporarily unavailable. Try again.",
     validation: "Check the purchase order values and try again.",
+  };
+  return messages[error.kind];
+}
+
+function receivingErrorMessage(error: unknown): string {
+  if (!(error instanceof ReceivingApiError))
+    return "Receiving status is unknown. Retry with the same intent.";
+  const messages: Record<ReceivingApiError["kind"], string> = {
+    authentication_required: "Sign in again to continue.",
+    forbidden: "Receiving is not available for your current access.",
+    not_found: "That purchase order is no longer available.",
+    branch_inactive: "Receiving is blocked because this branch is inactive.",
+    product_inactive:
+      "Receiving is blocked until the affected product is reactivated.",
+    state_conflict: "This order changed state. Refresh it before trying again.",
+    receipt_invalid:
+      "The server rejected this receipt. Review the entered values.",
+    idempotency_conflict:
+      "The previous request key represents different receipt intent. Review the form before retrying.",
+    reference_conflict:
+      "The receipt reference could not be allocated. Retry with the same intent.",
+    validation: "Review the receipt values and VAT fields.",
+    unavailable: "Receiving status is unknown. Retry with the same intent.",
   };
   return messages[error.kind];
 }
@@ -892,6 +920,12 @@ function PurchaseOrderEditor({
       ) : (
         <ReadOnlyPurchaseOrder order={order} supplierName={supplierName} />
       )}
+      <ReceivingPanel
+        key={order.id}
+        order={order}
+        requestContext={requestContext}
+        onReceived={onSaved}
+      />
       {order.status === "ORDERED" ? (
         <SecondaryButton
           disabled={pending}
@@ -915,6 +949,342 @@ function PurchaseOrderEditor({
         }}
       />
     </article>
+  );
+}
+
+function ReceivingPanel({
+  order,
+  requestContext,
+  onReceived,
+}: {
+  order: PurchaseOrder;
+  requestContext: PurchaseOrderRequestContext;
+  onReceived: (order: PurchaseOrder) => Promise<void>;
+}) {
+  const queryClient = useQueryClient();
+  const [costs, setCosts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(order.items.map((item) => [item.id, ""])),
+  );
+  const [vat, setVat] = useState({
+    organizationVatRegistered: false,
+    inputVatRate: "",
+    inputVatAmount: "",
+    supplierTaxDocumentNumber: "",
+    supplierTaxDocumentDate: "",
+  });
+  const [confirm, setConfirm] = useState(false);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [key, setKey] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const validationId = useId();
+  const cancel = useRef<HTMLButtonElement>(null);
+  const confirmButton = useRef<HTMLButtonElement>(null);
+  const valid = (value: string) => /^\d+(?:\.\d{1,4})?$/.test(value);
+  const validRate = (value: string) => /^\d+(?:\.\d{1,6})?$/.test(value);
+  const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const complete = order.items.every((item) => valid(costs[item.id] ?? ""));
+  const vatValid =
+    (!vat.organizationVatRegistered &&
+      vat.inputVatRate === "" &&
+      vat.inputVatAmount === "" &&
+      vat.supplierTaxDocumentNumber === "" &&
+      vat.supplierTaxDocumentDate === "") ||
+    (vat.organizationVatRegistered &&
+      validRate(vat.inputVatRate) &&
+      valid(vat.inputVatAmount) &&
+      vat.supplierTaxDocumentNumber.trim() !== "" &&
+      validDate(vat.supplierTaxDocumentDate));
+  const validationMessage = !complete
+    ? "Enter one non-negative actual unit cost with no more than four decimal places for every frozen product line."
+    : !vatValid
+      ? "When VAT registration is asserted, enter valid VAT rate, VAT amount, supplier tax document number, and date. Otherwise leave all VAT snapshot fields empty."
+      : null;
+  useEffect(() => {
+    if (confirm) cancel.current?.focus();
+  }, [confirm]);
+  const submit = async () => {
+    if (!complete || !vatValid || pending) return;
+    const intentKey = key ?? crypto.randomUUID();
+    setKey(intentKey);
+    setPending(true);
+    setError(null);
+    try {
+      const result = await receivePurchaseOrder(
+        requestContext,
+        order.id,
+        {
+          actualCosts: order.items.map((item) => ({
+            purchaseOrderItemId: item.id,
+            actualUnitCost: costs[item.id]!,
+          })),
+          vat: {
+            organizationVatRegistered: vat.organizationVatRegistered,
+            inputVatRate: vat.inputVatRate || null,
+            inputVatAmount: vat.inputVatAmount || null,
+            supplierTaxDocumentNumber: vat.supplierTaxDocumentNumber || null,
+            supplierTaxDocumentDate: vat.supplierTaxDocumentDate || null,
+          },
+        },
+        intentKey,
+      );
+      setReceipt(result);
+      try {
+        await onReceived(await getPurchaseOrder(requestContext, order.id));
+      } catch {
+        setError(
+          "Receipt completed, but the latest purchase-order state could not be refreshed. Refresh before any further action.",
+        );
+        await queryClient.invalidateQueries({
+          queryKey: [
+            "branch-scoped",
+            requestContext.organizationId,
+            requestContext.branchId,
+            "purchase-orders",
+            "detail",
+            order.id,
+          ],
+        });
+        await queryClient.invalidateQueries({
+          queryKey: [
+            "branch-scoped",
+            requestContext.organizationId,
+            requestContext.branchId,
+            "purchase-orders",
+            "list",
+          ],
+        });
+      }
+      await queryClient.invalidateQueries({
+        queryKey: [
+          "branch-scoped",
+          requestContext.organizationId,
+          requestContext.branchId,
+          "inventory",
+        ],
+      });
+    } catch (e) {
+      setError(receivingErrorMessage(e));
+      if (e instanceof ReceivingApiError && e.kind === "state_conflict") {
+        void queryClient.invalidateQueries({
+          queryKey: [
+            "branch-scoped",
+            requestContext.organizationId,
+            requestContext.branchId,
+            "purchase-orders",
+            "detail",
+            order.id,
+          ],
+        });
+      }
+    } finally {
+      setPending(false);
+      setConfirm(false);
+    }
+  };
+  if (receipt)
+    return (
+      <div className="rounded-md border border-green-600 p-4" role="status">
+        <h3 className="font-semibold">Receipt {receipt.reference} completed</h3>
+        <p className="text-sm">
+          Received at {receipt.receivedAt}. The purchase order is now RECEIVED.
+        </p>
+        {error ? <p role="alert">{error}</p> : null}
+        {receipt.items.map((item) => (
+          <p className="text-sm" key={item.id}>
+            {item.productNameSnapshot}: {item.receivedQuantity} at{" "}
+            {item.actualUnitCost} THB
+          </p>
+        ))}
+      </div>
+    );
+  if (order.status !== "ORDERED") return null;
+  return (
+    <div className="mt-4 space-y-4 rounded-md border border-dashed p-4">
+      <h3 className="font-semibold">Receive full purchase order</h3>
+      <p className="text-sm text-muted-foreground">
+        Frozen supplier, branch, products, and quantities will be received in
+        full. This cannot be corrected or reversed in MVP.
+      </p>
+      {order.items.map((item) => (
+        <fieldset
+          className="grid gap-2 rounded border p-3 sm:grid-cols-3"
+          key={item.id}
+        >
+          <legend className="text-sm font-medium">
+            {item.productNameSnapshot} · {item.productSkuSnapshot}
+          </legend>
+          <p className="text-sm">Quantity: {item.quantity}</p>
+          <p className="text-sm">Expected: {item.expectedUnitCost} THB</p>
+          <label className="grid gap-1 text-sm font-medium">
+            Actual unit cost (THB)
+            <input
+              aria-label={`${item.productNameSnapshot} actual unit cost`}
+              aria-describedby={
+                validationMessage === null ? undefined : validationId
+              }
+              aria-invalid={costs[item.id] !== "" && !valid(costs[item.id]!)}
+              className="min-h-11 rounded-md border bg-background px-3"
+              inputMode="decimal"
+              value={costs[item.id]}
+              onChange={(e) => {
+                setCosts((c) => ({ ...c, [item.id]: e.target.value }));
+                setKey(null);
+              }}
+            />
+          </label>
+        </fieldset>
+      ))}
+      <label className="flex min-h-11 items-center gap-2 text-sm">
+        <input
+          aria-describedby={
+            validationMessage === null ? undefined : validationId
+          }
+          aria-label="Organization VAT registration asserted for this receipt"
+          type="checkbox"
+          checked={vat.organizationVatRegistered}
+          onChange={(e) => {
+            setVat((v) => ({
+              ...v,
+              organizationVatRegistered: e.target.checked,
+            }));
+            setKey(null);
+          }}
+        />
+        Organization VAT registration asserted for this receipt
+      </label>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-1 text-sm">
+          Input VAT rate
+          <input
+            aria-describedby={
+              validationMessage === null ? undefined : validationId
+            }
+            aria-invalid={!vatValid}
+            className="min-h-11 rounded border px-3"
+            value={vat.inputVatRate}
+            onChange={(e) => {
+              setVat((v) => ({ ...v, inputVatRate: e.target.value }));
+              setKey(null);
+            }}
+          />
+        </label>
+        <label className="grid gap-1 text-sm">
+          Input VAT amount
+          <input
+            aria-describedby={
+              validationMessage === null ? undefined : validationId
+            }
+            aria-invalid={!vatValid}
+            className="min-h-11 rounded border px-3"
+            value={vat.inputVatAmount}
+            onChange={(e) => {
+              setVat((v) => ({ ...v, inputVatAmount: e.target.value }));
+              setKey(null);
+            }}
+          />
+        </label>
+        <label className="grid gap-1 text-sm">
+          Supplier tax document number
+          <input
+            aria-describedby={
+              validationMessage === null ? undefined : validationId
+            }
+            aria-invalid={!vatValid}
+            className="min-h-11 rounded border px-3"
+            value={vat.supplierTaxDocumentNumber}
+            onChange={(e) => {
+              setVat((v) => ({
+                ...v,
+                supplierTaxDocumentNumber: e.target.value,
+              }));
+              setKey(null);
+            }}
+          />
+        </label>
+        <label className="grid gap-1 text-sm">
+          Supplier tax document date
+          <input
+            aria-describedby={
+              validationMessage === null ? undefined : validationId
+            }
+            aria-invalid={!vatValid}
+            type="date"
+            className="min-h-11 rounded border px-3"
+            value={vat.supplierTaxDocumentDate}
+            onChange={(e) => {
+              setVat((v) => ({
+                ...v,
+                supplierTaxDocumentDate: e.target.value,
+              }));
+              setKey(null);
+            }}
+          />
+        </label>
+      </div>
+      {validationMessage !== null ? (
+        <p className="text-sm" id={validationId} role="alert">
+          {validationMessage}
+        </p>
+      ) : null}
+      {error ? <p role="alert">{error}</p> : null}
+      <PrimaryButton
+        disabled={!complete || !vatValid || pending}
+        aria-busy={pending}
+        onClick={() => setConfirm(true)}
+        type="button"
+      >
+        {pending ? "Receiving…" : "Receive full purchase order"}
+      </PrimaryButton>
+      {confirm ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-describedby="receive-confirm-description"
+          aria-labelledby="receive-confirm-title"
+          className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && !pending) setConfirm(false);
+            if (event.key === "Tab") {
+              event.preventDefault();
+              if (event.shiftKey) confirmButton.current?.focus();
+              else cancel.current?.focus();
+            }
+          }}
+        >
+          <div className="w-full max-w-md rounded bg-card p-5">
+            <h2 id="receive-confirm-title" className="font-semibold">
+              Confirm irreversible receipt
+            </h2>
+            <p className="mt-2 text-sm" id="receive-confirm-description">
+              All frozen quantities, actual costs, and VAT snapshot fields will
+              be recorded and the PO will become RECEIVED.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+                disabled={pending}
+                onClick={() => setConfirm(false)}
+                ref={cancel}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                aria-busy={pending}
+                className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+                disabled={pending}
+                onClick={() => void submit()}
+                ref={confirmButton}
+                type="button"
+              >
+                {pending ? "Receiving…" : "Confirm receive"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

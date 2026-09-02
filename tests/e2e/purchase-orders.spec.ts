@@ -12,6 +12,7 @@ import {
 } from "./catalog-fixtures.ts";
 
 const purchaseOrderPath = `/app/purchase-orders?organizationId=${E2E_ORGANIZATION_ID}&branchId=${E2E_BRANCH_ID}`;
+const inventoryPath = `/app/inventory?organizationId=${E2E_ORGANIZATION_ID}&branchId=${E2E_BRANCH_ID}`;
 
 async function signIn(page: import("@playwright/test").Page, email: string) {
   await page.goto("/login");
@@ -63,7 +64,9 @@ test("owner creates, edits, orders, and cancels purchase orders", async ({
   await page.getByRole("button", { name: "Order purchase order" }).click();
   await page.getByRole("button", { name: "Confirm order" }).click();
   await expect(page.getByText("Frozen product lines")).toBeVisible();
-  await expect(page.getByRole("button", { name: /receive/i })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Receive full purchase order" }),
+  ).toBeVisible();
   await expect(
     page.getByRole("form", { name: "Save draft changes" }),
   ).toHaveCount(0);
@@ -85,6 +88,92 @@ test("cashier cannot manage purchase orders", async ({ page }) => {
   await expect(
     page.getByRole("form", { name: "Create draft purchase order" }),
   ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Receive full purchase order" }),
+  ).toHaveCount(0);
+});
+
+test("owner receives an ORDERED purchase order with a bounded VAT snapshot", async ({
+  page,
+}) => {
+  await signIn(page, E2E_OWNER_EMAIL);
+  await page.goto(purchaseOrderPath);
+  await createDraft(page);
+  await page.getByRole("button", { name: "Order purchase order" }).click();
+  await page.getByRole("button", { name: "Confirm order" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Receive full purchase order" }),
+  ).toBeVisible();
+  await expect(page.getByText("Quantity: 2")).toBeVisible();
+  await expect(page.getByText("Quantity: 0.5")).toBeVisible();
+  await expect(
+    page.getByLabel("Inventory test tea actual unit cost"),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel("Purchase order E2E coffee actual unit cost"),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("group", { name: "Inventory test tea · INVENTORY-E2E-01" })
+      .getByRole("textbox"),
+  ).toHaveCount(1);
+
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.setViewportSize({ height: 844, width: 390 });
+  await expect(
+    page.getByLabel("Inventory test tea actual unit cost"),
+  ).toBeVisible();
+  await expect(page.getByLabel("Input VAT rate")).toBeVisible();
+  expect(
+    await page
+      .getByRole("heading", { name: "Receive full purchase order" })
+      .locator("..")
+      .evaluate((panel) => panel.scrollWidth <= panel.clientWidth),
+  ).toBe(true);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.setViewportSize({ height: 900, width: 1280 });
+
+  await page.getByLabel("Inventory test tea actual unit cost").fill("12.5000");
+  await page
+    .getByLabel("Purchase order E2E coffee actual unit cost")
+    .fill("8.0000");
+  await page
+    .getByLabel("Organization VAT registration asserted for this receipt")
+    .check();
+  await page.getByLabel("Input VAT rate").fill("7.000000");
+  await page.getByLabel("Input VAT amount").fill("2.0300");
+  await page.getByLabel("Supplier tax document number").fill("TAX-E2E-100");
+  await page.getByLabel("Supplier tax document date").fill("2026-09-02");
+
+  await page
+    .getByRole("button", { name: "Receive full purchase order" })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Confirm irreversible receipt",
+  });
+  await expect(dialog).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(
+    dialog.getByRole("button", { name: "Confirm receive" }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+
+  await expect(page.getByText(/Receipt RCPT-/)).toBeVisible();
+  await expect(
+    page.getByText(/The purchase order is now RECEIVED/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Receive full purchase order" }),
+  ).toHaveCount(0);
+  await expect(page.getByText("Received").last()).toBeVisible();
+
+  await page.goto(inventoryPath);
+  await page.getByRole("button", { name: /Purchase order E2E coffee/ }).click();
+  await expect(page.getByText("0.5 KG").last()).toBeVisible();
 });
 
 test("purchase-order UI has no automated axe violations on desktop and mobile", async ({

@@ -22,6 +22,10 @@ import {
 } from "@/purchase-order-api-client";
 import { listSuppliers } from "@/supplier-api-client";
 import { listProducts } from "@/catalog-api-client";
+import {
+  receivePurchaseOrder,
+  ReceivingApiError,
+} from "@/receiving-api-client";
 
 import { PurchaseOrderManagement } from "./purchase-order-management";
 
@@ -61,6 +65,10 @@ vi.mock("@/catalog-api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/catalog-api-client")>()),
   listProducts: vi.fn(),
 }));
+vi.mock("@/receiving-api-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/receiving-api-client")>()),
+  receivePurchaseOrder: vi.fn(),
+}));
 
 const order = {
   branchId: BRANCH_ID,
@@ -89,6 +97,18 @@ const order = {
   supplierId: SUPPLIER_ID,
   updatedAt: "2026-09-01T00:00:00.000Z",
 };
+const receivedOrder = {
+  ...order,
+  receivedAt: "2026-09-01T00:00:02.000Z",
+  status: "RECEIVED" as const,
+  updatedAt: "2026-09-01T00:00:02.000Z",
+};
+const cancelledOrder = {
+  ...order,
+  cancelledAt: "2026-09-01T00:00:02.000Z",
+  status: "CANCELLED" as const,
+  updatedAt: "2026-09-01T00:00:02.000Z",
+};
 
 function renderManagement() {
   const queryClient = new QueryClient({
@@ -100,6 +120,48 @@ function renderManagement() {
     </QueryClientProvider>,
   );
   return queryClient;
+}
+
+async function openOrderedPurchaseOrder() {
+  vi.mocked(getPurchaseOrder).mockResolvedValue({
+    ...order,
+    status: "ORDERED",
+  });
+  const queryClient = renderManagement();
+  await screen.findByText("PO-0001");
+  fireEvent.click(screen.getByRole("button", { name: /PO-0001/ }));
+  await screen.findByRole("heading", { name: "Receive full purchase order" });
+  fireEvent.change(screen.getByLabelText("Tea actual unit cost"), {
+    target: { value: "12.5000" },
+  });
+  return queryClient;
+}
+
+function confirmReceive() {
+  fireEvent.click(
+    screen.getByRole("button", { name: "Receive full purchase order" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
+}
+
+function enterVatSnapshot() {
+  fireEvent.click(
+    screen.getByLabelText(
+      "Organization VAT registration asserted for this receipt",
+    ),
+  );
+  fireEvent.change(screen.getByLabelText("Input VAT rate"), {
+    target: { value: "7.000000" },
+  });
+  fireEvent.change(screen.getByLabelText("Input VAT amount"), {
+    target: { value: "0.8750" },
+  });
+  fireEvent.change(screen.getByLabelText("Supplier tax document number"), {
+    target: { value: "TAX-100" },
+  });
+  fireEvent.change(screen.getByLabelText("Supplier tax document date"), {
+    target: { value: "2026-09-01" },
+  });
 }
 
 beforeEach(() => {
@@ -195,11 +257,39 @@ beforeEach(() => {
     orderedAt: "2026-09-01T00:00:01.000Z",
     updatedAt: "2026-09-01T00:00:01.000Z",
   });
+  vi.mocked(receivePurchaseOrder).mockResolvedValue({
+    branchId: BRANCH_ID,
+    createdAt: "2026-09-01T00:00:02.000Z",
+    id: "90000000-0000-4000-8000-000000000001",
+    inputVatAmount: null,
+    inputVatRate: null,
+    items: [
+      {
+        actualUnitCost: "12.5000",
+        id: "90000000-0000-4000-8000-000000000002",
+        productId: PRODUCT_ID,
+        productNameSnapshot: "Tea",
+        productSkuSnapshot: "TEA-1",
+        purchaseOrderItemId: "60000000-0000-4000-8000-000000000001",
+        receivedQuantity: "2",
+      },
+    ],
+    organizationId: ORGANIZATION_ID,
+    organizationVatRegisteredSnapshot: false,
+    purchaseOrderId: ORDER_ID,
+    receivedAt: "2026-09-01T00:00:02.000Z",
+    receivedByUserId: "70000000-0000-4000-8000-000000000001",
+    reference: "REC-0001",
+    supplierId: SUPPLIER_ID,
+    supplierTaxDocumentDate: null,
+    supplierTaxDocumentNumber: null,
+  });
 });
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("purchase order management UI", () => {
@@ -361,5 +451,391 @@ describe("purchase order management UI", () => {
     expect(
       screen.queryByRole("form", { name: "Create draft purchase order" }),
     ).toBeNull();
+  });
+
+  it("keeps one idempotency key for an ambiguous retry and replaces it after input changes", async () => {
+    vi.stubGlobal("crypto", {
+      randomUUID: vi
+        .fn()
+        .mockReturnValueOnce("key-one")
+        .mockReturnValueOnce("key-two"),
+    });
+    vi.mocked(getPurchaseOrder).mockResolvedValue({
+      ...order,
+      status: "ORDERED",
+    });
+    vi.mocked(receivePurchaseOrder)
+      .mockRejectedValueOnce(new TypeError("network"))
+      .mockRejectedValueOnce(new TypeError("network"));
+    renderManagement();
+    await screen.findByText("PO-0001");
+    fireEvent.click(screen.getByRole("button", { name: /PO-0001/ }));
+    await screen.findByRole("heading", { name: "Receive full purchase order" });
+    fireEvent.change(screen.getByLabelText("Tea actual unit cost"), {
+      target: { value: "12.5000" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Receive full purchase order" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
+    await screen.findByRole("alert");
+    expect(screen.getByText(/status is unknown/i)).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Receive full purchase order" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
+    await waitFor(() => expect(receivePurchaseOrder).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(receivePurchaseOrder).mock.calls[0]![3]).toBe("key-one");
+    expect(vi.mocked(receivePurchaseOrder).mock.calls[1]![3]).toBe("key-one");
+    fireEvent.change(screen.getByLabelText("Tea actual unit cost"), {
+      target: { value: "13" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Receive full purchase order" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Confirm receive" }));
+    await waitFor(() => expect(receivePurchaseOrder).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(receivePurchaseOrder).mock.calls[2]![3]).toBe("key-two");
+  });
+
+  it("blocks a second confirmation while receiving is pending", async () => {
+    let resolveReceive: undefined | (() => void);
+    vi.mocked(receivePurchaseOrder).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveReceive = () =>
+            resolve({
+              branchId: BRANCH_ID,
+              createdAt: "2026-09-01T00:00:02.000Z",
+              id: "90000000-0000-4000-8000-000000000001",
+              inputVatAmount: null,
+              inputVatRate: null,
+              items: [],
+              organizationId: ORGANIZATION_ID,
+              organizationVatRegisteredSnapshot: false,
+              purchaseOrderId: ORDER_ID,
+              receivedAt: "2026-09-01T00:00:02.000Z",
+              receivedByUserId: "70000000-0000-4000-8000-000000000001",
+              reference: "REC-0001",
+              supplierId: SUPPLIER_ID,
+              supplierTaxDocumentDate: null,
+              supplierTaxDocumentNumber: null,
+            });
+        }),
+    );
+    vi.mocked(getPurchaseOrder).mockResolvedValue({
+      ...order,
+      status: "ORDERED",
+    });
+    renderManagement();
+    await screen.findByText("PO-0001");
+    fireEvent.click(screen.getByRole("button", { name: /PO-0001/ }));
+    await screen.findByRole("heading", { name: "Receive full purchase order" });
+    fireEvent.change(screen.getByLabelText("Tea actual unit cost"), {
+      target: { value: "12.5000" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Receive full purchase order" }),
+    );
+    const confirm = screen.getByRole("button", { name: "Confirm receive" });
+    fireEvent.click(confirm);
+    await waitFor(() => expect(receivePurchaseOrder).toHaveBeenCalledTimes(1));
+    for (const button of screen.getAllByRole("button", {
+      name: "Receiving…",
+    }))
+      expect(button).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getAllByRole("button", { name: "Receiving…" })[1]!);
+    expect(receivePurchaseOrder).toHaveBeenCalledTimes(1);
+    resolveReceive?.();
+  });
+
+  it.each([
+    [
+      "VAT registration assertion",
+      () =>
+        fireEvent.click(
+          screen.getByLabelText(
+            "Organization VAT registration asserted for this receipt",
+          ),
+        ),
+    ],
+    [
+      "VAT rate",
+      () =>
+        fireEvent.change(screen.getByLabelText("Input VAT rate"), {
+          target: { value: "8" },
+        }),
+    ],
+    [
+      "VAT amount",
+      () =>
+        fireEvent.change(screen.getByLabelText("Input VAT amount"), {
+          target: { value: "0.8751" },
+        }),
+    ],
+    [
+      "supplier tax document number",
+      () =>
+        fireEvent.change(
+          screen.getByLabelText("Supplier tax document number"),
+          { target: { value: "TAX-101" } },
+        ),
+    ],
+    [
+      "supplier tax document date",
+      () =>
+        fireEvent.change(screen.getByLabelText("Supplier tax document date"), {
+          target: { value: "2026-09-02" },
+        }),
+    ],
+  ])(
+    "creates a new idempotency key when %s changes after an ambiguous result",
+    async (_field, changeIntent) => {
+      vi.stubGlobal("crypto", {
+        randomUUID: vi
+          .fn()
+          .mockReturnValueOnce("vat-key-one")
+          .mockReturnValueOnce("vat-key-two"),
+      });
+      vi.mocked(receivePurchaseOrder).mockRejectedValue(
+        new TypeError("network"),
+      );
+      await openOrderedPurchaseOrder();
+      enterVatSnapshot();
+      confirmReceive();
+      await screen.findByRole("alert", { name: "" });
+      expect(vi.mocked(receivePurchaseOrder).mock.calls[0]![3]).toBe(
+        "vat-key-one",
+      );
+
+      if (_field === "VAT registration assertion") {
+        changeIntent();
+        fireEvent.change(screen.getByLabelText("Input VAT rate"), {
+          target: { value: "" },
+        });
+        fireEvent.change(screen.getByLabelText("Input VAT amount"), {
+          target: { value: "" },
+        });
+        fireEvent.change(
+          screen.getByLabelText("Supplier tax document number"),
+          {
+            target: { value: "" },
+          },
+        );
+        fireEvent.change(screen.getByLabelText("Supplier tax document date"), {
+          target: { value: "" },
+        });
+      } else {
+        changeIntent();
+      }
+      confirmReceive();
+      await waitFor(() =>
+        expect(receivePurchaseOrder).toHaveBeenCalledTimes(2),
+      );
+      expect(vi.mocked(receivePurchaseOrder).mock.calls[1]![3]).toBe(
+        "vat-key-two",
+      );
+    },
+  );
+
+  it("keeps an idempotency conflict visible without replaying or rotating its key", async () => {
+    vi.stubGlobal("crypto", {
+      randomUUID: vi
+        .fn()
+        .mockReturnValueOnce("conflict-key-one")
+        .mockReturnValueOnce("conflict-key-two"),
+    });
+    vi.mocked(receivePurchaseOrder).mockRejectedValue(
+      new ReceivingApiError("idempotency_conflict"),
+    );
+    await openOrderedPurchaseOrder();
+    confirmReceive();
+    expect(
+      await screen.findByText(/represents different receipt intent/i),
+    ).toBeTruthy();
+    expect(receivePurchaseOrder).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("Tea actual unit cost")).toHaveProperty(
+      "value",
+      "12.5000",
+    );
+
+    fireEvent.change(screen.getByLabelText("Tea actual unit cost"), {
+      target: { value: "13" },
+    });
+    confirmReceive();
+    await waitFor(() => expect(receivePurchaseOrder).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(receivePurchaseOrder).mock.calls[0]![3]).toBe(
+      "conflict-key-one",
+    );
+    expect(vi.mocked(receivePurchaseOrder).mock.calls[1]![3]).toBe(
+      "conflict-key-two",
+    );
+  });
+
+  it.each([
+    ["RECEIVED", receivedOrder],
+    ["CANCELLED", cancelledOrder],
+  ])(
+    "refreshes authoritative %s state after a receive state conflict without replaying",
+    async (_status, refreshedOrder) => {
+      vi.mocked(receivePurchaseOrder).mockRejectedValue(
+        new ReceivingApiError("state_conflict"),
+      );
+      vi.mocked(getPurchaseOrder)
+        .mockResolvedValueOnce({ ...order, status: "ORDERED" })
+        .mockResolvedValueOnce(refreshedOrder);
+      const queryClient = renderManagement();
+      await screen.findByText("PO-0001");
+      fireEvent.click(screen.getByRole("button", { name: /PO-0001/ }));
+      await screen.findByRole("heading", {
+        name: "Receive full purchase order",
+      });
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      fireEvent.change(screen.getByLabelText("Tea actual unit cost"), {
+        target: { value: "12.5000" },
+      });
+      confirmReceive();
+      expect(await screen.findByText(/changed state/i)).toBeTruthy();
+      await waitFor(() => expect(getPurchaseOrder).toHaveBeenCalledTimes(2));
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: [
+          "branch-scoped",
+          ORGANIZATION_ID,
+          BRANCH_ID,
+          "purchase-orders",
+          "detail",
+          ORDER_ID,
+        ],
+      });
+      expect(
+        screen.queryByRole("heading", { name: "Receive full purchase order" }),
+      ).toBeNull();
+      expect(receivePurchaseOrder).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(["201 first success", "200 exact replay"])(
+    "renders the authoritative receipt and refreshes only current-scope purchase-order and inventory queries for %s",
+    async (successKind) => {
+      void successKind;
+      vi.mocked(getPurchaseOrder)
+        .mockResolvedValueOnce({ ...order, status: "ORDERED" })
+        .mockResolvedValueOnce(receivedOrder);
+      const queryClient = renderManagement();
+      await screen.findByText("PO-0001");
+      fireEvent.click(screen.getByRole("button", { name: /PO-0001/ }));
+      await screen.findByRole("heading", {
+        name: "Receive full purchase order",
+      });
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      fireEvent.change(screen.getByLabelText("Tea actual unit cost"), {
+        target: { value: "12.5000" },
+      });
+      confirmReceive();
+      expect(
+        await screen.findByText("Receipt REC-0001 completed"),
+      ).toBeTruthy();
+      expect(getPurchaseOrder).toHaveBeenCalledTimes(2);
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: [
+          "branch-scoped",
+          ORGANIZATION_ID,
+          BRANCH_ID,
+          "purchase-orders",
+          "list",
+        ],
+      });
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: ["branch-scoped", ORGANIZATION_ID, BRANCH_ID, "inventory"],
+      });
+      for (const call of invalidate.mock.calls) {
+        const key = call[0]?.queryKey;
+        expect(key?.slice(0, 3)).toEqual([
+          "branch-scoped",
+          ORGANIZATION_ID,
+          BRANCH_ID,
+        ]);
+      }
+      expect(
+        screen.queryByRole("heading", { name: "Receive full purchase order" }),
+      ).toBeNull();
+    },
+  );
+
+  it("keeps the confirmed receipt and invalidates current scope when its follow-up PO read fails", async () => {
+    vi.mocked(getPurchaseOrder)
+      .mockResolvedValueOnce({ ...order, status: "ORDERED" })
+      .mockRejectedValueOnce(new PurchaseOrderApiError("unavailable"));
+    const queryClient = renderManagement();
+    await screen.findByText("PO-0001");
+    fireEvent.click(screen.getByRole("button", { name: /PO-0001/ }));
+    await screen.findByRole("heading", {
+      name: "Receive full purchase order",
+    });
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    fireEvent.change(screen.getByLabelText("Tea actual unit cost"), {
+      target: { value: "12.5000" },
+    });
+    confirmReceive();
+    expect(await screen.findByText("Receipt REC-0001 completed")).toBeTruthy();
+    expect(await screen.findByText(/could not be refreshed/i)).toBeTruthy();
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: [
+        "branch-scoped",
+        ORGANIZATION_ID,
+        BRANCH_ID,
+        "purchase-orders",
+        "detail",
+        ORDER_ID,
+      ],
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["branch-scoped", ORGANIZATION_ID, BRANCH_ID, "inventory"],
+    });
+  });
+
+  it("labels receiving fields and gives the confirmation dialog keyboard focus", async () => {
+    await openOrderedPurchaseOrder();
+    fireEvent.click(
+      screen.getByLabelText(
+        "Organization VAT registration asserted for this receipt",
+      ),
+    );
+    const cost = screen.getByLabelText("Tea actual unit cost");
+    expect(cost.getAttribute("aria-describedby")).not.toBeNull();
+    expect(
+      screen.getByLabelText(
+        "Organization VAT registration asserted for this receipt",
+      ),
+    ).toBeTruthy();
+    for (const label of [
+      "Input VAT rate",
+      "Input VAT amount",
+      "Supplier tax document number",
+      "Supplier tax document date",
+    ])
+      expect(
+        screen.getByLabelText(label).getAttribute("aria-describedby"),
+      ).not.toBeNull();
+
+    fireEvent.click(
+      screen.getByLabelText(
+        "Organization VAT registration asserted for this receipt",
+      ),
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Receive full purchase order" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Confirm irreversible receipt",
+    });
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Cancel" }),
+    );
+    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Confirm receive" }),
+    );
   });
 });
