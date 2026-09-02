@@ -46,7 +46,7 @@ export const inventoryHistoryQuerySchema = z
     limit: limitSchema,
     occurredAfter: instantSchema.optional(),
     occurredBefore: instantSchema.optional(),
-    source: z.literal("MANUAL_ADJUSTMENT").optional(),
+    source: z.enum(["MANUAL_ADJUSTMENT", "PURCHASE_RECEIVE"]).optional(),
   })
   .strict()
   .refine(

@@ -152,6 +152,31 @@ describe("inventory management UI", () => {
     expect(screen.getByText(/2026-08-30 12:00:00 UTC/)).toBeTruthy();
   });
 
+  it("renders a purchase receipt movement without a manual-adjustment reason", async () => {
+    vi.mocked(listInventoryHistory).mockResolvedValue({
+      data: [
+        {
+          actor: {
+            displayName: "Receiver",
+            id: "40000000-0000-4000-8000-000000000001",
+          },
+          delta: "2",
+          id: "50000000-0000-4000-8000-000000000002",
+          note: null,
+          occurredAt: "2026-09-02T10:00:00.000Z",
+          reason: null,
+          source: "PURCHASE_RECEIVE",
+        },
+      ],
+      meta: { nextCursor: null },
+    });
+    renderInventory();
+    await screen.findByText("Tea");
+    fireEvent.click(screen.getByRole("button", { name: /Tea/ }));
+    expect(await screen.findByText("+2 · Purchase receive")).toBeTruthy();
+    expect(screen.getByText(/PURCHASE RECEIVE/)).toBeTruthy();
+  });
+
   it.each(["OWNER", "ADMIN", "BRANCH_MANAGER", "INVENTORY_STAFF"] as const)(
     "offers the adjustment form to %s",
     async (adjustmentRole) => {

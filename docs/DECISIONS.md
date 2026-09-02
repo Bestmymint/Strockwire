@@ -1235,6 +1235,13 @@ they change quantity only. At zero quantity, inventory value is exactly zero whi
 last-known average cost is retained; a later receipt from zero adopts its actual unit
 cost as the new current average. No Opening Cost or Recost workflow is accepted.
 
+For `KNOWN` basis, `averageUnitCost` is the authoritative retained per-unit basis and
+`inventoryValue` is its materialized quantity projection. Manual adjustments retain
+the average and persist `resultingQuantity * averageUnitCost`, rounded `ROUND_HALF_UP`
+only at the inventory-value storage boundary. Subsequent receiving derives the old
+basis from `oldQuantity * averageUnitCost`; it must not treat an independently rounded
+inventory-value accumulator as authoritative or clamp negative rounding residuals.
+
 For the bounded purchasing-side part of `OQ-008`, a Receipt may snapshot, where
 applicable, organization VAT-registration state, Input VAT rate and amount, and
 supplier tax-document number/date. These are document-level immutable snapshots only.
@@ -1242,6 +1249,12 @@ They neither create a generic Tax or allocation engine nor derive/rewrite
 `actualUnitCost`. Sales payment, Output VAT, discount ordering, tender/change, sales
 receipt numbering/display, and sales monetary rules remain open in `OQ-008`; this
 decision makes no legal/tax-compliance claim.
+
+For MVP, while Organization has no authoritative VAT-registration master field, the
+organization VAT-registration snapshot is an explicit immutable receipt-time assertion
+supplied by the authorized receiving command. It is validated independently, included
+in receipt-level idempotency, and is not derived from Organization master data, VAT
+rate/amount, Supplier documents, or any tax-calculation behavior.
 
 Receiving is a future single PostgreSQL transaction: receipt-level idempotency,
 receipt/items, positive purchasing-provenance ledger movements, balance updates,

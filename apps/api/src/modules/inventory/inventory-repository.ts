@@ -46,7 +46,7 @@ export interface SafeInventoryTransaction {
   id: string;
   note: string | null;
   occurredAt: string;
-  reason: string;
+  reason: string | null;
   source: string;
 }
 
@@ -556,12 +556,11 @@ export function createPrismaInventoryRepository(
           transaction,
           inventoryIdempotencyAdvisoryLockKey(input.organizationId, keyHash),
         );
-        const prior = await transaction.inventoryTransaction.findUnique({
+        const prior = await transaction.inventoryTransaction.findFirst({
           where: {
-            organizationId_idempotencyKeyHash: {
-              idempotencyKeyHash: keyHash,
-              organizationId: input.organizationId,
-            },
+            idempotencyKeyHash: keyHash,
+            organizationId: input.organizationId,
+            source: "MANUAL_ADJUSTMENT",
           },
           select: {
             adjustmentReason: true,
@@ -576,15 +575,29 @@ export function createPrismaInventoryRepository(
           },
         });
         if (prior !== null) {
+          if (
+            prior.adjustmentReason === null ||
+            prior.canonicalRequestHash === null
+          ) {
+            throw new Error("Manual adjustment is missing idempotency fields.");
+          }
           if (prior.canonicalRequestHash !== requestHash) {
             return { kind: "idempotency_conflict" } as const;
           }
           return {
-            adjustment: await replayAdjustment(transaction, prior, {
-              branchId: prior.branchId,
-              organizationId: input.organizationId,
-              productId: prior.productId,
-            }),
+            adjustment: await replayAdjustment(
+              transaction,
+              {
+                ...prior,
+                adjustmentReason: prior.adjustmentReason,
+                canonicalRequestHash: prior.canonicalRequestHash,
+              },
+              {
+                branchId: prior.branchId,
+                organizationId: input.organizationId,
+                productId: prior.productId,
+              },
+            ),
             kind: "replay",
           } as const;
         }
@@ -627,6 +640,46 @@ export function createPrismaInventoryRepository(
           await transaction.inventoryBalance.update({
             data: { quantity: resultingQuantity },
             where: { id: current.id },
+          });
+        }
+
+        const costStates = await transaction.$queryRaw<
+          Array<{
+            averageUnitCost: Prisma.Decimal | null;
+            basisState: "UNKNOWN" | "KNOWN";
+            id: string;
+            inventoryValue: Prisma.Decimal | null;
+          }>
+        >(Prisma.sql`
+          SELECT
+            "id",
+            "basis_state"::text AS "basisState",
+            "inventory_value" AS "inventoryValue",
+            "average_unit_cost" AS "averageUnitCost"
+          FROM "inventory_cost_states"
+          WHERE "branch_id" = ${input.branchId}::uuid
+            AND "product_id" = ${product.id}::uuid
+            AND "organization_id" = ${input.organizationId}::uuid
+          FOR UPDATE
+        `);
+        const costState = costStates[0];
+        if (costState?.basisState === "KNOWN") {
+          if (
+            costState.averageUnitCost === null ||
+            costState.inventoryValue === null
+          ) {
+            throw new Error(
+              "Known inventory cost state is missing numeric values.",
+            );
+          }
+          const inventoryValue = resultingQuantity.isZero()
+            ? new Prisma.Decimal(0)
+            : resultingQuantity
+                .times(costState.averageUnitCost)
+                .toDecimalPlaces(10, Prisma.Decimal.ROUND_HALF_UP);
+          await transaction.inventoryCostState.update({
+            data: { inventoryValue },
+            where: { id: costState.id },
           });
         }
 

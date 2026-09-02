@@ -349,9 +349,9 @@ sequenceDiagram
     PUR-->>API: Completed receipt representation
 ```
 
-Receiving remains planned, not implemented. `ADR-026` fixes the future flow: one `ORDERED` PO produces at most one all-at-once immutable receipt; receipt quantities are server-derived from frozen lines; and `DRAFT` → `ORDERED` → `RECEIVED` / `CANCELLED` is the accepted lifecycle. Partial/over/short/multiple receipt, discrepancy handling, receiving without a PO, supplier returns, receipt correction, and receipt reversal are excluded.
+P4-M3-T01 implements this flow behind a service boundary and one PostgreSQL transaction; P4-M3-T02 still owns HTTP exposure. One `ORDERED` PO produces at most one all-at-once immutable receipt; receipt quantities are server-derived from frozen lines; and `DRAFT` → `ORDERED` → `RECEIVED` / `CANCELLED` is the accepted lifecycle. Partial/over/short/multiple receipt, discrepancy handling, receiving without a PO, supplier returns, receipt correction, and receipt reversal are excluded.
 
-Costing is a future Branch/Product projection owned separately from Product catalog data. Receipt `actualUnitCost` is the authoritative intake; PO `expectedUnitCost` remains planning/history data. A first receipt initializes a previously `UNKNOWN` Branch/Product basis for all then-on-hand quantity without inventing or backfilling historical acquisition cost. Before that initialization, cost-dependent valuation/COGS remain unavailable rather than zero. Any validation, authorization, state, cost, quantity, or database error rolls back the complete operation.
+Costing is implemented as a Branch/Product projection owned separately from Product catalog data. Receipt `actualUnitCost` is the authoritative intake; PO `expectedUnitCost` remains planning/history data. A first receipt initializes a previously `UNKNOWN` Branch/Product basis for all then-on-hand quantity without inventing or backfilling historical acquisition cost. Before that initialization, cost-dependent valuation/COGS remain unavailable rather than zero. Known-basis manual adjustments use the retained average; reaching zero forces value to zero while retaining that average. Any validation, authorization, state, cost, quantity, or database error rolls back the complete operation.
 
 ### 6.4 POS checkout
 
@@ -603,9 +603,9 @@ This document does not answer the following canonical questions from `BUILD_SPEC
 
 Implementation touching one of these areas must stop at its accepted boundary until the referenced question is resolved and all affected documents are updated.
 
-Future purchasing/receiving costing and receipt lifecycle are accepted by `ADR-026`;
-they remain unimplemented and retain the documented `UNKNOWN`/`KNOWN` cost-basis
-boundary.
+Purchasing/receiving costing and receipt lifecycle are accepted by `ADR-026`.
+P4-M3-T01 implements Receipt persistence, the atomic receiving service, and the
+documented `UNKNOWN`/`KNOWN` cost-basis projection; HTTP/UI exposure remains later.
 
 Stock transfer is **DEFERRED FROM MVP** by `ADR-025`. It remains broader/full future
 scope, but no transfer component, API, persistence, authorization, lifecycle, or

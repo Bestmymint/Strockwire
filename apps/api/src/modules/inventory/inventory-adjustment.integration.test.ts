@@ -872,4 +872,169 @@ describe("atomic inventory adjustment repository with PostgreSQL", () => {
       secondState.balance?.quantity.toString() ?? "0",
     );
   }, 20_000);
+
+  it("applies manual adjustments to known cost value and preserves unknown basis", async () => {
+    const scope = await organization("Adjustment cost state");
+    const owner = await actor({
+      email: "adjustment-cost-owner@example.com",
+      organizationId: scope.organization.id,
+      role: "OWNER",
+    });
+    const knownItem = await product({
+      organizationId: scope.organization.id,
+      sku: "KNOWN-COST",
+    });
+    const unknownItem = await product({
+      organizationId: scope.organization.id,
+      sku: "UNKNOWN-COST",
+    });
+    await prisma.inventoryBalance.createMany({
+      data: [knownItem, unknownItem].map((item) => ({
+        branchId: scope.branch.id,
+        organizationId: scope.organization.id,
+        productId: item.id,
+        quantity: "10",
+      })),
+    });
+    await prisma.inventoryCostState.createMany({
+      data: [
+        {
+          averageUnitCost: "2",
+          basisState: "KNOWN",
+          branchId: scope.branch.id,
+          inventoryValue: "20",
+          organizationId: scope.organization.id,
+          productId: knownItem.id,
+        },
+        {
+          basisState: "UNKNOWN",
+          branchId: scope.branch.id,
+          organizationId: scope.organization.id,
+          productId: unknownItem.id,
+        },
+      ],
+    });
+
+    await adjust({
+      actorUserId: owner.user.id,
+      branchId: scope.branch.id,
+      delta: "2",
+      idempotencyKey: "known-cost-positive",
+      organizationId: scope.organization.id,
+      productId: knownItem.id,
+    });
+    await adjust({
+      actorUserId: owner.user.id,
+      branchId: scope.branch.id,
+      delta: "1",
+      idempotencyKey: "unknown-cost-positive",
+      organizationId: scope.organization.id,
+      productId: unknownItem.id,
+    });
+    await adjust({
+      actorUserId: owner.user.id,
+      branchId: scope.branch.id,
+      delta: "-2",
+      idempotencyKey: "unknown-cost-negative",
+      organizationId: scope.organization.id,
+      productId: unknownItem.id,
+    });
+    await adjust({
+      actorUserId: owner.user.id,
+      branchId: scope.branch.id,
+      delta: "-12",
+      idempotencyKey: "known-cost-to-zero",
+      organizationId: scope.organization.id,
+      productId: knownItem.id,
+    });
+
+    const known = await prisma.inventoryCostState.findUniqueOrThrow({
+      where: {
+        branchId_productId: {
+          branchId: scope.branch.id,
+          productId: knownItem.id,
+        },
+      },
+    });
+    const unknown = await prisma.inventoryCostState.findUniqueOrThrow({
+      where: {
+        branchId_productId: {
+          branchId: scope.branch.id,
+          productId: unknownItem.id,
+        },
+      },
+    });
+    expect(known.inventoryValue?.toFixed(10)).toBe("0.0000000000");
+    expect(known.averageUnitCost?.toFixed(6)).toBe("2.000000");
+    expect(unknown).toMatchObject({
+      averageUnitCost: null,
+      basisState: "UNKNOWN",
+      inventoryValue: null,
+    });
+  });
+
+  it("projects known value from resulting quantity and retained average without a negative rounding residual", async () => {
+    const scope = await organization("Adjustment rounded cost residual");
+    const owner = await actor({
+      email: "adjustment-rounded-cost-owner@example.com",
+      organizationId: scope.organization.id,
+      role: "OWNER",
+    });
+    const item = await product({
+      organizationId: scope.organization.id,
+      sku: "ROUNDED-COST",
+    });
+    expect(
+      await adjust({
+        actorUserId: owner.user.id,
+        branchId: scope.branch.id,
+        delta: "199",
+        idempotencyKey: "rounded-cost-seed",
+        organizationId: scope.organization.id,
+        productId: item.id,
+      }),
+    ).toMatchObject({ kind: "success" });
+    await prisma.inventoryCostState.create({
+      data: {
+        averageUnitCost: "0.000001",
+        basisState: "KNOWN",
+        branchId: scope.branch.id,
+        inventoryValue: "0.0001",
+        organizationId: scope.organization.id,
+        productId: item.id,
+      },
+    });
+
+    expect(
+      await adjust({
+        actorUserId: owner.user.id,
+        branchId: scope.branch.id,
+        delta: "-198",
+        idempotencyKey: "rounded-cost-decrement",
+        organizationId: scope.organization.id,
+        productId: item.id,
+      }),
+    ).toMatchObject({ kind: "success" });
+
+    const [state, cost] = await Promise.all([
+      inventoryState(scope.branch.id, item.id),
+      prisma.inventoryCostState.findUniqueOrThrow({
+        where: {
+          branchId_productId: {
+            branchId: scope.branch.id,
+            productId: item.id,
+          },
+        },
+      }),
+    ]);
+    expect(state.balance?.quantity.toFixed(4)).toBe("1.0000");
+    expect(state.aggregate?.toFixed(4)).toBe("1.0000");
+    expect(state.transactions.map((row) => row.delta.toFixed(4))).toEqual([
+      "199.0000",
+      "-198.0000",
+    ]);
+    expect(cost.averageUnitCost?.toFixed(6)).toBe("0.000001");
+    expect(cost.inventoryValue?.toFixed(10)).toBe("0.0000010000");
+    expect(cost.inventoryValue?.isNegative()).toBe(false);
+  });
 });

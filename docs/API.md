@@ -738,8 +738,10 @@ Transaction history is scoped to one branch/product and orders immutable ledger
 rows by `(occurredAt ASC, id ASC)`, matching the chronological index. Its cursor
 is bound to that scope plus the optional `source`, `occurredAfter`, and
 `occurredBefore` ISO-8601 UTC filters. The current source allow-list is
-`MANUAL_ADJUSTMENT`. History returns its movement ID, canonical decimal-string
-delta, source/reason/note, timestamp, and minimal actor ID/display name. It never
+`MANUAL_ADJUSTMENT` or `PURCHASE_RECEIVE`. Purchase-receive rows have null
+adjustment reason/note and retain their direct receipt-item provenance internally.
+History returns its movement ID, canonical decimal-string delta, source/reason/note,
+timestamp, and minimal actor ID/display name. It never
 returns idempotency-key hashes, canonical-request hashes, membership IDs, or
 other internal provenance fields.
 
@@ -766,7 +768,12 @@ other internal provenance fields.
 | `PATCH /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}` | Branch purchasing write | DRAFT field replacement or accepted state intent plus exact `expectedUpdatedAt` | Purchase order | Non-editable/stale/terminal-state conflict | Implemented by P4-M2-T02; lifecycle follows `ADR-026` |
 | `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}/receipts` | Branch receiving | `Idempotency-Key`; actual THB costs and bounded document-level Input VAT snapshot, no received quantities | Completed receipt + balance/cost effects | ORDERED/exact-quantity/cost/idempotency/concurrency | Planned; `ADR-022`, `ADR-024`, and `ADR-026` |
 
-Receipt creation is a future atomic command. It derives every receipt quantity from the frozen ORDERED PO, creates at most one immutable receipt, and does not expose a sequence of public endpoints for separately creating a receipt and then mutating stock. Partial/over/short/multiple receipt, receiving without a PO, supplier returns, and receipt correction/reversal have no MVP endpoint.
+Receipt persistence and the atomic receiving service are implemented by P4-M3-T01; this HTTP command remains planned for P4-M3-T02. The service derives every receipt quantity from the frozen ORDERED PO, creates at most one immutable receipt, and does not expose a sequence of public endpoints for separately creating a receipt and then mutating stock. Partial/over/short/multiple receipt, receiving without a PO, supplier returns, and receipt correction/reversal have no MVP endpoint.
+
+Because MVP Organization data has no authoritative VAT-registration master field, the
+future receiving command supplies an explicit receipt-time VAT-registration assertion.
+The service validates and snapshots that assertion independently and includes it in
+receipt-level idempotency; it is not inferred from VAT amounts or Supplier documents.
 
 Purchase-order creation is server-authorized for the concrete active branch and
 creates a THB-only `DRAFT` with a server-generated immutable PO reference.

@@ -122,7 +122,7 @@ profile.
 13. No hard deletion of completed operational history or inventory ledger entries is allowed.
 14. Browser sessions and one-time identity tokens persist only cryptographic token hashes; raw session, verification, reset, and invitation tokens are never stored.
 15. Every organization has at least one active `OWNER`; one organization role belongs to each user/organization membership, while branch access for branch-only roles is represented by assignments.
-16. Future purchase receiving uses THB only, exact Decimal values, `ROUND_HALF_UP` at an accepted persisted/display scale, and one atomic receipt/ledger/balance/cost/PO transition according to `ADR-026`.
+16. Purchase receiving uses THB only, exact Decimal values, `ROUND_HALF_UP` at an accepted persisted/display scale, and one atomic receipt/ledger/balance/cost/PO transition according to `ADR-026`.
 
 ## 3. Conceptual relationship model
 
@@ -519,7 +519,7 @@ Lifecycle:
 - Product deactivation preserves historical references. Category deactivation neither deletes nor deactivates products and never silently reassigns them.
 - Base-price changes affect future operations only. Branch price overrides are out of MVP scope.
 - Product and Category mutations use their exact prior millisecond UTC `updatedAt`; stale writes map to `PRODUCT_STALE` and `CATEGORY_STALE`.
-- Product has no organization-wide cost, average-cost, COGS, or inventory-valuation attribute. `ADR-026` assigns future cost state to Branch/Product; no such projection is implemented yet.
+- Product has no organization-wide cost, average-cost, COGS, or inventory-valuation attribute. `ADR-026` assigns cost state to the separate Branch/Product projection implemented by P4-M3-T01.
 
 P3-M1-T03 implements these as service/database boundaries without a schema
 change. Mutations condition on `(id, organization_id, updated_at)` and assign a
@@ -591,12 +591,10 @@ Product to the row's organization; the Product `(id, organization_id)` key is
 added by the same migration. There is no optimistic version column because the
 accepted mutation design serializes authoritative balance state pessimistically.
 
-`ADR-026` does not retrofit cost into this implemented quantity projection. A later
-costing implementation must maintain a tenant-safe Branch/Product projection that
-distinguishes `UNKNOWN` from `KNOWN` cost basis, records inventory value and the
-moving-average unit cost at the accepted scale, and participates in the same receipt
-and later cost-dependent operation transaction. The exact table/nullable-field/state
-representation is deliberately assigned to the later schema task. `UNKNOWN` is not
+`ADR-026` does not put cost in this quantity projection. P4-M3-T01 adds a separate,
+tenant-safe Branch/Product `inventory_cost_states` projection that distinguishes
+`UNKNOWN` from `KNOWN`, records inventory value and moving-average unit cost, and
+participates in the same receipt and manual-adjustment transaction. `UNKNOWN` is not
 zero cost: it means authoritative valuation, COGS, and gross margin are unavailable
 for cost-dependent operations involving that stock.
 
@@ -613,7 +611,7 @@ Required logical attributes:
 - Signed, non-zero quantity delta as `DECIMAL(18,4)` using the Product's accepted
   immutable base unit. Positive increases and negative decreases stock. API output
   removes meaningless trailing fractional zeros.
-- Bounded source; the implemented P3-M2-T02 schema permits only `MANUAL_ADJUSTMENT`, while a later purchasing migration must add `PURCHASE_RECEIVE`
+- Bounded source: `MANUAL_ADJUSTMENT` or positive `PURCHASE_RECEIVE`
 - Acting human user plus membership/context sufficient for durable attribution, or
   an explicit trusted system/source identity for future system-created movements
 - Adjustment reason/note where applicable
@@ -644,28 +642,18 @@ Constraints and indexes:
   whitespace, preserve internal Unicode and whitespace, and must not contain
   credentials, tokens, or secrets.
 
-P3-M2-T02 persists this contract in `inventory_transactions` with UUID `id`,
-required organization/branch/product scope, signed `DECIMAL(18,4)` `delta`,
-bounded `source` and `adjustment_reason` text, nullable note, required human
-`actor_user_id` and `actor_membership_id`, lowercase hexadecimal SHA-256
-`idempotency_key_hash` and `canonical_request_hash`, and millisecond UTC
-`occurred_at`. It deliberately has no `updated_at`, status, soft-delete,
-correction link, generic metadata, cost, valuation, receiving, sale, or transfer
-field.
+P3-M2-T02 initially persists this contract in `inventory_transactions`; P4-M3-T01
+extends it with nullable `purchase_receipt_item_id` and makes adjustment-only
+reason/note/idempotency fields conditional on source. Manual adjustments retain the
+organization-scoped SHA-256 idempotency identity. Purchase receipt movements instead
+carry one direct tenant/branch/product-safe receipt-item link, with a unique mapping
+from each receipt item to exactly one movement; they do not copy the receipt-level
+idempotency hash onto every line.
 
-Database checks reject zero delta, any source other than `MANUAL_ADJUSTMENT`,
-reasons outside `STOCK_COUNT`, `DAMAGE`, `LOSS`, `FOUND`, `CORRECTION`, and
-`OTHER`, an absent/blank/untrimmed `OTHER` note, any other supplied blank or
-untrimmed note, and hashes outside the established 64-character lowercase hex
-shape. Unique `(organization_id, idempotency_key_hash)` is the durable
-successful-movement identity; the same hash may exist in another organization.
-History uses `(branch_id, product_id, occurred_at, id)`.
-
-The existing schema is intentionally manual-adjustment-only. A future receiving
-migration must not copy one receipt idempotency hash to every receipt-item movement:
-it needs receipt-level operation idempotency plus unique receipt-item-to-movement
-provenance. It must also make adjustment-only reason/note constraints conditional on
-the source. No receiving schema is created by this document.
+Database checks reject zero delta, unsupported sources, invalid manual-adjustment
+reason/note/hash shapes, or a `PURCHASE_RECEIVE` row that is non-positive, lacks its
+receipt-item link, or carries adjustment-only fields. History uses
+`(branch_id, product_id, occurred_at, id)`.
 
 ### 4.4 Purchasing and receiving
 
@@ -748,7 +736,14 @@ Constraints and indexes:
 - Receipt-level operation idempotency is unique within the accepted Organization/operation scope; its canonical request represents actual costs and accepted document-level VAT snapshots, never client-supplied quantities.
 - A completed receipt is immutable. Supplier returns, receipt correction, and receipt reversal are future scope.
 - Its PO must be `ORDERED`, receipt branch equals PO branch, and no other completed receipt may exist for that PO. Receipt item quantities are server-derived exactly from frozen PO quantities; partial/over/short/multiple receipt and receiving without a PO are excluded.
-- Preserve only the accepted document-level Input VAT snapshots where applicable: organization VAT-registration state, rate, amount, supplier tax-document number, and supplier tax-document date. These fields do not create a generic Tax or VAT-allocation engine and do not derive/rewrite `actualUnitCost`.
+- Preserve only the accepted document-level Input VAT snapshots where applicable: the authorized receiving command's explicit receipt-time organization VAT-registration assertion, rate, amount, supplier tax-document number, and supplier tax-document date. Organization has no authoritative VAT-registration master field in MVP, so the snapshot is not server-derived from Organization. These fields do not create a generic Tax or VAT-allocation engine and do not derive/rewrite `actualUnitCost`.
+
+P4-M3-T01 persists this aggregate in `purchase_receipts` and
+`purchase_receipt_items`. Receipt idempotency/canonical hashes are lowercase SHA-256;
+references and idempotency are Organization-unique; composite restrictive foreign
+keys bind the Receipt to the exact PO Organization/Branch/Supplier and bind each item
+to its frozen PO item/Product. Input VAT uses nullable `DECIMAL(9,6)` rate and
+`DECIMAL(19,4)` amount as an optional pair, plus the bounded document snapshots.
 
 #### `PurchaseReceiptItem`
 
@@ -770,11 +765,10 @@ Constraints:
 - Received quantity equals the frozen PO-line quantity and is positive.
 - A completed receipt item maps uniquely to exactly one positive `PURCHASE_RECEIVE` movement.
 
-#### Future `InventoryCostState` concept
+#### `InventoryCostState`
 
 Purpose: transactionally maintained Branch/Product moving weighted-average valuation
-projection after `ADR-026` is implemented. This is a logical contract only; no model,
-table, or migration exists yet.
+projection implemented by P4-M3-T01 in `inventory_cost_states`.
 
 - Scope: Organization, Branch, and Product with the same tenant-safe relationship
   strategy as inventory balances.
@@ -801,6 +795,15 @@ table, or migration exists yet.
   unavailable. When quantity reaches zero, value is exactly zero and the last-known
   average cost remains. A later receipt from zero uses its actual unit cost as the
   new current average.
+- For `KNOWN` basis, `averageUnitCost` is authoritative. Manual adjustments retain it
+  and materialize inventory value as resulting quantity times that average, rounded
+  `ROUND_HALF_UP` only at the `DECIMAL(38,10)` storage boundary. Subsequent receipts
+  derive old inventory value from old quantity times that retained average rather
+  than accumulating an independently rounded stored value.
+- Persistence uses unique `(branch_id, product_id)`, `DECIMAL(38,10)` inventory
+  value, and nullable `DECIMAL(19,6)` average unit cost. A database state-shape check
+  requires both numeric values for `KNOWN` and neither for `UNKNOWN`; composite
+  restrictive foreign keys enforce Organization/Branch/Product agreement.
 
 ### 4.5 Sales and payment
 
@@ -1021,6 +1024,11 @@ One database transaction must:
 7. Append one inventory transaction per stock movement.
 8. Update each inventory balance consistently.
 9. Commit all records or roll back all records.
+
+P4-M3-T01 implements this entire transaction behind the receiving service. It locks
+receipt idempotency, the PO row, then every Branch/Product balance in sorted Product
+ID order using the same advisory-lock key as manual adjustment. P4-M3-T02 owns only
+the future authenticated HTTP boundary.
 
 ### 6.2 Purchase receiving
 

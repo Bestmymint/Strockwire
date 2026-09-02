@@ -41,7 +41,7 @@ const inventoryTransactionSchema = z.object({
   id: z.string().uuid(),
   note: z.string().nullable(),
   occurredAt: timestampSchema,
-  reason: z.string(),
+  reason: z.string().nullable(),
   source: z.string(),
 });
 const inventoryListResponseSchema = z.object({

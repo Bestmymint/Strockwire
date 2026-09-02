@@ -635,7 +635,10 @@ function HistoryList({
                 <div>
                   <p className="font-medium">
                     {signedDelta(transaction.delta)} ·{" "}
-                    {transaction.reason.replaceAll("_", " ")}
+                    {(transaction.reason ?? "Purchase receive").replaceAll(
+                      "_",
+                      " ",
+                    )}
                   </p>
                   <p className="text-sm text-muted-foreground">
                     {transaction.source.replaceAll("_", " ")} ·{" "}

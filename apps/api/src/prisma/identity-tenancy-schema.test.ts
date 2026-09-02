@@ -116,6 +116,11 @@ describe("identity and tenancy database schema", () => {
         finished: true,
         active: true,
       },
+      {
+        migrationName: "20260902090000_add_receipt_receiving",
+        finished: true,
+        active: true,
+      },
     ]);
     expect(tables.map(({ tableName }) => tableName)).toEqual([
       "branch_assignments",
@@ -124,6 +129,7 @@ describe("identity and tenancy database schema", () => {
       "email_verification_tokens",
       "first_organization_onboardings",
       "inventory_balances",
+      "inventory_cost_states",
       "inventory_transactions",
       "invitation_branch_scopes",
       "invitations",
@@ -135,6 +141,8 @@ describe("identity and tenancy database schema", () => {
       "products",
       "purchase_order_items",
       "purchase_orders",
+      "purchase_receipt_items",
+      "purchase_receipts",
       "sessions",
       "suppliers",
       "users",

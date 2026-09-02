@@ -233,7 +233,7 @@ without asserting that cost or valuation persistence already exists.
 - Support an atomic receipt that creates receipt records, ledger entries, balance changes, Branch/Product moving-average cost changes, and the PO transition together.
 - Preserve historical purchase and receipt values independently of current product values.
 
-Partial/over/short receipt, multiple receipt events, receiving without a PO, supplier returns, and receipt reversal are excluded from MVP. The exact future cost-state schema remains a later implementation decision, but must preserve `UNKNOWN` versus `KNOWN` cost basis semantics from `ADR-026`.
+Partial/over/short receipt, multiple receipt events, receiving without a PO, supplier returns, and receipt reversal are excluded from MVP. P4-M3-T01 implements the Branch/Product `InventoryCostState` projection with the `UNKNOWN` versus `KNOWN` cost-basis semantics from `ADR-026`; HTTP exposure remains P4-M3-T02.
 
 ### 10.5 POS and sales
 
@@ -375,7 +375,7 @@ multi-instance, production DoS, and long-term telemetry controls remain open in
 - **FR-PUR-002:** Purchase orders and receipts shall target a branch in the same organization.
 - **FR-PUR-003:** A PO shall use the accepted immutable lifecycle and one unique Product line per PO; an ordered PO produces at most one immutable completed receipt.
 - **FR-PUR-004:** Receiving shall derive exact receipt quantities from the frozen PO, atomically update receipt state, ledger, balances, Branch/Product cost state, and PO state, and use receipt-level idempotency.
-- **FR-PUR-005:** Purchasing uses THB only. PO/Receipt unit costs use decimal strings targeting `DECIMAL(19,4)`; future moving-average unit cost targets `DECIMAL(19,6)` and uses `ROUND_HALF_UP` where a persisted/displayed scale requires rounding.
+- **FR-PUR-005:** Purchasing uses THB only. PO/Receipt unit costs use decimal strings targeting `DECIMAL(19,4)`; the implemented Branch/Product moving-average unit cost uses `DECIMAL(19,6)` and `ROUND_HALF_UP` at that persisted boundary.
 - **FR-PUR-006:** A receipt may preserve only the accepted document-level Input VAT snapshots; it shall not imply a generic Tax engine, VAT allocation engine, Output VAT, or tax reporting.
 
 ### Sales

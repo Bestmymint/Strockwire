@@ -326,7 +326,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-PUR-002 — Receive a purchase order into branch stock
 
-- **Status:** Planned; exact receipt, cost, and atomicity contract accepted by `ADR-026`; quantity validation follows `ADR-022` and no-negative stock follows `ADR-024`
+- **Status:** Receipt persistence and atomic service implemented by P4-M3-T01; HTTP/API exposure remains P4-M3-T02. The receipt, cost, and atomicity contract follows `ADR-026`, quantity validation follows `ADR-022`, and no-negative stock follows `ADR-024`.
 - **Actor:** Authorized receiving/inventory user
 - **Preconditions:** The PO is `ORDERED`, targets the trusted active branch, has no completed receipt, and every referenced Product is active. A later-inactive Supplier does not block this receipt.
 - **Trigger:** Actor submits receipt actual unit costs, bounded document-level Input VAT snapshots where applicable, and an idempotency key; quantities are not client-entered.
