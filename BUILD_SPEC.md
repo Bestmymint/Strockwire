@@ -233,7 +233,7 @@ without asserting that cost or valuation persistence already exists.
 - Support an atomic receipt that creates receipt records, ledger entries, balance changes, Branch/Product moving-average cost changes, and the PO transition together.
 - Preserve historical purchase and receipt values independently of current product values.
 
-Partial/over/short receipt, multiple receipt events, receiving without a PO, supplier returns, and receipt reversal are excluded from MVP. P4-M3-T01 implements the Branch/Product `InventoryCostState` projection with the `UNKNOWN` versus `KNOWN` cost-basis semantics from `ADR-026`; HTTP exposure remains P4-M3-T02.
+Partial/over/short receipt, multiple receipt events, receiving without a PO, supplier returns, and receipt reversal are excluded from MVP. P4-M3-T01 implements the Branch/Product `InventoryCostState` projection with the `UNKNOWN` versus `KNOWN` cost-basis semantics from `ADR-026`; P4-M3-T02 exposes the existing exact receive command through authenticated HTTP without adding another transaction implementation.
 
 ### 10.5 POS and sales
 

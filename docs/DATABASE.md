@@ -1027,8 +1027,8 @@ One database transaction must:
 
 P4-M3-T01 implements this entire transaction behind the receiving service. It locks
 receipt idempotency, the PO row, then every Branch/Product balance in sorted Product
-ID order using the same advisory-lock key as manual adjustment. P4-M3-T02 owns only
-the future authenticated HTTP boundary.
+ID order using the same advisory-lock key as manual adjustment. P4-M3-T02 implements
+only the authenticated HTTP boundary over this transaction.
 
 ### 6.2 Purchase receiving
 

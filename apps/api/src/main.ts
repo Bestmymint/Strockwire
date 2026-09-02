@@ -12,6 +12,9 @@ import { createSupplierService } from "./modules/suppliers/supplier-service.ts";
 import { createPrismaPurchaseOrderRepository } from "./modules/purchasing/purchase-order-repository.ts";
 import { createPurchaseOrderRouter } from "./modules/purchasing/purchase-order-router.ts";
 import { createPurchaseOrderService } from "./modules/purchasing/purchase-order-service.ts";
+import { createPrismaReceivingRepository } from "./modules/purchasing/receiving-repository.ts";
+import { createReceivingRouter } from "./modules/purchasing/receiving-router.ts";
+import { createReceivingService } from "./modules/purchasing/receiving-service.ts";
 import { createPrismaInventoryRepository } from "./modules/inventory/inventory-repository.ts";
 import { createInventoryRouter } from "./modules/inventory/inventory-router.ts";
 import { createInventoryService } from "./modules/inventory/inventory-service.ts";
@@ -111,6 +114,9 @@ async function main(): Promise<void> {
   const purchaseOrderService = createPurchaseOrderService({
     repository: createPrismaPurchaseOrderRepository(prisma),
   });
+  const receivingService = createReceivingService({
+    repository: createPrismaReceivingRepository(prisma),
+  });
   const apiRouter = Router();
   apiRouter.use(
     createRegistrationRouter({
@@ -175,6 +181,13 @@ async function main(): Promise<void> {
       authenticationMiddleware,
       publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
       purchaseOrderService,
+    }),
+  );
+  apiRouter.use(
+    createReceivingRouter({
+      authenticationMiddleware,
+      publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
+      receivingService,
     }),
   );
   apiRouter.use(

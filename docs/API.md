@@ -766,14 +766,72 @@ other internal provenance fields.
 | `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders` | Branch purchasing write | Supplier, one line per Product, quantities, expected THB costs | Server-referenced `DRAFT` purchase order | Cross-tenant/inactive refs, invalid/duplicate lines/cost | Implemented by P4-M2-T02; `DRAFT` lifecycle follows `ADR-026`, quantity follows `ADR-022` |
 | `GET /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}` | Branch purchasing read | None | Order and immutable item snapshots | Safe not-found | Implemented by P4-M2-T02 |
 | `PATCH /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}` | Branch purchasing write | DRAFT field replacement or accepted state intent plus exact `expectedUpdatedAt` | Purchase order | Non-editable/stale/terminal-state conflict | Implemented by P4-M2-T02; lifecycle follows `ADR-026` |
-| `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}/receipts` | Branch receiving | `Idempotency-Key`; actual THB costs and bounded document-level Input VAT snapshot, no received quantities | Completed receipt + balance/cost effects | ORDERED/exact-quantity/cost/idempotency/concurrency | Planned; `ADR-022`, `ADR-024`, and `ADR-026` |
+| `POST /organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}/receipts` | `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`, or assigned `INVENTORY_STAFF` for the persisted PO branch | Mandatory `Idempotency-Key`; actual THB costs keyed by PO item plus bounded document-level Input VAT snapshot; no received quantities | `201` completed Receipt; identical replay returns the same logical Receipt with `200` | Strict transport; ORDERED/exact frozen quantity/cost/VAT/idempotency/concurrency | Implemented by P4-M3-T02; `ADR-022`, `ADR-024`, and `ADR-026` |
 
-Receipt persistence and the atomic receiving service are implemented by P4-M3-T01; this HTTP command remains planned for P4-M3-T02. The service derives every receipt quantity from the frozen ORDERED PO, creates at most one immutable receipt, and does not expose a sequence of public endpoints for separately creating a receipt and then mutating stock. Partial/over/short/multiple receipt, receiving without a PO, supplier returns, and receipt correction/reversal have no MVP endpoint.
+Receipt persistence and the atomic receiving service are implemented by P4-M3-T01;
+P4-M3-T02 exposes only that existing transaction through the command above. The
+service derives every receipt quantity from the frozen ORDERED PO, creates at most
+one immutable receipt, and does not expose a sequence of public endpoints for
+separately creating a receipt and then mutating stock. Partial/over/short/multiple
+receipt, receiving without a PO, supplier returns, and receipt correction/reversal
+have no MVP endpoint. The route `branchId` is a validated candidate context only;
+the service authorizes against the PO's persisted Branch.
+
+The mandatory `Idempotency-Key` follows the existing printable ASCII 1–200-character
+header contract. The API does not generate or replace the key. Within one
+Organization, the same key and canonical receive intent replays the same logical
+Receipt without another stock/cost movement; reuse for a different actual-cost or
+VAT intent returns `409 IDEMPOTENCY_CONFLICT`. The same raw key is independently
+namespaced in another Organization.
+
+```json
+{
+  "actualCosts": [
+    {
+      "purchaseOrderItemId": "opaque-uuid",
+      "actualUnitCost": "12.3400"
+    }
+  ],
+  "vat": {
+    "organizationVatRegistered": true,
+    "inputVatRate": "7.000000",
+    "inputVatAmount": "0.8638",
+    "supplierTaxDocumentNumber": "TAX-100",
+    "supplierTaxDocumentDate": "2026-09-02"
+  }
+}
+```
+
+`actualCosts` contains exactly one mapping for every frozen PO item. Item identity is
+the stable `purchaseOrderItemId`; values are non-negative decimal strings at scale at
+most four and are never interpreted as JavaScript `number`. Missing, duplicate,
+extra, malformed, negative, or excess-scale mappings return `400 VALIDATION_ERROR`.
+The body is strict and rejects client quantities, Branch/Supplier/Product overrides,
+receipt identity/timestamps, balance/cost results, and PO status.
 
 Because MVP Organization data has no authoritative VAT-registration master field, the
-future receiving command supplies an explicit receipt-time VAT-registration assertion.
+receiving command supplies an explicit receipt-time VAT-registration assertion.
 The service validates and snapshots that assertion independently and includes it in
 receipt-level idempotency; it is not inferred from VAT amounts or Supplier documents.
+Rate and amount are both null or both present; a non-VAT-registered assertion cannot
+carry them. Rate accepts a non-negative decimal string at scale at most six, amount at
+scale at most four, document number is nullable/trimmed/nonblank up to 100 characters,
+and document date is nullable valid `YYYY-MM-DD`. Invalid combinations return
+`400 VALIDATION_ERROR`; the API performs no VAT calculation.
+
+Successful responses use `{ "data": { "receipt": ... }, "meta": {
+"requestId": ... } }`. Public Receipt fields are `id`, `organizationId`, `branchId`,
+`purchaseOrderId`, `supplierId`, `reference`, `receivedAt`, `createdAt`,
+`receivedByUserId`, the five bounded VAT snapshot fields, and immutable `items` with
+`id`, `purchaseOrderItemId`, `productId`, SKU/name snapshots, server-derived
+`receivedQuantity`, and four-place `actualUnitCost`. Internal membership identity,
+idempotency/canonical hashes, lock material, and database metadata are not exposed.
+
+Stable command failures include `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN`,
+`404 PURCHASE_ORDER_NOT_FOUND`, `409 BRANCH_INACTIVE`, `409 PRODUCT_INACTIVE`,
+`409 PURCHASE_ORDER_STATE_CONFLICT`, `409 PURCHASE_ORDER_RECEIPT_INVALID`,
+`409 IDEMPOTENCY_CONFLICT`, and `409 RECEIPT_REFERENCE_CONFLICT`. Unexpected storage
+failures use the generic `500 INTERNAL_ERROR` envelope without SQL/Prisma details.
 
 Purchase-order creation is server-authorized for the concrete active branch and
 creates a THB-only `DRAFT` with a server-generated immutable PO reference.
