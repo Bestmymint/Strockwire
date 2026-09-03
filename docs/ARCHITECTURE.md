@@ -605,7 +605,10 @@ Implementation touching one of these areas must stop at its accepted boundary un
 
 Purchasing/receiving costing and receipt lifecycle are accepted by `ADR-026`.
 P4-M3-T01 implements Receipt persistence, the atomic receiving service, and the
-documented `UNKNOWN`/`KNOWN` cost-basis projection; HTTP/UI exposure remains later.
+documented `UNKNOWN`/`KNOWN` cost-basis projection. P4-M3-T02 implements the
+authenticated Receiving API, and P4-M3-T03 implements the responsive Receiving UI
+over that command. No Receipt read/history endpoint exists. P5-M1-T01 — Close
+payment/tax/discount/receipt decisions remains the exact next task and is unstarted.
 
 Stock transfer is **DEFERRED FROM MVP** by `ADR-025`. It remains broader/full future
 scope, but no transfer component, API, persistence, authorization, lifecycle, or
