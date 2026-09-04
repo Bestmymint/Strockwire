@@ -106,11 +106,11 @@ The backend is one deployable application divided by business capability. Module
 | Next.js web | Responsive UI, navigation, accessibility, local interaction state, TanStack Query server state, render charts, send validated user intent | Establish trusted tenant scope, calculate authoritative price/totals, mutate stock directly, call OpenRouter |
 | Express API edge | Route `/api/v1`, authenticate, validate with Zod, authorize, invoke use cases, map errors, emit request telemetry | Contain domain calculations in controllers, trust client totals/scope |
 | Identity and access | Email/password identity, Argon2 verification, opaque PostgreSQL-backed sessions, provider-abstracted verification/reset/invitation email, organization membership, branch assignment, fixed RBAC policy | Infer access from client-provided IDs or couple auth-domain behavior directly to Resend |
-| Organizations and branches | Tenant lifecycle, branch lifecycle, active/allowed scope resolution | Own product, sale, or inventory business rules |
+| Organizations and branches | Tenant lifecycle, branch lifecycle, active/allowed scope resolution, authoritative sales VAT status/rate configuration | Own product, sale, or inventory business rules; accept checkout-authored VAT authority |
 | Catalog | Organization products/categories, SKU/barcode rules, accepted master-data lifecycle, one immutable base unit, and organization-level base price data | Hold branch inventory as `product.stock`, cost/valuation authority, branch-price overrides, or rewrite sale history |
 | Inventory | Branch balances, append-oriented signed-delta ledger, adjustments, no-negative stock availability, movement history | Change balances without ledger records; permit a negative-stock override; implement generic audit logging |
 | Suppliers and purchasing | Organization suppliers, branch-targeted purchase orders, receipt lifecycle | Update inventory outside an atomic receiving use case |
-| POS and sales | Server-side cart validation, checkout, immutable line snapshots, payment records, history, receipt views, reversal after rules are accepted | Trust prices/totals from browser; commit a partial checkout |
+| POS and sales | Server-side cart validation, exact document totals/allocations, atomic completed Sales, immutable line/payment/VAT/COGS snapshots, history, and Sale-backed receipt views; reversal only after rules are accepted | Trust prices/totals/VAT authority from browser; persist a Draft Sale; commit a partial checkout; rewrite original Sale facts for reversal |
 | Analytics and forecasting | Accepted metric formulas, period boundaries, branch/organization aggregation, deterministic forecast and evaluation | Ask an LLM to calculate or forecast; invent unresolved formulas |
 | Scheduled AI insights | Snapshot creation, minimization, prompt version, provider call, idempotency, persistence, retry/failure status | Query raw database through OpenRouter; block core workflows |
 | PostgreSQL | System of record, constraints, transactions, indexes, balances, ledgers, snapshots, persisted insights | Serve as an authorization substitute without scoped queries |
@@ -364,22 +364,56 @@ sequenceDiagram
     participant Inventory
     participant DB as PostgreSQL
 
-    Cashier->>Web: Submit cart and payment intent
+    Cashier->>Web: Submit transient cart and payment intent
     Web->>API: POST checkout with idempotency key
     API->>API: Authenticate, validate, authorize branch
-    API->>Sales: Re-load products and compute trusted totals
+    API->>Sales: Invoke checkout with validated intent
     Sales->>DB: Begin transaction
-    Sales->>DB: Lock/read required inventory balances
-    Sales->>Sales: Enforce accepted stock and payment rules
-    Sales->>DB: Create sale, line snapshots, payment
-    Sales->>Inventory: Record SALE movements
-    Inventory->>DB: Append ledger entries and update balances
+    Sales->>DB: Claim/resolve checkout idempotency
+    Sales->>DB: Lock VAT profile; re-load products and exact prices
+    Sales->>Sales: Compute document totals and deterministic allocations
+    Sales->>DB: Lock sorted Branch/Product balances and cost states
+    Sales->>Sales: Enforce stock, discount, VAT, payment, and cost rules
+    Sales->>DB: Create Sale, line snapshots, and one Payment
+    Sales->>Inventory: Record negative SALE movements
+    Inventory->>DB: Append ledger, update balances/cost state
     DB-->>Sales: Commit all changes
     Sales-->>API: Stable sale/receipt response
     API-->>Web: Return same result on safe retry
 ```
 
-The operation must never leave a completed sale without its matching inventory and payment records. No-negative stock follows `ADR-024`; payment semantics remain blocked by `OQ-008`.
+`ADR-027` keeps the mutable cart client-side: no Cart, Draft Sale, or inventory
+reservation is persisted. Existence of a Sale row means the checkout transaction
+completed successfully; the initial model has no Sale status. Product `basePrice` is
+server authority and `expectedUnitPrice` is only an exact optimistic price-change
+precondition. The checkout uses THB, one CASH or manually confirmed TRANSFER Payment,
+an optional manager-or-higher whole-Sale AMOUNT/PERCENT discount, and a
+server-generated immutable `SALE-<UUID>` reference. Sale/SaleItems/Payment are the
+receipt source; there is no separate Sales Receipt aggregate or Customer/CRM data.
+
+Organization owns authoritative sales VAT application configuration:
+`UNCONFIGURED`, `NOT_REGISTERED`, or `REGISTERED` plus a nullable configured rate.
+`UNCONFIGURED` blocks checkout and is not a legal registration classification. A
+REGISTERED MVP Organization treats every POS Product as subject to its single rate and
+`basePrice` as VAT-inclusive. Discount precedes document-level VAT extraction. A
+NOT_REGISTERED Sale has null taxable amounts/rate snapshot and zero Output VAT.
+Mixed/product-specific/exempt/zero-rated/multiple-rate tax behavior and a jurisdiction
+tax engine are outside MVP.
+
+Document totals use exact Decimal arithmetic, `ROUND_HALF_UP` at the accepted
+persisted boundary, and deterministic largest-remainder cent allocation with Product
+ID tie-break. Non-negative line allocations enforce discount no greater than gross,
+VAT no greater than net, and non-negative net/taxable amounts; line sums must equal
+their Sale subtotal, discount, total, taxable, and Output VAT facts as applicable.
+
+Checkout acquires organization/operation idempotency before the existing shared
+Branch/Product serialization keys in sorted Product-ID order, then locks balances and
+cost states. It atomically creates Sale/SaleItems/one Payment, negative `SALE` ledger
+movements, balance changes, cost-state changes, COGS snapshots, and the replay result.
+No-negative stock follows `ADR-024`. KNOWN cost retains the accepted moving average.
+UNKNOWN cost remains UNKNOWN with null average/value and null SaleItem unit cost/COGS
+whether remaining quantity is positive or zero; later receipt initialization never
+backfills history. Any failure rolls back every checkout effect.
 
 ### 6.5 Deterministic analytics
 
@@ -427,7 +461,7 @@ Dashboard reads the persisted result. Opening or refreshing the dashboard does n
 | Catalog | Categories and products | Inventory references product; purchasing/sales snapshot product data |
 | Inventory | Balance and transaction ledger | Receiving adds; checkout subtracts; approved reversal compensates |
 | Purchasing | Supplier, purchase order, receipt | Receiving coordinates inventory and accepted costing |
-| Sales | Sale, line snapshots, payment, receipt/reversal lifecycle | Checkout/reversal coordinates inventory |
+| Sales | Completed-by-existence Sale, line/payment/VAT/COGS snapshots, checkout idempotency, Sale-backed receipt projection | Checkout coordinates inventory; a later accepted reversal use case creates linked compensating records without rewriting original facts |
 | Analytics | Metric queries/snapshots/forecast/evaluation | Reads stable operational data; supplies aggregate AI snapshot |
 | AI insights | Insight job/run/output/provenance | Reads validated analytics snapshot only |
 
@@ -443,6 +477,9 @@ Owning a table does not mean bypassing another module's invariant. For example, 
 - Treat selected organization/branch as navigation context, not proof of permission.
 - Present loading, empty, stale, partial-data, error, and retry states.
 - Never compute authoritative checkout prices or analytics in the browser.
+- Keep checkout carts transient; render server-returned totals/receipt facts. The later
+  POS UI must expose VAT configuration only to `OWNER`/`ADMIN`, block checkout while
+  it is unconfigured, and expose discounts only to manager-or-higher roles.
 - Do not add a native wrapper or offline mutation queue within the current scope.
 - Use the Next.js App Router with the `src/app` directory convention; do not use the Pages Router.
 - Keep React Server Components as the default and add `"use client"` only at boundaries that require state, effects, event handlers, browser APIs, or client-only providers.
@@ -489,6 +526,7 @@ Avoid a generic repository abstraction that erases query semantics, tenant scope
 - Refund/void reversal once defined
 - Uniqueness and membership constraints
 - Idempotent creation of a sale, receipt, snapshot, and scheduled report
+- Document-first Sale monetary allocation and one-payment/receipt consistency
 
 ### Derived/read models
 
@@ -592,7 +630,6 @@ Scale in measured stages:
 
 This document does not answer the following canonical questions from `BUILD_SPEC.md`:
 
-- `OQ-008` payment/tax/discount/receipt rules
 - `OQ-009` refund/void rules
 - `OQ-012` forecasting V1
 - `OQ-015` exact production hosting
@@ -603,12 +640,19 @@ This document does not answer the following canonical questions from `BUILD_SPEC
 
 Implementation touching one of these areas must stop at its accepted boundary until the referenced question is resolved and all affected documents are updated.
 
+Sales payment, Output VAT, discount, receipt, monetary, checkout, and UNKNOWN-cost
+behavior are accepted by `ADR-027`, which resolves `OQ-008`. This is an architecture
+contract only: no Sale/Payment schema, service, API, or POS UI exists yet. The exact
+next task is P5-M1-T02 — Sale/payment schema. It owns only bounded persistence and
+constraints, including Organization VAT fields; P5-M2-T01 owns the checkout service,
+P5-M2-T02 the target VAT-profile/POS HTTP contracts, P5-M2-T03 the VAT/POS UI, and
+P5-M3 the history/receipt read experience. `OQ-009` remains unresolved for reversal.
+
 Purchasing/receiving costing and receipt lifecycle are accepted by `ADR-026`.
 P4-M3-T01 implements Receipt persistence, the atomic receiving service, and the
 documented `UNKNOWN`/`KNOWN` cost-basis projection. P4-M3-T02 implements the
 authenticated Receiving API, and P4-M3-T03 implements the responsive Receiving UI
-over that command. No Receipt read/history endpoint exists. P5-M1-T01 — Close
-payment/tax/discount/receipt decisions remains the exact next task and is unstarted.
+over that command. No Purchase Receipt read/history endpoint exists.
 
 Stock transfer is **DEFERRED FROM MVP** by `ADR-025`. It remains broader/full future
 scope, but no transfer component, API, persistence, authorization, lifecycle, or

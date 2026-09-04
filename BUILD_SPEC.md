@@ -86,9 +86,11 @@ The following are not part of the current product scope:
 - An AI chatbot
 - Offline POS
 - Full CRM, loyalty, e-commerce, or enterprise warehouse management
+- Payment gateways, CARD, split tender, pending/offline payment, automatic transfer verification, or transfer-slip/OCR processing
+- A generic tax engine, mixed/product-specific VAT classes or rates, VAT filing, or legal tax-invoice/e-tax-invoice compliance
 - Google login in the MVP; it may be evaluated after the core project
 
-Stock transfer is deferred from the current MVP but remains broader/full product scope; no transfer lifecycle or implementation contract is frozen. Branch price overrides, refunds/voids, and particular payment methods are neither silently included nor excluded; their MVP status is unresolved in the Open Questions register.
+Stock transfer is deferred from the current MVP but remains broader/full product scope; no transfer lifecycle or implementation contract is frozen. Branch price overrides remain out of MVP. `ADR-027` accepts CASH and manually confirmed TRANSFER only for Sales; refund/void behavior remains unresolved in `OQ-009`.
 
 ## 7. Target users
 
@@ -121,7 +123,10 @@ The MVP permission baseline is:
 | Product/category create or edit; supplier create or edit; stock adjustment; purchase orders/receiving | `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`; branch-only roles are limited to assigned branches |
 | Product deactivate | `OWNER`, `ADMIN`, `BRANCH_MANAGER`; branch managers are limited to assigned branches |
 | POS/checkout | `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `CASHIER`; branch-only roles are limited to assigned branches |
+| Apply a whole-Sale discount | `OWNER`, `ADMIN`, `BRANCH_MANAGER`; branch managers are limited to assigned branches; `CASHIER` cannot discount |
+| Configure Organization sales VAT | `OWNER`, `ADMIN` only |
 | Sales history | `OWNER`/`ADMIN` organization-wide; `BRANCH_MANAGER` and `CASHIER` in their assigned-branch scope as required for operations |
+| Sales cost/COGS visibility | `OWNER`/`ADMIN` organization-wide; `BRANCH_MANAGER` assigned branches; `CASHIER`/`INVENTORY_STAFF` none |
 | Analytics | `OWNER`/`ADMIN` organization-wide; `BRANCH_MANAGER` assigned branches; `INVENTORY_STAFF` inventory-relevant analytics only; `CASHIER` none |
 | Forecast/reorder | `OWNER`/`ADMIN` organization-wide; `BRANCH_MANAGER`/`INVENTORY_STAFF` assigned branches; `CASHIER` none |
 | AI business summaries | `OWNER`/`ADMIN` organization-wide; `BRANCH_MANAGER` assigned branches; `INVENTORY_STAFF`/`CASHIER` none |
@@ -238,15 +243,19 @@ Partial/over/short receipt, multiple receipt events, receiving without a PO, sup
 ### 10.5 POS and sales
 
 - Search products and accept barcode input.
-- Build and validate a cart.
-- Recalculate prices and totals on the server.
-- Record payment information according to the finalized MVP payment scope.
-- Create the sale, immutable sale-item snapshots, payment records, inventory transactions, and inventory balance updates in one database transaction.
+- Build and validate a transient client-side cart. Do not persist a Draft Sale or reserve inventory.
+- Recalculate prices and totals on the server. `Product.basePrice` is authoritative; each line sends `expectedUnitPrice` only as an optimistic price-change precondition and snapshots the accepted Product identity, unit, and price.
+- Record exactly one confirmed Payment per Sale using CASH or manually confirmed TRANSFER. CASH records tender/change; TRANSFER may record one bounded optional reference. No Payment status, split, CARD, gateway, pending, or offline payment exists.
+- Use THB only. Allow no discount or one manager-or-higher whole-Sale `AMOUNT` or `PERCENT` manual discount with a required reason; apply discount before Output VAT extraction.
+- Require authoritative Organization `UNCONFIGURED` / `NOT_REGISTERED` / `REGISTERED` sales VAT configuration. Existing and newly created Organizations start `UNCONFIGURED` with a null rate, and checkout remains blocked until an OWNER or ADMIN explicitly configures it. For REGISTERED, treat every MVP POS Product as subject to the single Organization rate and its `basePrice` as VAT-inclusive; do not support mixed/product-specific/exempt/zero-rated/multiple-rate tax behavior.
+- Calculate document totals with exact Decimal arithmetic and deterministic largest-remainder line allocation according to `ADR-027`.
+- Create the Sale, immutable SaleItem snapshots, one Payment, negative `SALE` inventory transactions, inventory balance updates, cost-state reduction, COGS snapshots, and checkout idempotency result in one database transaction.
 - Roll back the whole checkout if any required operation fails.
-- View branch-scoped sales history, sale details, and a printable browser receipt.
+- A successfully persisted Sale is completed by existence; the initial model has no Sale status. Use immutable `SALE-<UUID>` identity and project the printable customer receipt from Sale/SaleItems/Payment rather than persisting a second Receipt aggregate.
+- View authorized sales history, sale details, and a printable browser receipt without exposing COGS to unauthorized roles.
 - Apply refund/void behavior only after its rules are accepted.
 
-Payment methods, tax/VAT behavior, discounts, receipt numbering, refunds, and voids must not be invented during implementation.
+`ADR-027` governs payment, Output VAT, discounts, reference/receipt, rounding, UNKNOWN cost, idempotency, and checkout atomicity. Refunds and voids must not be invented before `OQ-009` is accepted.
 
 ### 10.6 Analytics and forecasting
 
@@ -381,10 +390,17 @@ multi-instance, production DoS, and long-term telemetry controls remain open in
 ### Sales
 
 - **FR-SALE-001:** Every sale shall be assigned to one branch and acting user.
-- **FR-SALE-002:** Checkout shall validate authorization, product status, server-side price, totals, and stock policy.
-- **FR-SALE-003:** Checkout shall commit the sale, immutable line snapshots, payment, ledger, and balances as one database transaction.
+- **FR-SALE-002:** Checkout shall validate authorization, active Product, exact server-side `basePrice` against `expectedUnitPrice`, Organization VAT configuration, totals, payment, discount permission, and no-negative stock inside its authoritative transaction.
+- **FR-SALE-003:** Checkout shall commit the completed-by-existence Sale, immutable line/payment/VAT/cost snapshots, one Payment, negative `SALE` ledger movements, balances, InventoryCostState updates, and idempotency result as one database transaction.
 - **FR-SALE-004:** Historical sale line values shall not change when catalog data changes.
 - **FR-SALE-005:** Duplicate checkout submission shall not create duplicate sales when the same idempotency key is retried.
+- **FR-SALE-006:** Sales shall use THB and exact Decimal strings. Document subtotal, discount, VAT, and total shall use `ROUND_HALF_UP` only at accepted boundaries and deterministic Product-ID-tied largest-remainder line allocation so persisted line sums equal document totals.
+- **FR-SALE-007:** One Sale shall have exactly one CASH or manually confirmed TRANSFER Payment whose amount equals the Sale total. CASH tender less change shall equal that amount; no independent mutable Payment status or split payment exists.
+- **FR-SALE-008:** `OWNER`, `ADMIN`, and `BRANCH_MANAGER` may apply one whole-Sale AMOUNT or PERCENT discount in authorized scope; CASHIER may sell without discount; INVENTORY_STAFF cannot sell.
+- **FR-SALE-009:** Checkout shall block `UNCONFIGURED` Organization sales VAT. REGISTERED Sales use one Organization rate and VAT-inclusive prices; NOT_REGISTERED Sales persist null taxable amounts and zero Output VAT exactly as `ADR-027` defines.
+- **FR-SALE-010:** A Sale may consume UNKNOWN-cost stock while preserving UNKNOWN/null cost and COGS facts; zero cost shall never be fabricated or retroactively backfilled.
+- **FR-SALE-011:** Sale reference shall be immutable `SALE-<UUID>` and Sale/SaleItems/Payment shall be the customer receipt source; no separate Sales Receipt aggregate is required.
+- **FR-SALE-012:** Checkout shall collect no Customer/CRM data in MVP and shall retain immutable facts/provenance sufficient for future linked compensating records without deciding `OQ-009`.
 
 ### Analytics and AI
 
@@ -500,7 +516,7 @@ These decisions are mandatory gates before the affected domain implementation:
 | Authorization policies for accepted MVP roles | `ADR-016` (`OQ-022` resolved) |
 | Catalog schema and management API | `ADR-022` (`OQ-014`, `OQ-023`, `OQ-024` resolved); Product retains no organization-wide cost/valuation field; later Branch/Product cost state follows `ADR-026` |
 | Inventory mutations and stock availability | `ADR-024` plus the accepted quantity contract in `ADR-022` |
-| POS checkout and sales monetary truth | `ADR-024`, `ADR-026`, `OQ-008` plus `ADR-016` and the accepted quantity contract in `ADR-022` |
+| POS checkout and sales monetary truth | `ADR-027` plus `ADR-016`, `ADR-022`, `ADR-024`, and `ADR-026` (`OQ-008` resolved) |
 | Refund and void | `OQ-009` plus the applicable sales decisions |
 | Purchasing/receiving behavior | `ADR-024`, `ADR-026` plus the accepted quantity contract in `ADR-022` |
 | Analytics definitions | `OQ-011` |
@@ -523,11 +539,12 @@ This is the canonical list. Other documents reference these IDs and must not red
 | **OQ-005** | Registration accepts only email and password. The platform profile later requires display name, so `User.displayName` remains nullable until profile/onboarding; no placeholder is derived from email. New-organization onboarding requires display name, organization name, and initial branch name. Phone is optional for the platform profile and initial branch; branch address is optional. The creator becomes `OWNER`; the server assigns initial branch code `MAIN`. One persisted per-user provenance row provides request-hash replay and concurrency identity; zero memberships are required when that row does not exist. User identity is platform-level; access derives from memberships. Invitations use their own flow. | `ADR-015`, `ADR-017`, `ADR-019` |
 | **OQ-006** | Use email-bound organization invitations carrying the intended role and branch scope. Their opaque, cryptographically random, hash-only token is single-use for access creation and expires in seven days; reissue invalidates the active invite. The invited email must authenticate and verify before transactional acceptance creates membership, branch assignments, source provenance, and a bounded access event. Same-actor replay returns the existing result without mutation. Existing membership of any status blocks invitation. Full-replacement edits/reactivation use exact optimistic versions; deactivation preserves assignment configuration but immediately removes effective access. No automatic account creation or naive cross-email linking. | `ADR-014`, `ADR-021` |
 | **OQ-007** | MVP forbids negative inventory for every stock-decreasing movement. Inside the same PostgreSQL transaction and authoritative branch/product balance serialization boundary, the service calculates `resultingQuantity = currentQuantity + signedDelta`; a result below zero returns `409 INSUFFICIENT_STOCK` with no ledger or balance mutation. No role has an override. Inventory uses immutable signed-delta ledger movements plus an atomically maintained lazy balance projection; manual adjustments use the accepted reason/note, idempotency, lifecycle, and permission rules in `ADR-024`. | `ADR-024` |
+| **OQ-008** | Keep the cart transient and create a completed-by-existence immutable Sale atomically with exactly one CASH or manually confirmed TRANSFER Payment, THB-only server-authoritative pricing, optional manager-or-higher whole-Sale AMOUNT/PERCENT discount before VAT, Organization-authoritative single-rate VAT-inclusive Output VAT, `SALE-<UUID>` Sale-backed receipt, exact Decimal/document-first largest-remainder allocation, no-negative shared inventory locking, explicit UNKNOWN COGS, and Organization-scoped checkout idempotency. The initial model has no Sale status. No Customer/CRM, split/CARD/gateway/offline payment, generic/product tax engine, separate Sales Receipt aggregate, or refund/void behavior is included. | `ADR-027` |
 | **OQ-010** | Use Branch/Product moving weighted-average cost. Receipt `actualUnitCost` is authoritative intake; PO `expectedUnitCost` is planning/history only. The cost basis may be `UNKNOWN` for quantity created before an authoritative receipt; the first receipt initializes the cost basis for all then-on-hand quantity without reconstructing historical cost. Later cost-dependent facts use the current known average. FIFO, cost layers, zero-cost fabrication, and an Opening Cost/Recost workflow are out of MVP. | `ADR-026` |
 | **OQ-013** | **DEFERRED FROM MVP.** Inter-branch stock transfer remains broader/full product scope, but no transfer schema, API, UI, permission, lifecycle, ledger-source, or idempotency contract is part of the current MVP. A previously discussed `SEND → IN_TRANSIT → RECEIVE → RECEIVED` direction with exact quantity and no partial/discrepancy workflow is non-binding future guidance only and must be re-reviewed before implementation resumes. | `ADR-025` |
 | **OQ-021** | A PO is `DRAFT`, `ORDERED`, `RECEIVED`, or `CANCELLED`; only `DRAFT` is editable, and `ORDERED` freezes Supplier, Branch, Product lines, quantities, expected unit costs, and accepted commercial snapshots. One ordered PO produces at most one all-at-once immutable receipt whose quantities are server-derived from PO lines. Partial/over/short/multiple receipt, discrepancy, receiving without a PO, supplier return, receipt reversal, and receipt correction are out of MVP. | `ADR-026` |
 | **OQ-022** | Use fixed, deny-by-default RBAC with one organization role per user/organization and explicit branch assignments for branch-only roles. `OWNER`/`ADMIN` are organization-wide; `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER` are assigned-branch roles. The role, governance, delegation, capability, analytics, forecast, and AI-summary baseline in section 8 is authoritative; refund/void remains `OQ-009`. | `ADR-016` |
-| **OQ-014** | Branch-level price overrides are out of MVP scope. Each Product has one organization-level required non-negative `basePrice`; its API representation is a decimal string with scale at most 4 and its target persistence representation is `DECIMAL(19,4)`. Inputs with more than four fractional digits are rejected, never rounded. All branches use that base price for future operations, while future sale items snapshot the actual unit price used. Tax, discount, receipt-total, payment, currency, and sales-transaction rounding remain open in `OQ-008`. | `ADR-022` |
+| **OQ-014** | Branch-level price overrides are out of MVP scope. Each Product has one organization-level required non-negative `basePrice`; its API representation is a decimal string with scale at most 4 and its target persistence representation is `DECIMAL(19,4)`. Inputs with more than four fractional digits are rejected, never rounded. All branches use that base price for future operations, while SaleItems snapshot the actual unit price used. `ADR-027` defines Sales tax, discount, receipt-total, payment, currency, and transaction rounding. | `ADR-022`, `ADR-027` |
 | **OQ-023** | Each Product has exactly one immutable base unit: `EA`, `PACK`, `BOX`, `KG`, `G`, `L`, `ML`, `M`, or `CM`. `EA`, `PACK`, and `BOX` are integer-only; the other units allow up to four fractional digits. Quantity APIs use decimal strings and persistence targets `DECIMAL(18,4)`; values with excess precision are rejected, never rounded. There is no unit conversion, pack-size conversion, or separate purchasing/selling UOM in MVP. Positive requested business-operation quantities must be greater than zero. `ADR-024` applies this boundary to signed inventory-ledger deltas and canonical inventory output. | `ADR-022`, `ADR-024` |
 | **OQ-024** | Product display names are trimmed, nonblank, Unicode-preserving, and may duplicate within an organization. SKU is the required organization business identifier and is canonicalized by trim, Unicode NFKC, then uppercase; it must match `^[A-Z0-9][A-Z0-9._-]{0,63}$` and is unique per organization. Barcode is optional, trimmed with blank mapped to null, exact-match unique when non-null, control-character-free, and at most 128 characters. Categories are flat; their nullable product relation allows uncategorized products. Category identity is a per-organization unique NFKC/trim/collapsed-Unicode-whitespace/lowercase key while display names retain trimmed presentation. Product and Category use `ACTIVE`/`INACTIVE`, allow reactivation, prohibit hard-delete endpoints, and use exact `updatedAt` optimistic concurrency (`PRODUCT_STALE`/`CATEGORY_STALE`). Inactive categories remain referenced but cannot be newly assigned; no merge or bulk reassignment exists. | `ADR-022` |
 
@@ -535,7 +552,6 @@ This is the canonical list. Other documents reference these IDs and must not red
 
 | ID | Question | Blocks | Priority |
 | --- | --- | --- | --- |
-| **OQ-008** | Which sales payment methods/states, Output VAT, discount ordering, tender/change, sales receipt-number/display rules, and sales monetary rounding are in the MVP? P4 accepts THB-only purchasing currency, `ROUND_HALF_UP` at required persisted/display scales, and document-level Input VAT receipt snapshots only. | POS/sales | Critical |
 | **OQ-009** | What are the exact void, refund, partial-refund, time-limit, approval, and stock-reversal rules? | Sales reversal | Critical |
 | **OQ-011** | Which exact analytics thresholds, comparison windows, inclusions/exclusions, and completed-sale state are accepted? | Analytics | Critical |
 | **OQ-012** | What is Forecasting V1, including horizon, granularity, baseline algorithm, minimum data, cold-start behavior, seasonality, and evaluation metric? | Forecast and reorder | Critical |

@@ -5,13 +5,13 @@ This file is the execution contract for human and AI developers working in the `
 | Field | Value |
 | --- | --- |
 | Documentation baseline | Architecture Freeze v1 |
-| Last updated | 2026-09-02 |
+| Last updated | 2026-09-05 |
 
 ## 1. Project overview
 
 StockWise is a responsive, cloud-based retail platform for SMEs. It covers organization-level product and supplier management; branch-level inventory, purchasing/receiving, POS, and sales; deterministic analytics and forecasting; and scheduled aggregate summaries through OpenRouter.
 
-The repository contains the repository/tooling foundation; identity, tenancy, authentication, onboarding, branch, invitation, and membership workflows; organization-scoped Catalog and Supplier persistence/API/UI; branch inventory balance/history/manual-adjustment persistence/API/UI; Purchase Order persistence/API/UI; P4-M3-T01 Receipt persistence plus atomic receiving service; the P4-M3-T02 authenticated Receiving API; and the P4-M3-T03 Receiving UI. P4-M3-T01 adds immutable Receipt/ReceiptItem snapshots, receipt-level idempotency, serialized `ORDERED` → `RECEIVED`, positive `PURCHASE_RECEIVE` ledger provenance, deterministic shared Branch/Product inventory locks, atomic balance and `UNKNOWN`/`KNOWN` moving-average cost-state updates, and bounded document-level Input VAT snapshots. P4-M3-T02 exposes only the retry-safe receive command over that service with strict cost/VAT transport, CSRF/session protection, persisted-PO branch authorization, and safe public Receipt/error responses. P4-M3-T03 adds the responsive, role-aware ORDERED-PO receiving form over that command and remains limited to receiving UI; no Receipt read endpoint exists. P5-M1-T01 — Close payment/tax/discount/receipt decisions is the exact next task. Sales/POS implementation, branch pricing, analytics, AI insights, generic accounting/tax/audit systems, and production infrastructure remain unimplemented. Do not treat later planned directories, commands, schemas, endpoints, or features as existing code.
+The repository contains the repository/tooling foundation; identity, tenancy, authentication, onboarding, branch, invitation, and membership workflows; organization-scoped Catalog and Supplier persistence/API/UI; branch inventory balance/history/manual-adjustment persistence/API/UI; Purchase Order persistence/API/UI; P4-M3-T01 Receipt persistence plus atomic receiving service; the P4-M3-T02 authenticated Receiving API; and the P4-M3-T03 Receiving UI. P4-M3-T01 adds immutable Receipt/ReceiptItem snapshots, receipt-level idempotency, serialized `ORDERED` → `RECEIVED`, positive `PURCHASE_RECEIVE` ledger provenance, deterministic shared Branch/Product inventory locks, atomic balance and `UNKNOWN`/`KNOWN` moving-average cost-state updates, and bounded document-level Input VAT snapshots. P4-M3-T02 exposes only the retry-safe receive command over that service with strict cost/VAT transport, CSRF/session protection, persisted-PO branch authorization, and safe public Receipt/error responses. P4-M3-T03 adds the responsive, role-aware ORDERED-PO receiving form over that command and remains limited to receiving UI; no Receipt read endpoint exists. P5-M1-T01 is complete as a documentation-only gate: `ADR-027` accepts the THB-only completed-by-existence Sale, one CASH/TRANSFER Payment, Organization-authoritative VAT-inclusive monetary, whole-Sale discount, immutable receipt, exact allocation, atomic stock/cost, UNKNOWN COGS, idempotency, and authorization contract. The exact next task is P5-M1-T02 — Sale/payment schema; it is unstarted. Sales/POS implementation, Sale/Payment persistence, branch pricing, analytics, AI insights, generic accounting/tax/audit systems, and production infrastructure remain unimplemented. Do not treat later planned directories, commands, schemas, endpoints, or features as existing code.
 
 ## 2. Read before changing anything
 
@@ -37,7 +37,7 @@ At minimum, enforce these gates:
 
 - Identity/onboarding/authorization decisions are accepted in `ADR-013`–`ADR-021`; implementation must follow their session, email, onboarding, invitation, registration-security, RBAC, branch-context, and membership-lifecycle boundaries.
 - Inventory mutations: `ADR-024`; quantity representation is accepted by `ADR-022`
-- POS/sales monetary behavior: `ADR-024`, `ADR-026`, `OQ-008`, plus the accepted RBAC baseline in `ADR-016`
+- POS/sales monetary behavior: `ADR-027` plus `ADR-016`, `ADR-022`, `ADR-024`, and `ADR-026`; `OQ-008` is resolved
 - Refund/void behavior: `OQ-009` in addition to the sales decisions
 - Purchasing/receiving behavior: `ADR-024`, `ADR-026`; quantity representation is accepted by `ADR-022`
 - Analytics and forecasting: `OQ-011`, `OQ-012`; plus any metric-specific dependency documented in `docs/ANALYTICS.md`

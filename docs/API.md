@@ -206,7 +206,7 @@ The accepted fixed RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY
 }
 ```
 
-`basePrice` is the required organization-level configured amount shared by every branch. It is a non-negative decimal string with at most four fractional digits; inputs with greater scale are rejected rather than rounded. It does not define sales tax, discounts, receipt totals, payment behavior, or sales monetary rounding, which remain blocked by the remaining sales-side `OQ-008`. Product has no organization-wide cost/valuation field; future Branch/Product cost state follows `ADR-026`. Branch overrides are out of MVP scope by `ADR-022`.
+`basePrice` is the required organization-level configured amount shared by every branch. It is a non-negative decimal string with at most four fractional digits; inputs with greater scale are rejected rather than rounded. `ADR-027` makes it the server-authoritative SaleItem price and the final VAT-inclusive selling price when the Organization is sales-VAT REGISTERED. Product has no organization-wide cost/valuation field; Branch/Product cost state follows `ADR-026`. Branch overrides and manual checkout price overrides are out of MVP scope.
 
 ## 5. Health and service endpoints
 
@@ -861,37 +861,185 @@ inventory transaction, stock movement, cost update, or VAT record.
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `GET /organizations/{organizationId}/branches/{branchId}/pos/products` | Branch checkout | Query/barcode/cursor | Sellable product summaries with current server price/availability indicator | Invalid query, forbidden branch | Planned; exact availability/price blocked |
-| `POST /organizations/{organizationId}/branches/{branchId}/sales` | Branch checkout | `Idempotency-Key`; cart lines and payment intent | Completed sale + receipt representation | Price/state/stock/payment/idempotency/concurrency | Blocked remaining sales-side `OQ-008`; future cost snapshots follow `ADR-026`; quantity validation follows `ADR-022`, stock policy `ADR-024` |
-| `GET /organizations/{organizationId}/branches/{branchId}/sales` | Branch sales read | Cursor/date/user/status filters | Sale summaries | Invalid range/cursor | Planned; statuses blocked `OQ-009` |
+| `GET /organizations/{organizationId}/sales-vat-profile` | `OWNER`, `ADMIN` | None | Authoritative Organization sales VAT profile | Safe not-found/forbidden | Target contract; P5-M2-T02 |
+| `PATCH /organizations/{organizationId}/sales-vat-profile` | `OWNER`, `ADMIN` | Exact `expectedUpdatedAt`; status and conditional rate | Updated sales VAT profile | Invalid state/rate, stale version, safe not-found/forbidden | Target contract; P5-M2-T02 |
+| `GET /organizations/{organizationId}/branches/{branchId}/pos/products` | Branch checkout | Query/barcode/cursor | Sellable product summaries with current server price/availability indicator | Invalid query, forbidden branch | Planned; P5-M2-T02 |
+| `POST /organizations/{organizationId}/branches/{branchId}/sales` | `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`, assigned `CASHIER` | Required `Idempotency-Key`; unique cart lines, optional authorized discount, CASH/TRANSFER intent | `201` completed Sale-backed receipt; exact replay `200` | VAT config, price, stock, payment, discount, idempotency, concurrency | Target contract; P5-M2-T02 after P5-M1-T02/P5-M2-T01; `ADR-027` |
+| `GET /organizations/{organizationId}/branches/{branchId}/sales` | Branch sales read | Cursor/date/user filters; no initial status filter | Sale summaries | Invalid range/cursor | Planned; P5-M3-T01; later status/projection filters require `OQ-009` |
 | `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}` | Branch sales read | None | Sale, immutable lines, permitted payment data | Safe not-found | Planned |
-| `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}/receipt` | Branch receipt read | Format/locale if accepted | Receipt view data; not arbitrary HTML from server | Safe not-found/forbidden | Blocked format/numbering `OQ-008` |
+| `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}/receipt` | Branch receipt read | None | Sale-backed receipt data; not arbitrary HTML and never COGS | Safe not-found/forbidden | Target contract; P5-M3-T01; browser print UI P5-M3-T02 |
 
-Conceptual checkout request:
+Sales VAT profile target representation:
+
+```json
+{
+  "salesVatStatus": "REGISTERED",
+  "salesVatRate": "7",
+  "updatedAt": "2026-09-05T00:00:00.000Z"
+}
+```
+
+`salesVatStatus` is `UNCONFIGURED`, `NOT_REGISTERED`, or `REGISTERED`.
+`UNCONFIGURED` is an application configuration state, not a legal registration
+classification, and blocks checkout. REGISTERED requires a positive rate below `100`;
+the other statuses require `salesVatRate: null`. The configured rate is never
+hardcoded. In MVP, every Product sold by a REGISTERED Organization is assumed subject
+to this one rate; mixed/product-specific/exempt/zero-rated/multiple-rate tax behavior
+is unsupported. The profile is Organization authority, not checkout input.
+
+Conceptual `PATCH` request bodies are:
+
+```json
+{
+  "expectedUpdatedAt": "2026-09-05T00:00:00.000Z",
+  "salesVatStatus": "REGISTERED",
+  "salesVatRate": "7"
+}
+```
+
+or, for either non-rate state:
+
+```json
+{
+  "expectedUpdatedAt": "2026-09-05T00:00:00.000Z",
+  "salesVatStatus": "NOT_REGISTERED",
+  "salesVatRate": null
+}
+```
+
+The endpoint accepts only exact decimal strings for the rate, enforces the conditional
+state/rate rules, and uses `expectedUpdatedAt` as an exact optimistic-concurrency
+precondition. Existing and newly created Organizations start `UNCONFIGURED` with a
+null rate until an authorized `OWNER` or `ADMIN` explicitly changes the profile.
+
+Accepted CASH checkout request:
 
 ```json
 {
   "items": [
     {
       "productId": "opaque-id",
-      "quantity": "2"
+      "quantity": "2",
+      "expectedUnitPrice": "60.1234"
     }
   ],
+  "discount": {
+    "type": "PERCENT",
+    "percent": "10",
+    "reason": "Manager-approved opening promotion"
+  },
   "payment": {
-    "method": "<accepted-method-from-OQ-008>",
-    "amountTendered": "<accepted-decimal-from-OQ-008>"
+    "method": "CASH",
+    "amountTendered": "200.00"
   }
 }
 ```
 
+Accepted TRANSFER payment alternative:
+
+```json
+{
+  "method": "TRANSFER",
+  "reference": "optional-bank-or-qr-reference"
+}
+```
+
+Conceptual completed Sale/customer-receipt response data:
+
+```json
+{
+  "id": "opaque-sale-id",
+  "reference": "SALE-<uuid>",
+  "organizationId": "opaque-organization-id",
+  "branchId": "opaque-branch-id",
+  "organizationNameSnapshot": "Example Store",
+  "branchNameSnapshot": "Main Branch",
+  "branchCodeSnapshot": "MAIN",
+  "actorDisplayNameSnapshot": "Employee Name",
+  "occurredAt": "2026-09-05T00:00:00.000Z",
+  "currency": "THB",
+  "items": [
+    {
+      "productId": "opaque-product-id",
+      "skuSnapshot": "SKU-001",
+      "nameSnapshot": "Product",
+      "unitSnapshot": "EA",
+      "quantity": "2",
+      "unitPrice": "60.1234",
+      "lineGross": "120.25",
+      "lineDiscount": "12.03",
+      "lineTaxable": "101.14",
+      "lineOutputVat": "7.08",
+      "lineNet": "108.22"
+    }
+  ],
+  "subtotalAmount": "120.25",
+  "discount": {
+    "type": "PERCENT",
+    "percent": "10",
+    "reason": "Manager-approved opening promotion"
+  },
+  "discountAmount": "12.03",
+  "salesVatStatusSnapshot": "REGISTERED",
+  "vatRateSnapshot": "7",
+  "taxableAmount": "101.14",
+  "outputVatAmount": "7.08",
+  "totalAmount": "108.22",
+  "payment": {
+    "method": "CASH",
+    "amount": "108.22",
+    "amountTendered": "200.00",
+    "changeAmount": "91.78",
+    "reference": null
+  }
+}
+```
+
+The actual response uses the standard success envelope. Customer money totals and
+allocations serialize with exactly two fractional digits, accepted unit prices with
+exactly four fractional digits, and quantity strings with no more than four fractional
+digits. Request boundaries reject rather than round values that exceed their accepted
+scale. A no-discount response uses a null discount descriptor and
+`discountAmount: "0.00"` in the frozen resource contract. A NOT_REGISTERED response
+uses null Sale/line taxable amounts and VAT-rate snapshot plus `"0.00"` Sale/line
+Output VAT. It must not label Sale net as taxable base.
+
 Rules:
 
-- Client may show an estimate but server reloads product status/price and computes every authoritative total.
-- Quantity representation follows `ADR-022`; payment method, tax, discount, tender/change, split payments, and transaction rounding remain `OQ-008`.
-- Response uses immutable sale snapshot values.
+- The transient cart is not persisted before checkout. Duplicate Product lines are
+  rejected. Quantity follows `ADR-022`; `expectedUnitPrice` is an exact optimistic
+  precondition only. The server reloads active Product and `basePrice`, rejects a
+  mismatch with `409 PRICE_CHANGED`, and computes all authoritative values.
+- Discount is optional and whole-Sale only. `AMOUNT` supplies `amount` with scale at
+  most two; `PERCENT` supplies `percent` with scale at most four. Both require a
+  trimmed nonblank reason of at most 200 characters and manager-or-higher authority.
+  Amount is positive and less than subtotal; percent is positive and below `100`.
+- CASH requires `amountTendered` with scale at most two and at least the server total.
+  TRANSFER has no tender/change and may carry one trimmed reference up to 100
+  characters. Payment amount is not client-authored; it equals the Sale total. No
+  CARD, split, gateway, pending, offline, slip, OCR, or Payment-status input exists.
+- Server applies optional discount before registered document-level VAT extraction.
+  It uses exact Decimal arithmetic, `ROUND_HALF_UP` at accepted document/cost
+  boundaries, and deterministic Product-ID-tied largest-remainder line allocation.
+  Excess-scale inputs are rejected rather than rounded.
+- First success returns `201`; same `Idempotency-Key` plus the same canonical trusted
+  Organization/Branch/actor, sorted lines/quantities/expected prices, discount, and
+  payment intent returns the original logical Sale/reference with `200`. Changed
+  intent returns `409 IDEMPOTENCY_CONFLICT`. The key is printable ASCII 1–200
+  characters and only its deterministic hash is persisted.
+- Stable checkout conflicts include `PRICE_CHANGED`, `INSUFFICIENT_STOCK`,
+  `IDEMPOTENCY_CONFLICT`, `VAT_CONFIGURATION_REQUIRED`, and safe active-resource/
+  authorization conflicts. Validation covers decimal scale, discount, payment, and
+  duplicate-line rules.
+- Response uses immutable Sale/SaleItem/Payment snapshot values and reference
+  `SALE-<UUID>`. It contains no Sale status, Customer/CRM data, or COGS in its customer
+  receipt representation. Internal cost fields require a separate authorized history
+  view later.
 - OpenRouter is never called in checkout.
 
-No void/refund endpoints are defined until `OQ-009` closes. Likely action paths must be designed from accepted lifecycle rather than generic `DELETE /sales/{id}`. Deleting a completed sale is prohibited.
+No void/refund endpoints are defined until `OQ-009` closes. Do not infer a Sale status
+or mutation from this contract. Later reversal must use accepted linked compensating
+records/projections and must never delete or rewrite the original Sale facts.
 
 ## 12. Analytics endpoints
 
@@ -999,11 +1147,11 @@ Canonical definitions live in `BUILD_SPEC.md`:
 
 - Auth/session: `ADR-013`; verification/reset token/provider behavior: `ADR-014`; onboarding: `ADR-015`; invitation/member access lifecycle: `ADR-021`
 - Role/permission exposure: `ADR-016`
-- Product payload: `ADR-022`; Product has no organization-wide cost/valuation field, future Branch/Product cost state follows `ADR-026`, sales monetary behavior remains in the unresolved portions of `OQ-008`
+- Product payload: `ADR-022`; Product has no organization-wide cost/valuation field, Branch/Product cost state follows `ADR-026`, and Sales price/VAT/discount behavior follows `ADR-027`
 - Inventory adjustment: `ADR-024`; quantity representation is `ADR-022`; generic
   audit logging remains `OQ-019`
 - Purchasing/receiving: `ADR-026`; quantity representation is `ADR-022`, stock policy is `ADR-024`
-- Checkout/receipt/payment: `ADR-024`, `ADR-026`, `OQ-008`; quantity representation is `ADR-022`
+- Checkout/receipt/payment: `ADR-027` plus `ADR-016`, `ADR-022`, `ADR-024`, and `ADR-026`; `OQ-008` is resolved
 - Void/refund: `OQ-009`
 - Analytics/forecast: `OQ-011`, `OQ-012`, `OQ-016`
 - AI scheduling/provider: `OQ-017`, `OQ-018`

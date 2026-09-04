@@ -350,48 +350,46 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-SALE-001 — Complete POS checkout
 
-- **Status:** Blocked by remaining sales-side `OQ-008`; future cost snapshots follow `ADR-026`; quantity validation follows
-  `ADR-022` and no-negative stock follows `ADR-024`
-- **Actor:** Authorized cashier/manager
-- **Preconditions:** Actor has checkout permission for an active branch; cart has at least one active same-organization product.
-- **Trigger:** Actor submits cart and payment intent with an idempotency key.
+- **Status:** Planned and unblocked by `ADR-027`; cost snapshots follow `ADR-026`, quantity validation follows `ADR-022`, and no-negative stock follows `ADR-024`. No Sales implementation exists yet.
+- **Actor:** Authorized owner, admin, branch manager, or cashier; inventory staff cannot sell.
+- **Preconditions:** Actor has checkout permission for an active branch; transient cart has at least one active same-organization Product; Organization sales VAT configuration is not `UNCONFIGURED`.
+- **Trigger:** Actor submits unique Product lines with quantities/expected prices, optional authorized whole-Sale discount, CASH or manually confirmed TRANSFER intent, and one idempotency key.
 - **Main flow:**
-  1. API validates request shape and actor/branch scope.
-  2. Server reloads products/prices and rejects client-authoritative totals.
-  3. Server calculates accepted subtotal, discounts, tax, total, payment, and snapshots.
-  4. It concurrency-protects required inventory balances in deterministic order.
-  5. It enforces negative-stock and product/payment rules.
-  6. In one transaction it creates sale, sale items, payment, inventory ledger movements, and balance updates.
-  7. It commits and returns stable sale/receipt data.
-- **Alternative flows:** Safe retry with the same key/payload returns the same logical sale; barcode and text search both produce the same server-validated product intent.
-- **Error cases:** Empty/invalid cart; duplicate product-line policy; changed/inactive/missing product; changed price; insufficient stock; forbidden branch; invalid payment; decimal/rounding mismatch; idempotency conflict; deadlock/serialization failure; database failure.
-- **Business rules:** One sale belongs to one branch and acting user. Sale items are immutable snapshots. Core commit is all-or-nothing. LLM and analytics availability are irrelevant to checkout success.
-- **Authorization:** Branch checkout permission; user cannot select another tenant/branch by request data.
-- **Expected result:** Exactly one completed, internally consistent sale with matching inventory effects, or no operational mutation.
-- **Acceptance criteria:** Server-total, atomic rollback, concurrency/oversell, idempotency, tenant/branch, decimal, history, and provider-independence tests pass.
+  1. API validates strict decimal-string/request shape and re-resolves actor, Organization, active Branch, membership/assignment, checkout permission, and discount permission.
+  2. Inside one transaction, service claims/resolves Organization-scoped checkout idempotency and locks/reads authoritative Organization VAT configuration.
+  3. Server canonicalizes unique lines, reloads active Products and `basePrice`, and rejects any `expectedUnitPrice` mismatch.
+  4. Server calculates THB subtotal, optional manager-or-higher AMOUNT/PERCENT discount, VAT-inclusive Output VAT where registered, grand total, and deterministic largest-remainder line allocations with Product-ID tie-break.
+  5. It acquires shared Branch/Product inventory locks in sorted Product-ID order, locks balances/cost states, and enforces no-negative stock, payment, monetary-allocation, and UNKNOWN/KNOWN cost rules.
+  6. It atomically creates the completed-by-existence Sale, immutable SaleItems, exactly one Payment, negative `SALE` inventory movements, balances, cost-state changes, COGS snapshots, and idempotency result.
+  7. It commits and returns the immutable `SALE-<UUID>` Sale-backed receipt; no separate Sales Receipt is created.
+- **Alternative flows:** Same key and semantically identical intent returns the original logical Sale with `200`; changed intent conflicts. CASH records tender/change. TRANSFER records manual confirmation and an optional bounded reference. UNKNOWN-cost stock may sell with null unit cost/COGS whether remaining quantity is positive or zero.
+- **Error cases:** Empty/duplicate/invalid cart; invalid or inactive Organization/Branch/Product; unconfigured VAT; expected-price change; unauthorized/invalid discount; invalid payment/tender/reference; excess Decimal scale; insufficient stock; idempotency conflict; deadlock/serialization failure; database failure.
+- **Business rules:** Cart is transient; no Draft Sale/reservation exists. Sale existence means successful atomic completion and the initial model has no Sale status. Price/VAT/totals/stock/actor are server-authoritative. Line allocations and Payment reconcile exactly to Sale totals. NOT_REGISTERED taxable amounts are null and Output VAT is zero. UNKNOWN cost never becomes zero or receives historical backfill. No Customer/CRM data is collected. LLM and analytics availability are irrelevant.
+- **Authorization:** `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`, and assigned `CASHIER` may checkout; only owner/admin/assigned branch manager may discount; inventory staff cannot sell. Request IDs never prove tenant/branch access.
+- **Expected result:** Exactly one immutable, internally consistent Sale with one Payment and matching inventory/cost effects, or no operational mutation.
+- **Acceptance criteria:** Server price/VAT/total/allocation, discount authority, cash/transfer, atomic rollback, UNKNOWN/KNOWN cost, concurrency/oversell, idempotency, tenant/branch, Decimal, receipt, and provider-independence tests pass.
 
 ### UC-SALE-002 — View sales history, sale details, and receipt
 
-- **Status:** Ready after sales foundation; receipt format details blocked by `OQ-008`
+- **Status:** Planned after sales foundation; receipt/reference and immutable monetary content follow `ADR-027`
 - **Actor:** Cashier, manager, admin, or owner with relevant read permission
 - **Preconditions:** At least authenticated access; requested scope is allowed.
 - **Trigger:** Actor searches/browses sales or opens a sale/receipt.
 - **Main flow:** Validate filters and scope; query paginated branch sales; load one allowed sale with immutable line/payment snapshots; render a browser-printable receipt.
 - **Alternative flows:** `CASHIER` sees assigned-branch sales history as required for cashier operations; `OWNER`/`ADMIN` may query organization-wide history and `BRANCH_MANAGER` assigned-branch history.
 - **Error cases:** Invalid range/cursor; inaccessible sale; revoked branch; missing historical optional product; database failure. Inaccessible and nonexistent records use safe behavior.
-- **Business rules:** Historical names/prices/costs come from sale snapshots, not current product values. Receipt never exposes hidden cost to a role without permission.
+- **Business rules:** Historical names/prices/costs/VAT/discount/payment come from Sale snapshots, not current Product, Organization VAT, or actor/Branch names. Receipt is a projection of Sale/SaleItems/Payment, not a separate aggregate, and never exposes COGS. Internal history never exposes cost to a role without permission. The initial Sale has no status filter; any reversal projection waits for `OQ-009`.
 - **Authorization:** Sales-read/receipt permission at resource branch; cost/margin fields need separate permission.
 - **Expected result:** Accurate, stable historical representation scoped to actor.
 - **Acceptance criteria:** Snapshot stability after catalog change; pagination/filter tests; cost-field authorization; cross-tenant and inaccessible-branch tests; printable responsive view.
 
 ### UC-SALE-003 — Void or refund a sale
 
-- **Status:** Blocked by `OQ-009`, remaining sales-side `OQ-008`, and `OQ-019`; future cost snapshots follow `ADR-026`; stock availability
-  follows `ADR-024`
+- **Status:** Blocked by `OQ-009` and `OQ-019`; original Sales monetary/cost snapshots follow `ADR-027`/`ADR-026`, and stock availability follows `ADR-024`
 - **Actor:** Role authorized by the future reversal policy
 - **Preconditions:** An eligible sale exists and the accepted time/status/payment rules permit the requested reversal.
 - **Trigger:** Actor submits void/refund intent, amount/items, and reason.
-- **Main flow:** Not accepted. It must eventually authorize, validate eligibility, create explicit reversal/refund records, reverse payment state as applicable, create compensating inventory movements, update sale lifecycle, and commit atomically.
+- **Main flow:** Not accepted. It must eventually authorize, validate eligibility, create explicit linked reversal/refund records and projections, record payment reversal as applicable, create compensating inventory movements, and commit atomically without rewriting the original Sale.
 - **Alternative flows:** Full versus partial, pre-settlement void versus refund, non-restockable return, manager approval—each requires an explicit decision.
 - **Error cases:** Already reversed; beyond time limit; excessive quantity/amount; payment provider failure; stock disposition unknown; forbidden role; duplicate request; concurrent reversal.
 - **Business rules:** Never delete or edit the original completed sale/ledger rows to simulate a reversal.

@@ -945,7 +945,7 @@ The catalog schema needs a stable organization-level price, base-unit, normaliza
 
 ### Decision
 
-Use option 3. Branch-level price overrides are out of MVP scope. A Product has one required organization-level non-negative `basePrice`, represented in APIs as a decimal string at scale at most four and targeted to `DECIMAL(19,4)` persistence. Excess scale is invalid rather than rounded. This configured catalog price affects future operations only; future sale items snapshot the unit price actually used. `OQ-008` remains open for tax, discount, currency, receipt/payment behavior, and transaction rounding.
+Use option 3. Branch-level price overrides are out of MVP scope. A Product has one required organization-level non-negative `basePrice`, represented in APIs as a decimal string at scale at most four and targeted to `DECIMAL(19,4)` persistence. Excess scale is invalid rather than rounded. This configured catalog price affects future operations only; future sale items snapshot the unit price actually used. `OQ-008` was left open by this decision and is now resolved by `ADR-027` for tax, discount, currency, receipt/payment behavior, and transaction rounding.
 
 Each Product stores exactly one immutable base unit from `EA`, `PACK`, `BOX`, `KG`, `G`, `L`, `ML`, `M`, or `CM`. `EA`, `PACK`, and `BOX` are integer-only. The others permit up to four fractional digits. Quantity APIs are decimal strings, target `DECIMAL(18,4)`, reject excess precision rather than rounding, and require positive values when an operation requests a positive amount. MVP has no unit, pack-size, or purchasing/selling-UOM conversion. Signed inventory-ledger semantics remain for inventory work; derived analytics rounding remains `OQ-011`.
 
@@ -1027,7 +1027,7 @@ assignment is protected through the write transaction.
   and barcode races, while the API returns only accepted domain conflict codes.
 - No schema/migration, UI, inventory, costing, valuation, or branch-price model
   is introduced by this decision.
-- The remaining sales-side `OQ-008` and `OQ-011` remain open and do not block catalog CRUD; `ADR-026` governs later purchasing/receiving cost without changing this catalog decision.
+- At this decision point, sales-side `OQ-008` and `OQ-011` remained open and did not block catalog CRUD. `ADR-027` now resolves `OQ-008`; `OQ-011` remains open, and `ADR-026` governs purchasing/receiving cost without changing this catalog decision.
 
 ## ADR-024 — Use signed deltas, no-negative stock, and a locked balance projection
 
@@ -1247,8 +1247,9 @@ applicable, organization VAT-registration state, Input VAT rate and amount, and
 supplier tax-document number/date. These are document-level immutable snapshots only.
 They neither create a generic Tax or allocation engine nor derive/rewrite
 `actualUnitCost`. Sales payment, Output VAT, discount ordering, tender/change, sales
-receipt numbering/display, and sales monetary rules remain open in `OQ-008`; this
-decision makes no legal/tax-compliance claim.
+receipt numbering/display, and sales monetary rules were intentionally left to
+`OQ-008` and are now resolved by `ADR-027`; neither decision makes a legal/tax-
+compliance claim.
 
 For MVP, while Organization has no authoritative VAT-registration master field, the
 organization VAT-registration snapshot is an explicit immutable receipt-time assertion
@@ -1277,6 +1278,242 @@ purchasing/receiving; `CASHIER` has neither permission.
   implements COGS. Analytics still requires its own accepted metric/state rules.
 - P4-M1-T02 — Supplier model/API/UI is next. It must not begin until separately
   authorized.
+
+## ADR-027 — Use THB-only atomic completed sales with recorded payment, VAT-inclusive document totals, and immutable receipt snapshots
+
+- **Date:** 2026-09-05
+- **Status:** Accepted
+- **Type:** Sales, payment, Output VAT, discount, receipt, and monetary decision gate
+
+### Context
+
+`OQ-008` blocked the Sales/POS persistence and checkout milestones because payment,
+Output VAT, discount, receipt identity, tender/change, idempotency, monetary rounding,
+and cost-at-sale behavior were not yet one coherent contract. The accepted catalog
+already provides one organization-level `Product.basePrice`; `ADR-022` fixes quantity
+and price precision, `ADR-024` fixes no-negative stock and Branch/Product
+serialization, `ADR-026` fixes Branch/Product `UNKNOWN`/`KNOWN` moving-average cost,
+and `ADR-016` fixes the role and branch-scope baseline. This decision closes only the
+remaining sales monetary boundary. Sales/POS code and persistence do not yet exist.
+
+### Alternatives considered
+
+- Persist a draft Sale, suspended cart, or stock reservation instead of retaining the
+  mutable cart as client state until checkout.
+- Support CARD, gateways, pending/offline payment, or split tender in addition to
+  recording CASH and manually confirmed TRANSFER.
+- Accept client prices, branch prices, or manual price overrides instead of reloading
+  `Product.basePrice` and detecting price change with an optimistic precondition.
+- Omit discounts, support line promotions, or allow combined/campaign discounts
+  instead of one bounded whole-Sale manual discount.
+- Assert VAT at checkout, reuse receiving Input VAT fields, add VAT on top of catalog
+  price, or build product tax classes/a generic tax engine instead of using one
+  authoritative Organization sales VAT profile and VAT-inclusive prices.
+- Round each line independently instead of calculating the document first and
+  deterministically allocating its cents.
+- Block sale of available stock whose cost basis is `UNKNOWN`, or fabricate zero COGS,
+  instead of completing the sale with explicit unavailable cost facts.
+- Create a separate Sales Receipt aggregate or sequential fiscal numbering instead of
+  projecting a receipt from one immutable completed Sale.
+
+### Decision
+
+Resolve `OQ-008` with the following MVP contract.
+
+#### Sale, payment, currency, and receipt
+
+- The mutable cart and checkout intent remain client-side. There is no persisted Cart,
+  Draft Sale, or inventory reservation. Atomic success creates a Sale; existence of a
+  Sale row means checkout completed successfully. The initial schema has no
+  `SaleStatus` enum or status field. `OQ-009` alone will decide later reversal status
+  or projection semantics.
+- Sales are THB-only. The Sale snapshots currency `THB`; no FX or foreign-currency
+  tender exists.
+- Payment methods are exactly `CASH` and `TRANSFER`. TRANSFER means an employee has
+  manually confirmed a bank/QR-style transfer. There is exactly one Payment per Sale,
+  its amount equals the Sale total, and its existence under an atomically completed
+  Sale means confirmed payment. There is no independent mutable Payment status.
+- CASH requires a two-decimal `amountTendered` at least equal to the Sale total and
+  persists server-derived `changeAmount`; `amountTendered - changeAmount =
+  Payment.amount`. TRANSFER has null tender/change and may carry one trimmed optional
+  reference of at most 100 characters. CARD, split payment, gateway/provider calls,
+  pending/offline payment, slip upload, OCR, and automatic transfer verification are
+  excluded.
+- The server generates one immutable `SALE-<UUID>` reference unique within the
+  Organization. Sale, SaleItems, and Payment are the customer receipt source; no
+  separate Sales Receipt aggregate exists. The receipt snapshots the Organization
+  name, Branch name/code, acting employee display identity, lines, totals, payment,
+  and occurred-at instant needed to reproduce it. It is not a legal tax-invoice or
+  fiscal-numbering claim.
+- No Customer/CRM aggregate or customer name, phone, email, address, loyalty ID, or
+  free-text customer data is part of checkout. A transfer reference is payment
+  evidence, not customer identity.
+
+#### Price and discount
+
+- The server reloads the active same-Organization Product and treats
+  `Product.basePrice DECIMAL(19,4)` as price authority. A checkout line supplies
+  `expectedUnitPrice` only as an exact optimistic precondition; a changed price rejects
+  the checkout with `PRICE_CHANGED`. SaleItem snapshots Product ID, SKU, name, base
+  unit, and the accepted unit price. Duplicate Product lines are invalid. There is no
+  manual price override or Branch price.
+- A Sale may have no discount or one whole-Sale manual `AMOUNT` or `PERCENT` discount;
+  types cannot combine. `AMOUNT` is positive, scale at most two, and strictly less
+  than subtotal. `PERCENT` is positive, scale at most four, and strictly less than
+  `100`; its calculated discount is `ROUND_HALF_UP(subtotal * percent / 100, 2)`.
+  The final total must remain positive. A trimmed nonblank reason of at most 200
+  characters is required. Persist the type, entered value, reason, and calculated
+  `discountAmount` snapshot.
+- `OWNER`, `ADMIN`, and an assigned `BRANCH_MANAGER` may apply a discount in their
+  authorized scope. `CASHIER` may complete an undiscounted checkout but cannot apply a
+  discount. `INVENTORY_STAFF` cannot sell. No coupon, BOGO, campaign, member pricing,
+  line promotion, discount stacking, or delegated approval workflow exists.
+
+#### Organization sales VAT
+
+- Organization application configuration has `salesVatStatus` values
+  `UNCONFIGURED`, `NOT_REGISTERED`, and `REGISTERED` plus nullable
+  `salesVatRate DECIMAL(9,6)`. `UNCONFIGURED` is an application configuration state,
+  not a legal business-registration classification, and blocks checkout with
+  `VAT_CONFIGURATION_REQUIRED`.
+- P5-M1-T02 initializes existing and newly created Organizations to `UNCONFIGURED`
+  with a null rate; migration and onboarding must not silently assert a legal VAT
+  classification.
+- `REGISTERED` requires a positive rate below `100`; `NOT_REGISTERED` and
+  `UNCONFIGURED` require a null rate. The rate is operational Organization data and is
+  never hardcoded. `OWNER` and `ADMIN` manage it through Organization settings;
+  checkout never accepts client-authored VAT status or rate.
+- For `REGISTERED`, every Product sold through MVP POS is assumed subject to the one
+  Organization rate. `Product.basePrice` is the final VAT-inclusive selling price.
+  Discount is applied before document-level Output VAT extraction:
+
+  ```text
+  totalAmount = subtotalAmount - discountAmount
+  outputVatAmount = ROUND_HALF_UP(totalAmount * vatRate / (100 + vatRate), 2)
+  taxableAmount = totalAmount - outputVatAmount
+  ```
+
+- For `NOT_REGISTERED`, no Output VAT is extracted: Sale and SaleItem taxable amounts
+  are null, Sale and line Output VAT amounts are `0.00`, and the VAT-rate snapshot is
+  null. The Sale net amount is not labeled as a VAT taxable base.
+- Each Sale snapshots the configured status/rate used. Mixed taxable/non-taxable
+  baskets, Product-specific tax classes, VAT-exempt Products, zero-rated Products,
+  multiple/product-specific rates, jurisdiction tax engines, VAT filing, and legal
+  tax-invoice/e-tax-invoice compliance are explicit MVP exclusions.
+
+#### Decimal calculation and allocation
+
+- External money, price, cost, tax, discount, and quantity values are canonical
+  decimal strings. PostgreSQL `NUMERIC`/Prisma `Decimal` is authoritative; JavaScript
+  `number` is never monetary authority. Inputs exceeding their accepted scale are
+  rejected, never silently rounded.
+- Quantity is `DECIMAL(18,4)` under `ADR-022`; unit price is `DECIMAL(19,4)`; VAT rate
+  is `DECIMAL(9,6)`; percentage discount is `DECIMAL(7,4)`; customer/document money,
+  payment, tender, and change are `DECIMAL(38,2)`; known unit cost is
+  `DECIMAL(19,6)`; COGS is `DECIMAL(38,10)`.
+- Calculate exact raw `quantity * unitPrice` line extensions, sum them, and apply
+  `ROUND_HALF_UP(..., 2)` once for the document subtotal. Allocate subtotal cents to
+  lines using largest fractional remainder, with canonical Product ID as the stable
+  tie-break. Calculate the document discount, then allocate its non-negative cents
+  proportionally by the same rule. Calculate registered document Output VAT once
+  after discount and allocate its non-negative cents proportionally over line net
+  amounts by the same rule. Derive each line taxable amount as line net less line
+  Output VAT; do not independently round a taxable base.
+- Allocated components are non-negative. Every applicable line enforces
+  `lineDiscount <= lineGross`, `lineNet >= 0`, `lineOutputVat <= lineNet`, and
+  `lineTaxable >= 0`. Aggregates enforce:
+
+  ```text
+  sum(lineGross) = Sale.subtotalAmount
+  sum(lineDiscount) = Sale.discountAmount
+  sum(lineNet) = Sale.totalAmount
+  sum(lineOutputVat) = Sale.outputVatAmount
+  Payment.amount = Sale.totalAmount
+  ```
+
+  For `REGISTERED`, `sum(lineTaxable) = Sale.taxableAmount` and taxable plus Output VAT
+  equals total. For `NOT_REGISTERED`, Sale/line taxable amounts are null and Sale/line
+  Output VAT amounts are `0.00`.
+
+#### Atomicity, stock, cost, and idempotency
+
+- One PostgreSQL transaction revalidates actor/membership/Branch scope, claims or
+  resolves checkout idempotency, locks/reads Organization VAT configuration, reloads
+  active Products and prices, acquires the existing shared Branch/Product inventory
+  serialization keys in sorted Product-ID order, locks balances/cost states, verifies
+  stock/payment/discount/totals, creates Sale/SaleItems/one Payment, appends one
+  negative `SALE` InventoryTransaction per line with unique provenance, decrements
+  balances, updates cost state and COGS snapshots, and commits. Any failure rolls back
+  every effect. No role has a negative-stock override.
+- For `KNOWN` cost basis, each SaleItem snapshots the retained
+  `averageUnitCost DECIMAL(19,6)` and `cogsAmount = ROUND_HALF_UP(quantity *
+  averageUnitCost, 10)`. Remaining inventory value is
+  `ROUND_HALF_UP(resultingQuantity * averageUnitCost, 10)`; reaching zero retains the
+  average and stores zero value, preserving `ADR-026`.
+- For `UNKNOWN` cost basis, a sale is allowed when stock is sufficient. Whether
+  resulting quantity is positive or zero, InventoryCostState remains `UNKNOWN`,
+  `averageUnitCost` and `inventoryValue` remain null, the SaleItem cost-basis snapshot
+  is `UNKNOWN`, and its unit cost/COGS are null. A later authoritative Purchase Receipt
+  from zero on-hand may initialize `KNOWN` according to `ADR-026`, but never backfills
+  or mutates historical UNKNOWN SaleItems. Zero COGS is never fabricated.
+- Checkout requires one printable-ASCII `Idempotency-Key` of 1–200 characters and
+  persists only its deterministic hash plus a canonical-request hash, unique by
+  Organization and `SALE_CHECKOUT` operation. Canonical intent contains trusted
+  Organization/Branch/actor identity, Product-ID-sorted unique lines with canonical
+  quantity and expected price, discount input/reason, and payment method/tender or
+  transfer reference. Same key plus same intent returns the original logical Sale and
+  reference with `200`; first success returns `201`; changed intent returns `409
+  IDEMPOTENCY_CONFLICT`. A rolled-back attempt creates no successful claim.
+
+#### Authorization and future reversal boundary
+
+- `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`, and assigned `CASHIER` may checkout in
+  trusted active Branch scope. Only `OWNER`, `ADMIN`, and assigned `BRANCH_MANAGER`
+  may apply a discount. `OWNER`/`ADMIN` view Organization-wide sales history;
+  `BRANCH_MANAGER`/`CASHIER` view assigned-Branch history. COGS visibility is limited
+  to `OWNER`, `ADMIN`, and assigned `BRANCH_MANAGER`. The Express service revalidates
+  authorization; the UI is not a security boundary.
+- The immutable Sale retains original item/product/price, discount, VAT, payment,
+  cost/COGS, actor, Branch, timestamp, reference, idempotency, and inventory-movement
+  provenance so a later decision can add linked compensating records. `OQ-009`
+  remains unresolved and exclusively owns void/refund/partial-refund eligibility,
+  status/projection, authorization, timing, payment reversal, restocking, and
+  compensating-number semantics. Future records must not rewrite the original Sale's
+  monetary, payment, item, VAT, COGS, or inventory facts.
+
+### Worked boundary examples
+
+| Scenario | Exact result |
+| --- | --- |
+| Cash, known cost | `2.0000 * 60.1234 = 120.24680000`; subtotal/total `120.25`; tender `200.00`; change `79.75`. Stock `10.0000 -> 8.0000`; at average `35.123456`, COGS is `70.2469120000` and remaining value `280.9876480000`. |
+| VAT-inclusive, illustrative `7.000000` | Total `107.00`; Output VAT `ROUND_HALF_UP(107.00 * 7 / 107, 2) = 7.00`; taxable `100.00`; total remains `107.00`. The rate is illustrative, not hardcoded. |
+| Discount then VAT, illustrative `7.000000` | Gross lines `428.00 + 642.00 = 1070.00`; `10.0000%` discount is `107.00`, allocated `42.80/64.20`; total `963.00`; Output VAT `63.00`; taxable `900.00`. |
+| Fractional quantity | `0.3750 KG * 79.9900 = 29.99625000`, document total `30.00`; stock `5.0000 -> 4.6250`. At average `45.123456`, COGS is `16.9212960000` and remaining value `208.6959840000`. |
+| Rounding edge | Two exact lines of `0.33500000` sum to document subtotal `0.67`; truncate to `0.33/0.33` then allocate the residual cent by Product-ID tie-break to persist `0.34/0.33`. Independently rounding both to `0.34` is prohibited because it would produce `0.68`. |
+| UNKNOWN cost reaches zero | Selling all available UNKNOWN-basis stock decrements quantity to `0.0000`; cost state remains `UNKNOWN`, average/value remain null, and SaleItem unit cost/COGS remain null. A later receipt may initialize current stock prospectively but cannot backfill the SaleItem. |
+
+### Why selected
+
+This contract covers the practical cash and manually confirmed transfer workflow while
+keeping price, tax, totals, stock, and authorization server-authoritative. It produces
+internally reconcilable customer and analytics facts, preserves explicit uncertainty
+where cost is unavailable, and avoids speculative payment, tax, promotion, customer,
+receipt, cart, and reversal systems.
+
+### Consequences
+
+- P5-M1-T01 completes only this decision and Source-of-Truth synchronization. It
+  creates no Sale/Payment schema, migration, service, endpoint, or UI.
+- P5-M1-T02 may add only the bounded Organization VAT, Sale, SaleItem, Payment,
+  discount/VAT/cost/idempotency/provenance persistence and constraints. It does not
+  own runtime checkout, API, or UI.
+- P5-M2-T01 owns the atomic checkout service. P5-M2-T02 owns the target VAT-profile
+  read/update and POS/checkout HTTP contracts. P5-M2-T03 owns VAT-configuration and
+  checkout-blocked UI plus POS interaction. P5-M3 retains sales history/receipt work.
+- `OQ-008` is resolved by this ADR. `OQ-009`, `OQ-011`, and `OQ-016` remain open and
+  continue to govern reversal, analytics eligibility, and display/report timezone.
+- Sales/POS implementation remains absent until its separately authorized roadmap
+  tasks are completed. The exact next task is P5-M1-T02 — Sale/payment schema.
 
 ## 2. Explicitly superseded planning directions
 

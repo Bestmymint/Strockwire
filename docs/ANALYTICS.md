@@ -81,15 +81,20 @@ For a requested scope `S` and period `P`:
 - `EligibleSaleItems(S,P)`: items belonging to `EligibleSales` with accepted reversal treatment.
 - `Q_i`: accepted signed or net quantity of sale item `i`.
 - `UnitPrice_i`: historical unit-price snapshot.
-- `LineGross_i`: price times quantity before line/order discounts according to accepted rounding.
-- `LineDiscount_i`: allocated discount for line `i`.
-- `LineTax_i`: allocated tax for line `i`.
-- `LineNet_i`: recognized sales amount for line `i` according to `OQ-008`/`OQ-011`.
-- `UnitCost_i`: historical Branch/Product moving-weighted-average unit-cost snapshot used by the completed sale after `ADR-026` is implemented. It is unavailable when the consumed stock has no initialized authoritative cost basis.
+- `LineGross_i`: non-negative persisted line-gross allocation before the whole-Sale discount; line sums equal Sale subtotal under `ADR-027`.
+- `LineDiscount_i`: non-negative persisted whole-Sale discount allocation, no greater than line gross; line sums equal Sale discount.
+- `LineNet_i`: persisted `LineGross_i - LineDiscount_i`; non-negative line sums equal Sale total. Recognition/eligibility remains `OQ-011`/`OQ-009`.
+- `LineOutputVat_i`: registered-Sale Output VAT allocated from the discounted VAT-inclusive document total; line sums equal Sale Output VAT. It is `0.00` for NOT_REGISTERED Sales.
+- `LineTaxable_i`: registered-Sale `LineNet_i - LineOutputVat_i`; line sums equal Sale taxable amount. It is null, not Sale net, for NOT_REGISTERED Sales.
+- `CostBasisState_i`: immutable `KNOWN` or `UNKNOWN` checkout snapshot.
+- `UnitCost_i`: nullable historical Branch/Product moving-weighted-average unit-cost snapshot under `ADR-026`/`ADR-027`; null for UNKNOWN basis.
+- `LineCogs_i`: nullable persisted `ROUND_HALF_UP(quantity * UnitCost_i, 10)` snapshot; null for UNKNOWN basis and never coerced to zero or backfilled.
 - `OnHand(b,p,t)`: branch `b` balance of product `p` at cutoff `t`.
 - `Incoming(b,p,H)`: confirmed inbound quantity expected in horizon `H`, once purchase lifecycle is accepted.
 
-The symbols do not answer refund, tax, discount, payment, or completed-state policy. Those remain blockers.
+`ADR-027` fixes the persisted gross, discount, net, Output VAT, taxable, and cost
+snapshot facts. `OQ-009`/`OQ-011` still determine reversal treatment, eligible Sales,
+and metric meaning; these facts alone do not make a metric Accepted.
 
 ## 7. Sales metrics catalog
 
@@ -103,8 +108,10 @@ GrossSales(S,P) = sum(LineGross_i for i in EligibleSaleItems(S,P))
 
 - Unit: currency decimal
 - Grain: branch/organization, optionally category/product
-- Status: **Blocked** by `OQ-008`, `OQ-009`, `OQ-011`
-- Must decide: inclusive/exclusive tax, refund/void sign, order-level discount allocation, rounding.
+- Status: **Blocked** by `OQ-009` and `OQ-011`
+- `ADR-027` fixes VAT-inclusive registered prices, whole-Sale discount allocation, and
+  document-first rounding. Must still decide eligible/reversal treatment and whether
+  this metric is presented VAT-inclusive or alongside its accepted VAT breakout.
 
 ### M-002 Net sales / recognized sales
 
@@ -117,8 +124,11 @@ NetSales(S,P) = sum(LineNet_i for i in EligibleSaleItems(S,P))
 ```
 
 - Unit: currency decimal
-- Status: **Blocked** by `OQ-008`, `OQ-009`, `OQ-011`
-- `LineNet` must be defined once; do not subtract tax/refunds differently per dashboard.
+- Status: **Blocked** by `OQ-009` and `OQ-011`
+- `LineNet` is the persisted post-discount VAT-inclusive line total under `ADR-027`.
+  `OQ-011` must still decide recognized-sale/reversal treatment and whether an
+  analytics metric uses VAT-inclusive net or registered taxable value; do not subtract
+  tax/refunds differently per dashboard.
 
 ### M-003 Units sold
 
@@ -201,14 +211,17 @@ Branch performance is not a separate opaque score. It is a dimensioned compariso
 Proposed shapes:
 
 ```text
-COGS(S,P) = sum(UnitCost_i * Q_i with accepted reversal treatment)
+COGS(S,P) = sum(LineCogs_i with accepted reversal treatment)
 GrossMargin = NetSales - COGS
 GrossMarginPercent = GrossMargin / NetSales * 100
 ```
 
 - Zero net sales: percentage `null`.
 - Status: **Blocked** by `OQ-009` and `OQ-011`, and by the later sales/cost implementation that persists historical unit-cost snapshots.
-- `ADR-026` fixes the future moving-weighted-average method. Do not display or coerce to zero any COGS/gross-margin fact whose underlying cost basis was `UNKNOWN` before initialization.
+- `ADR-026` fixes the moving-weighted-average method and `ADR-027` fixes the immutable
+  SaleItem snapshot. If any included line has UNKNOWN basis, aggregate COGS and gross
+  margin are unavailable/incomplete rather than a partial numeric result; never
+  display, coerce, or backfill unknown COGS as zero.
 
 ## 8. Product movement and inventory metrics
 
@@ -537,7 +550,6 @@ Expected results must be hand-verifiable and stored with the test. SQL and TypeS
 
 Canonical Open Questions are in `BUILD_SPEC.md`:
 
-- `OQ-008` payment, tax, discount, and sale totals
 - `OQ-009` refund/void treatment
 - `OQ-011` exact metric definitions, thresholds, comparison windows, and eligible states
 - `OQ-012` Forecasting V1
@@ -545,3 +557,7 @@ Canonical Open Questions are in `BUILD_SPEC.md`:
 - `OQ-017` generation schedule and retries
 - `OQ-018` OpenRouter model/fallback/budget/retention
 - `OQ-020` performance and retention targets
+
+`OQ-008` is resolved by `ADR-027`. Its persisted Sale facts are authoritative inputs;
+it does not resolve the `OQ-011` metric eligibility, tax-presentation, threshold, or
+comparison decisions.
