@@ -641,10 +641,10 @@ This document does not answer the following canonical questions from `BUILD_SPEC
 Implementation touching one of these areas must stop at its accepted boundary until the referenced question is resolved and all affected documents are updated.
 
 Sales payment, Output VAT, discount, receipt, monetary, checkout, and UNKNOWN-cost
-behavior are accepted by `ADR-027`, which resolves `OQ-008`. This is an architecture
-contract only: no Sale/Payment schema, service, API, or POS UI exists yet. The exact
-next task is P5-M1-T02 — Sale/payment schema. It owns only bounded persistence and
-constraints, including Organization VAT fields; P5-M2-T01 owns the checkout service,
+behavior are accepted by `ADR-027`, which resolves `OQ-008`. P5-M1-T02 implements the
+bounded Organization Sales-VAT, completed-by-existence Sale/SaleItem/one-Payment,
+discount/VAT/cost/idempotency, and Sale/inventory-provenance persistence foundation.
+It adds no Sale status or Sales runtime. P5-M2-T01 next owns the checkout service,
 P5-M2-T02 the target VAT-profile/POS HTTP contracts, P5-M2-T03 the VAT/POS UI, and
 P5-M3 the history/receipt read experience. `OQ-009` remains unresolved for reversal.
 

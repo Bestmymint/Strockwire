@@ -2,11 +2,11 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1 logical data contract; P2 identity/tenancy schema implemented |
+| Status | Architecture Freeze v1 logical data contract; persistence implemented through P5-M1-T02 |
 | Database | PostgreSQL |
 | ORM/migrations | Prisma |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-25 |
+| Last updated | 2026-09-05 |
 
 ## 1. Scope and authority
 
@@ -31,6 +31,12 @@ migrations remain reviewable source files. P2-M1-T02 selects UUID primary keys,
 `snake_case` PostgreSQL table/column/constraint names through Prisma mappings,
 and millisecond-precision `TIMESTAMPTZ` UTC instants. Later model tasks must
 continue those physical conventions unless an accepted migration changes them.
+
+P5-M1-T02 adds the reviewed
+`20260905120000_add_sale_payment_schema` forward migration: bounded Organization
+Sales-VAT state/rate, immutable completed-by-existence Sale/SaleItem/one-Payment
+facts, exact discount/VAT/cost/idempotency constraints, and tenant-safe negative
+`SALE` inventory provenance. Checkout service/API/UI behavior remains owned by P5-M2.
 
 ### Database test harness
 

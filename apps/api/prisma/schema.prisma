@@ -82,6 +82,34 @@ enum InventoryCostBasisState {
   @@map("inventory_cost_basis_state")
 }
 
+enum SalesVatStatus {
+  UNCONFIGURED
+  NOT_REGISTERED
+  REGISTERED
+
+  @@map("sales_vat_status")
+}
+
+enum SaleDiscountType {
+  AMOUNT
+  PERCENT
+
+  @@map("sale_discount_type")
+}
+
+enum SaleIdempotencyOperation {
+  SALE_CHECKOUT
+
+  @@map("sale_idempotency_operation")
+}
+
+enum PaymentMethod {
+  CASH
+  TRANSFER
+
+  @@map("payment_method")
+}
+
 enum ProductUnit {
   EA
   PACK
@@ -135,18 +163,21 @@ model User {
   membershipAccessEvents   MembershipAccessEvent[]
   inventoryTransactions    InventoryTransaction[]
   receivedPurchaseReceipts PurchaseReceipt[]        @relation("PurchaseReceiptReceiverUser")
+  completedSales           Sale[]                   @relation("SaleActorUser")
 
   @@unique([id, email], map: "users_id_email_key")
   @@map("users")
 }
 
 model Organization {
-  id            String             @id @default(uuid()) @db.Uuid
-  name          String             @db.VarChar(200)
-  status        OrganizationStatus @default(ACTIVE)
-  deactivatedAt DateTime?          @map("deactivated_at") @db.Timestamptz(3)
-  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id             String             @id @default(uuid()) @db.Uuid
+  name           String             @db.VarChar(200)
+  status         OrganizationStatus @default(ACTIVE)
+  salesVatStatus SalesVatStatus     @default(UNCONFIGURED) @map("sales_vat_status")
+  salesVatRate   Decimal?           @map("sales_vat_rate") @db.Decimal(9, 6)
+  deactivatedAt  DateTime?          @map("deactivated_at") @db.Timestamptz(3)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   memberships           OrganizationMembership[]
   branches              Branch[]
@@ -156,6 +187,7 @@ model Organization {
   suppliers             Supplier[]
   purchaseOrders        PurchaseOrder[]
   purchaseReceipts      PurchaseReceipt[]
+  sales                 Sale[]
   inventoryBalances     InventoryBalance[]
   inventoryCostStates   InventoryCostState[]
   inventoryTransactions InventoryTransaction[]
@@ -224,6 +256,7 @@ model Product {
   inventoryCostStates   InventoryCostState[]
   purchaseOrderItems    PurchaseOrderItem[]
   purchaseReceiptItems  PurchaseReceiptItem[]
+  saleItems             SaleItem[]
 
   @@unique([organizationId, sku], map: "products_organization_id_sku_key")
   @@unique([organizationId, barcode], map: "products_organization_id_barcode_key")
@@ -350,6 +383,99 @@ model PurchaseReceiptItem {
   @@map("purchase_receipt_items")
 }
 
+model Sale {
+  id                       String                   @id @default(uuid()) @db.Uuid
+  organizationId           String                   @map("organization_id") @db.Uuid
+  branchId                 String                   @map("branch_id") @db.Uuid
+  actorUserId              String                   @map("actor_user_id") @db.Uuid
+  actorMembershipId        String                   @map("actor_membership_id") @db.Uuid
+  reference                String                   @db.VarChar(41)
+  currency                 String                   @default("THB") @db.Char(3)
+  organizationNameSnapshot String                   @map("organization_name_snapshot") @db.VarChar(200)
+  branchNameSnapshot       String                   @map("branch_name_snapshot") @db.VarChar(200)
+  branchCodeSnapshot       String                   @map("branch_code_snapshot") @db.VarChar(32)
+  actorDisplayNameSnapshot String                   @map("actor_display_name_snapshot") @db.VarChar(200)
+  subtotalAmount           Decimal                  @map("subtotal_amount") @db.Decimal(38, 2)
+  discountType             SaleDiscountType?        @map("discount_type")
+  discountAmountInput      Decimal?                 @map("discount_amount_input") @db.Decimal(38, 2)
+  discountPercentInput     Decimal?                 @map("discount_percent_input") @db.Decimal(7, 4)
+  discountReason           String?                  @map("discount_reason") @db.VarChar(200)
+  discountAmount           Decimal                  @default(0) @map("discount_amount") @db.Decimal(38, 2)
+  salesVatStatusSnapshot   SalesVatStatus           @map("sales_vat_status_snapshot")
+  salesVatRateSnapshot     Decimal?                 @map("sales_vat_rate_snapshot") @db.Decimal(9, 6)
+  taxableAmount            Decimal?                 @map("taxable_amount") @db.Decimal(38, 2)
+  outputVatAmount          Decimal                  @map("output_vat_amount") @db.Decimal(38, 2)
+  totalAmount              Decimal                  @map("total_amount") @db.Decimal(38, 2)
+  idempotencyOperation     SaleIdempotencyOperation @default(SALE_CHECKOUT) @map("operation_type")
+  idempotencyKeyHash       String                   @map("idempotency_key_hash") @db.VarChar(64)
+  canonicalRequestHash     String                   @map("canonical_request_hash") @db.VarChar(64)
+  completedAt              DateTime                 @map("completed_at") @db.Timestamptz(3)
+  createdAt                DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization    Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  branch          Branch                 @relation(fields: [branchId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
+  actorUser       User                   @relation("SaleActorUser", fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actorMembership OrganizationMembership @relation("SaleActorMembership", fields: [organizationId, actorMembershipId, actorUserId], references: [organizationId, id, userId], onDelete: Restrict, onUpdate: Restrict, map: "sales_actor_membership_fkey")
+  items           SaleItem[]
+  payment         Payment?
+
+  @@unique([id, organizationId, branchId], map: "sales_item_scope_key")
+  @@unique([id, organizationId, branchId, totalAmount], map: "sales_payment_scope_key")
+  @@unique([organizationId, reference], map: "sales_organization_id_reference_key")
+  @@unique([organizationId, idempotencyOperation, idempotencyKeyHash], map: "sales_idempotency_scope_key")
+  @@index([organizationId, branchId, completedAt, id], map: "sales_organization_branch_completed_at_id_idx")
+  @@map("sales")
+}
+
+model SaleItem {
+  id                  String                  @id @default(uuid()) @db.Uuid
+  saleId              String                  @map("sale_id") @db.Uuid
+  organizationId      String                  @map("organization_id") @db.Uuid
+  branchId            String                  @map("branch_id") @db.Uuid
+  productId           String                  @map("product_id") @db.Uuid
+  productSkuSnapshot  String                  @map("product_sku_snapshot") @db.VarChar(64)
+  productNameSnapshot String                  @map("product_name_snapshot") @db.Text
+  productUnitSnapshot ProductUnit             @map("product_unit_snapshot")
+  quantity            Decimal                 @db.Decimal(18, 4)
+  unitPrice           Decimal                 @map("unit_price") @db.Decimal(19, 4)
+  lineGross           Decimal                 @map("line_gross") @db.Decimal(38, 2)
+  lineDiscount        Decimal                 @map("line_discount") @db.Decimal(38, 2)
+  lineNet             Decimal                 @map("line_net") @db.Decimal(38, 2)
+  lineTaxable         Decimal?                @map("line_taxable") @db.Decimal(38, 2)
+  lineOutputVat       Decimal                 @map("line_output_vat") @db.Decimal(38, 2)
+  costBasisState      InventoryCostBasisState @map("cost_basis_state")
+  unitCost            Decimal?                @map("unit_cost") @db.Decimal(19, 6)
+  cogsAmount          Decimal?                @map("cogs_amount") @db.Decimal(38, 10)
+  createdAt           DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  sale                 Sale                  @relation(fields: [saleId, organizationId, branchId], references: [id, organizationId, branchId], onDelete: Restrict, onUpdate: Restrict)
+  product              Product               @relation(fields: [productId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
+  inventoryTransaction InventoryTransaction?
+
+  @@unique([saleId, productId], map: "sale_items_sale_id_product_id_key")
+  @@unique([id, organizationId, branchId, productId], map: "sale_items_inventory_transaction_scope_key")
+  @@map("sale_items")
+}
+
+model Payment {
+  id                String        @id @default(uuid()) @db.Uuid
+  saleId            String        @unique(map: "payments_sale_id_key") @map("sale_id") @db.Uuid
+  organizationId    String        @map("organization_id") @db.Uuid
+  branchId          String        @map("branch_id") @db.Uuid
+  method            PaymentMethod
+  amount            Decimal       @db.Decimal(38, 2)
+  amountTendered    Decimal?      @map("amount_tendered") @db.Decimal(38, 2)
+  changeAmount      Decimal?      @map("change_amount") @db.Decimal(38, 2)
+  transferReference String?       @map("transfer_reference") @db.VarChar(100)
+  confirmedAt       DateTime      @map("confirmed_at") @db.Timestamptz(3)
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  sale Sale @relation(fields: [saleId, organizationId, branchId, amount], references: [id, organizationId, branchId, totalAmount], onDelete: Restrict, onUpdate: Restrict, map: "payments_sale_scope_fkey")
+
+  @@unique([saleId, organizationId, branchId, amount], map: "payments_sale_scope_key")
+  @@map("payments")
+}
+
 model OrganizationMembership {
   id             String           @default(uuid()) @db.Uuid
   organizationId String           @map("organization_id") @db.Uuid
@@ -373,6 +499,7 @@ model OrganizationMembership {
   actorInventoryTransactions  InventoryTransaction[]       @relation("InventoryTransactionActorMembership")
   createdPurchaseOrders       PurchaseOrder[]              @relation("PurchaseOrderCreator")
   receivedPurchaseReceipts    PurchaseReceipt[]            @relation("PurchaseReceiptReceiverMembership")
+  completedSales              Sale[]                       @relation("SaleActorMembership")
 
   @@id([organizationId, userId], map: "organization_memberships_pkey")
   @@unique([organizationId, id], map: "organization_memberships_organization_id_id_key")
@@ -404,6 +531,7 @@ model Branch {
   inventoryTransactions       InventoryTransaction[]
   purchaseOrders              PurchaseOrder[]
   purchaseReceipts            PurchaseReceipt[]
+  sales                       Sale[]
 
   @@unique([organizationId, code], map: "branches_organization_id_code_key")
   @@unique([id, organizationId], map: "branches_id_organization_id_key")
@@ -461,6 +589,7 @@ model InventoryTransaction {
   idempotencyKeyHash    String?  @map("idempotency_key_hash") @db.VarChar(64)
   canonicalRequestHash  String?  @map("canonical_request_hash") @db.VarChar(64)
   purchaseReceiptItemId String?  @map("purchase_receipt_item_id") @db.Uuid
+  saleItemId            String?  @map("sale_item_id") @db.Uuid
   occurredAt            DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
 
   organization        Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
@@ -469,9 +598,11 @@ model InventoryTransaction {
   actorUser           User                   @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   actorMembership     OrganizationMembership @relation("InventoryTransactionActorMembership", fields: [organizationId, actorMembershipId, actorUserId], references: [organizationId, id, userId], onDelete: Restrict, onUpdate: Restrict, map: "inventory_transactions_actor_membership_fkey")
   purchaseReceiptItem PurchaseReceiptItem?   @relation(fields: [purchaseReceiptItemId, organizationId, branchId, productId], references: [id, organizationId, branchId, productId], onDelete: Restrict, onUpdate: Restrict, map: "inventory_transactions_purchase_receipt_item_fkey")
+  saleItem            SaleItem?              @relation(fields: [saleItemId, organizationId, branchId, productId], references: [id, organizationId, branchId, productId], onDelete: Restrict, onUpdate: Restrict, map: "inventory_transactions_sale_item_fkey")
 
   @@unique([organizationId, idempotencyKeyHash], map: "inventory_transactions_organization_id_idempotency_key_hash_key")
   @@unique([purchaseReceiptItemId, organizationId, branchId, productId], map: "inventory_transactions_purchase_receipt_item_scope_key")
+  @@unique([saleItemId, organizationId, branchId, productId], map: "inventory_transactions_sale_item_scope_key")
   @@index([branchId, productId, occurredAt, id], map: "inventory_transactions_branch_product_time_idx")
   @@map("inventory_transactions")
 }

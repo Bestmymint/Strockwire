@@ -121,6 +121,11 @@ describe("identity and tenancy database schema", () => {
         finished: true,
         active: true,
       },
+      {
+        migrationName: "20260905120000_add_sale_payment_schema",
+        finished: true,
+        active: true,
+      },
     ]);
     expect(tables.map(({ tableName }) => tableName)).toEqual([
       "branch_assignments",
@@ -138,11 +143,14 @@ describe("identity and tenancy database schema", () => {
       "organization_memberships",
       "organizations",
       "password_reset_tokens",
+      "payments",
       "products",
       "purchase_order_items",
       "purchase_orders",
       "purchase_receipt_items",
       "purchase_receipts",
+      "sale_items",
+      "sales",
       "sessions",
       "suppliers",
       "users",
