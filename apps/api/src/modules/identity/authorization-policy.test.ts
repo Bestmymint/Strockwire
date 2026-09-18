@@ -119,6 +119,11 @@ const PERMISSION_MATRIX = [
     scope: "branch",
   },
   {
+    permission: PERMISSIONS.CHECKOUT_DISCOUNT_APPLY,
+    allowedRoles: MANAGER_ROLES,
+    scope: "branch",
+  },
+  {
     permission: PERMISSIONS.SALES_HISTORY_VIEW,
     allowedRoles: CHECKOUT_AND_SALES_ROLES,
     scope: "organization-or-branch",

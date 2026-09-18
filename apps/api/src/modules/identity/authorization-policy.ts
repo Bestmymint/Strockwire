@@ -21,6 +21,7 @@ export const PERMISSIONS = {
   PURCHASE_ORDER_CREATE_EDIT: "purchase-order.create-edit",
   RECEIVING_PERFORM: "receiving.perform",
   CHECKOUT_PERFORM: "checkout.perform",
+  CHECKOUT_DISCOUNT_APPLY: "checkout.discount.apply",
   SALES_HISTORY_VIEW: "sales-history.view",
   BUSINESS_ANALYTICS_VIEW: "analytics.business.view",
   INVENTORY_ANALYTICS_VIEW: "analytics.inventory.view",
@@ -61,6 +62,11 @@ const CHECKOUT_ROLES = [
   "ADMIN",
   "BRANCH_MANAGER",
   "CASHIER",
+] as const satisfies readonly OrganizationRole[];
+const CHECKOUT_DISCOUNT_ROLES = [
+  "OWNER",
+  "ADMIN",
+  "BRANCH_MANAGER",
 ] as const satisfies readonly OrganizationRole[];
 const SALES_HISTORY_ROLES = [
   "OWNER",
@@ -140,6 +146,10 @@ const PERMISSION_RULES = {
   },
   [PERMISSIONS.CHECKOUT_PERFORM]: {
     roles: CHECKOUT_ROLES,
+    scope: "branch",
+  },
+  [PERMISSIONS.CHECKOUT_DISCOUNT_APPLY]: {
+    roles: CHECKOUT_DISCOUNT_ROLES,
     scope: "branch",
   },
   [PERMISSIONS.SALES_HISTORY_VIEW]: {
