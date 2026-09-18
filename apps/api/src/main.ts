@@ -18,6 +18,11 @@ import { createReceivingService } from "./modules/purchasing/receiving-service.t
 import { createPrismaInventoryRepository } from "./modules/inventory/inventory-repository.ts";
 import { createInventoryRouter } from "./modules/inventory/inventory-router.ts";
 import { createInventoryService } from "./modules/inventory/inventory-service.ts";
+import { createPrismaCheckoutRepository } from "./modules/sales/checkout-repository.ts";
+import { createCheckoutService } from "./modules/sales/checkout-service.ts";
+import { createPrismaSalesApiRepository } from "./modules/sales/sales-api-repository.ts";
+import { createSalesApiService } from "./modules/sales/sales-api-service.ts";
+import { createSalesRouter } from "./modules/sales/sales-router.ts";
 import { createPrismaAuthenticationRepository } from "./modules/identity/authentication-repository.ts";
 import { createPrismaAuthenticationSessionRepository } from "./modules/identity/authentication-repository.ts";
 import { createAuthenticationMiddleware } from "./modules/identity/authentication-context.ts";
@@ -117,6 +122,12 @@ async function main(): Promise<void> {
   const receivingService = createReceivingService({
     repository: createPrismaReceivingRepository(prisma),
   });
+  const checkoutService = createCheckoutService({
+    repository: createPrismaCheckoutRepository(prisma),
+  });
+  const salesApiService = createSalesApiService({
+    repository: createPrismaSalesApiRepository(prisma),
+  });
   const apiRouter = Router();
   apiRouter.use(
     createRegistrationRouter({
@@ -195,6 +206,14 @@ async function main(): Promise<void> {
       authenticationMiddleware,
       inventoryService,
       publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
+    }),
+  );
+  apiRouter.use(
+    createSalesRouter({
+      authenticationMiddleware,
+      checkoutService,
+      publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
+      salesApiService,
     }),
   );
 
