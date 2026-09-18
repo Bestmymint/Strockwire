@@ -20,6 +20,7 @@ import {
   E2E_OWNER_EMAIL,
   E2E_OWNER_ID,
   E2E_PASSWORD,
+  E2E_POS_PRODUCT_ID,
   E2E_PURCHASE_PRODUCT_ID,
   E2E_SUPPLIER_ID,
 } from "./catalog-fixtures.ts";
@@ -121,6 +122,33 @@ export default async function globalSetup(): Promise<void> {
         organizationId: E2E_ORGANIZATION_ID,
         sku: "INVENTORY-E2E-01",
         unit: "EA",
+      },
+    });
+    await prisma.product.create({
+      data: {
+        barcode: "8850000000012",
+        basePrice: "35.0000",
+        id: E2E_POS_PRODUCT_ID,
+        name: "POS E2E coffee",
+        organizationId: E2E_ORGANIZATION_ID,
+        sku: "POS-E2E-03",
+        unit: "EA",
+      },
+    });
+    await prisma.inventoryBalance.create({
+      data: {
+        branchId: E2E_BRANCH_ID,
+        organizationId: E2E_ORGANIZATION_ID,
+        productId: E2E_POS_PRODUCT_ID,
+        quantity: "5",
+      },
+    });
+    await prisma.inventoryCostState.create({
+      data: {
+        basisState: "UNKNOWN",
+        branchId: E2E_BRANCH_ID,
+        organizationId: E2E_ORGANIZATION_ID,
+        productId: E2E_POS_PRODUCT_ID,
       },
     });
     await prisma.supplier.create({
