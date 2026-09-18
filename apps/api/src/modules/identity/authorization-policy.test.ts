@@ -129,6 +129,11 @@ const PERMISSION_MATRIX = [
     scope: "organization-or-branch",
   },
   {
+    permission: PERMISSIONS.SALES_COST_VIEW,
+    allowedRoles: MANAGER_ROLES,
+    scope: "organization-or-branch",
+  },
+  {
     permission: PERMISSIONS.BUSINESS_ANALYTICS_VIEW,
     allowedRoles: MANAGER_ROLES,
     scope: "organization-or-branch",

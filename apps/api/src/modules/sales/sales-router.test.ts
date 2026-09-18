@@ -95,6 +95,12 @@ describe("sales router", () => {
           updatedAt: "2026-09-18T10:00:00.000Z",
         },
       }),
+    getSalesHistoryDetail = vi
+      .fn<SalesApiRepository["getSalesHistoryDetail"]>()
+      .mockResolvedValue({ kind: "not_found" }),
+    listSalesHistory = vi
+      .fn<SalesApiRepository["listSalesHistory"]>()
+      .mockResolvedValue({ kind: "success", nextCursor: null, sales: [] }),
     searchPosProducts = vi
       .fn<SalesApiRepository["searchPosProducts"]>()
       .mockResolvedValue({
@@ -126,6 +132,8 @@ describe("sales router", () => {
     authenticated?: boolean;
     checkout?: CheckoutRepository["checkout"];
     getSalesVatProfile?: SalesApiRepository["getSalesVatProfile"];
+    getSalesHistoryDetail?: SalesApiRepository["getSalesHistoryDetail"];
+    listSalesHistory?: SalesApiRepository["listSalesHistory"];
     searchPosProducts?: SalesApiRepository["searchPosProducts"];
     updateSalesVatProfile?: SalesApiRepository["updateSalesVatProfile"];
   } = {}) {
@@ -145,6 +153,8 @@ describe("sales router", () => {
     };
     const salesRepository: SalesApiRepository = {
       getSalesVatProfile,
+      getSalesHistoryDetail,
+      listSalesHistory,
       searchPosProducts,
       updateSalesVatProfile,
     };
@@ -165,6 +175,8 @@ describe("sales router", () => {
       base: `http://${server.address.host}:${server.address.port}/api/v1`,
       checkout,
       getSalesVatProfile,
+      getSalesHistoryDetail,
+      listSalesHistory,
       searchPosProducts,
       updateSalesVatProfile,
     };

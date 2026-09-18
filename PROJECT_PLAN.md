@@ -327,7 +327,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 ## 2. Next Codex task
 
-Phase 1, Phase 2, Milestone 3.1, Milestone 3.2, the deferred-transfer decision gate, and Phase 4 purchasing/receiving work are complete. **P5-M1-T01 — Close payment/tax/discount/receipt decisions** is complete and committed at `c5c6ca0de4a070d044f2d32d5bea86d9c8245e7c`; `ADR-027` resolves `OQ-008`, while `OQ-009` remains assigned to P5-M4-T01. **P5-M1-T02 — Sale/payment schema** is complete: it adds only bounded Organization Sales-VAT, completed-by-existence Sale/SaleItem/one-Payment, discount/VAT/cost/idempotency, and Sale/inventory-provenance persistence plus the `20260905120000_add_sale_payment_schema` forward migration and database tests. The exact next task is **P5-M2-T01 — Server checkout service**.
+Phase 1, Phase 2, Milestone 3.1, Milestone 3.2, the deferred-transfer decision gate, Phase 4 purchasing/receiving work, and P5-M1/P5-M2 are complete. `ADR-027` resolves `OQ-008`, while `OQ-009` remains assigned to P5-M4-T01. The exact current task is **P5-M3-T01 — Sales history/detail API**.
 
 Current-state constraints that the next task must preserve:
 

@@ -23,6 +23,11 @@ const optionalSearchSchema = z
   .optional()
   .transform((value) => value?.trim() ?? "");
 
+const absoluteTimestampSchema = z
+  .string()
+  .datetime({ offset: true })
+  .transform((value) => new Date(value));
+
 const optionalBarcodeSchema = z
   .string()
   .max(128)
@@ -86,6 +91,10 @@ export const branchSalesParamsSchema = z
   })
   .strict();
 
+export const saleDetailParamsSchema = branchSalesParamsSchema.extend({
+  saleId: z.string().uuid(),
+});
+
 export const posProductSearchQuerySchema = z
   .object({
     barcode: optionalBarcodeSchema,
@@ -94,6 +103,29 @@ export const posProductSearchQuerySchema = z
     q: optionalSearchSchema,
   })
   .strict();
+
+export const salesHistoryQuerySchema = z
+  .object({
+    actorUserId: z.string().uuid().optional(),
+    createdAtFrom: absoluteTimestampSchema.optional(),
+    createdAtTo: absoluteTimestampSchema.optional(),
+    cursor: z.string().min(1).max(2048).optional(),
+    limit: limitSchema,
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (
+      value.createdAtFrom !== undefined &&
+      value.createdAtTo !== undefined &&
+      value.createdAtFrom >= value.createdAtTo
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "createdAtFrom must be before createdAtTo.",
+        path: ["createdAtTo"],
+      });
+    }
+  });
 
 export const salesVatProfileUpdateSchema = z
   .object({
@@ -113,6 +145,7 @@ export const checkoutRequestSchema = z
   .transform((value) => ({ ...value, discount: value.discount ?? null }));
 
 export type PosProductSearchQuery = z.infer<typeof posProductSearchQuerySchema>;
+export type SalesHistoryQuery = z.infer<typeof salesHistoryQuerySchema>;
 export type SalesVatProfileUpdateInput = z.infer<
   typeof salesVatProfileUpdateSchema
 >;

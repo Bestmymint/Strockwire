@@ -10,6 +10,7 @@ import {
 } from "../identity/authorization-policy.ts";
 import type {
   PosProductSearchQuery,
+  SalesHistoryQuery,
   SalesVatProfileUpdateInput,
 } from "./sales-schemas.ts";
 
@@ -31,6 +32,68 @@ export interface SafePosProduct {
   unit: string;
 }
 
+type SafeDiscount =
+  | { amount: string; reason: string; type: "AMOUNT" }
+  | { percent: string; reason: string; type: "PERCENT" }
+  | null;
+
+type SafePayment =
+  | {
+      amount: string;
+      amountTendered: string;
+      changeAmount: string;
+      method: "CASH";
+      reference: null;
+    }
+  | {
+      amount: string;
+      amountTendered: null;
+      changeAmount: null;
+      method: "TRANSFER";
+      reference: string | null;
+    };
+
+export interface SafeSalesHistorySummary {
+  actorDisplayName: string;
+  createdAt: string;
+  currency: "THB";
+  discount: SafeDiscount;
+  discountAmount: string;
+  id: string;
+  itemCount: number;
+  outputVatAmount: string;
+  payment: SafePayment;
+  reference: string;
+  salesVatRate: string | null;
+  salesVatStatus: "NOT_REGISTERED" | "REGISTERED";
+  subtotalAmount: string;
+  taxableAmount: string | null;
+  totalAmount: string;
+}
+
+export interface SafeSalesHistoryDetail extends SafeSalesHistorySummary {
+  branchCode: string;
+  branchName: string;
+  items: Array<{
+    cogsAmount?: string | null;
+    costBasisState?: "KNOWN" | "UNKNOWN";
+    id: string;
+    lineDiscount: string;
+    lineGross: string;
+    lineOutputVat: string;
+    lineTaxable: string | null;
+    lineNet: string;
+    productId: string;
+    productName: string;
+    productSku: string;
+    quantity: string;
+    unit: string;
+    unitCost?: string | null;
+    unitPrice: string;
+  }>;
+  organizationName: string;
+}
+
 type AuthorizationFailure = { kind: "forbidden" };
 
 export type SalesVatProfileOutcome =
@@ -49,11 +112,37 @@ export type PosProductSearchOutcome =
   | { kind: "branch_inactive" }
   | { kind: "invalid_cursor" };
 
+export type SalesHistoryListOutcome =
+  | {
+      kind: "success";
+      nextCursor: string | null;
+      sales: SafeSalesHistorySummary[];
+    }
+  | AuthorizationFailure
+  | { kind: "invalid_cursor" };
+
+export type SalesHistoryDetailOutcome =
+  | { kind: "success"; sale: SafeSalesHistoryDetail }
+  | AuthorizationFailure
+  | { kind: "not_found" };
+
 export interface SalesApiRepository {
   getSalesVatProfile(input: {
     actorUserId: string;
     organizationId: string;
   }): Promise<SalesVatProfileOutcome>;
+  getSalesHistoryDetail(input: {
+    actorUserId: string;
+    branchId: string;
+    organizationId: string;
+    saleId: string;
+  }): Promise<SalesHistoryDetailOutcome>;
+  listSalesHistory(input: {
+    actorUserId: string;
+    branchId: string;
+    organizationId: string;
+    query: SalesHistoryQuery;
+  }): Promise<SalesHistoryListOutcome>;
   searchPosProducts(input: {
     actorUserId: string;
     branchId: string;
@@ -67,7 +156,7 @@ export interface SalesApiRepository {
   }): Promise<SalesVatProfileUpdateOutcome>;
 }
 
-interface CursorValue {
+interface PosCursorValue {
   filterHash: string;
   id: string;
   name: string;
@@ -82,14 +171,14 @@ function filterHash(value: Record<string, unknown>): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-function encodeCursor(value: CursorValue): string {
+function encodeCursor(value: PosCursorValue): string {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
 }
 
 function decodeCursor(
   cursor: string,
   expectedFilterHash: string,
-): CursorValue | null {
+): PosCursorValue | null {
   try {
     if (!/^[A-Za-z0-9_-]+$/.test(cursor)) return null;
     const bytes = Buffer.from(cursor, "base64url");
@@ -114,6 +203,237 @@ function decodeCursor(
   } catch {
     return null;
   }
+}
+
+interface SalesHistoryCursorValue {
+  createdAt: string;
+  filterHash: string;
+  id: string;
+  version: 1;
+}
+
+function decodeSalesHistoryCursor(
+  cursor: string,
+  expectedFilterHash: string,
+): SalesHistoryCursorValue | null {
+  try {
+    if (!/^[A-Za-z0-9_-]+$/.test(cursor)) return null;
+    const bytes = Buffer.from(cursor, "base64url");
+    if (bytes.toString("base64url") !== cursor) return null;
+    const value: unknown = JSON.parse(bytes.toString("utf8"));
+    if (
+      !isRecord(value) ||
+      value.version !== 1 ||
+      value.filterHash !== expectedFilterHash ||
+      typeof value.createdAt !== "string" ||
+      Number.isNaN(Date.parse(value.createdAt)) ||
+      typeof value.id !== "string"
+    ) {
+      return null;
+    }
+    return {
+      createdAt: value.createdAt,
+      filterHash: expectedFilterHash,
+      id: value.id,
+      version: 1,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function encodeSalesHistoryCursor(value: SalesHistoryCursorValue): string {
+  return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+}
+
+const historyItemSelection = {
+  cogsAmount: true,
+  costBasisState: true,
+  id: true,
+  lineDiscount: true,
+  lineGross: true,
+  lineNet: true,
+  lineOutputVat: true,
+  lineTaxable: true,
+  productId: true,
+  productNameSnapshot: true,
+  productSkuSnapshot: true,
+  productUnitSnapshot: true,
+  quantity: true,
+  unitCost: true,
+  unitPrice: true,
+} satisfies Prisma.SaleItemSelect;
+
+const historyPaymentSelection = {
+  amount: true,
+  amountTendered: true,
+  changeAmount: true,
+  method: true,
+  transferReference: true,
+} satisfies Prisma.PaymentSelect;
+
+const historySaleSelection = {
+  actorDisplayNameSnapshot: true,
+  branchCodeSnapshot: true,
+  branchNameSnapshot: true,
+  completedAt: true,
+  createdAt: true,
+  currency: true,
+  discountAmount: true,
+  discountAmountInput: true,
+  discountPercentInput: true,
+  discountReason: true,
+  discountType: true,
+  id: true,
+  items: { orderBy: [{ productId: "asc" }], select: historyItemSelection },
+  organizationNameSnapshot: true,
+  outputVatAmount: true,
+  payment: { select: historyPaymentSelection },
+  reference: true,
+  salesVatRateSnapshot: true,
+  salesVatStatusSnapshot: true,
+  subtotalAmount: true,
+  taxableAmount: true,
+  totalAmount: true,
+} satisfies Prisma.SaleSelect;
+
+const historySummarySelection = {
+  _count: { select: { items: true } },
+  actorDisplayNameSnapshot: true,
+  completedAt: true,
+  createdAt: true,
+  currency: true,
+  discountAmount: true,
+  discountAmountInput: true,
+  discountPercentInput: true,
+  discountReason: true,
+  discountType: true,
+  id: true,
+  outputVatAmount: true,
+  payment: { select: historyPaymentSelection },
+  reference: true,
+  salesVatRateSnapshot: true,
+  salesVatStatusSnapshot: true,
+  subtotalAmount: true,
+  taxableAmount: true,
+  totalAmount: true,
+} satisfies Prisma.SaleSelect;
+
+type SelectedHistorySale = Prisma.SaleGetPayload<{
+  select: typeof historySaleSelection;
+}>;
+type SelectedHistorySummary = Prisma.SaleGetPayload<{
+  select: typeof historySummarySelection;
+}>;
+
+function safeHistoryDiscount(
+  sale: SelectedHistorySale | SelectedHistorySummary,
+): SafeDiscount {
+  if (sale.discountType === null || sale.discountReason === null) return null;
+  if (sale.discountType === "AMOUNT" && sale.discountAmountInput !== null) {
+    return {
+      amount: sale.discountAmountInput.toFixed(2),
+      reason: sale.discountReason,
+      type: "AMOUNT",
+    };
+  }
+  if (sale.discountType === "PERCENT" && sale.discountPercentInput !== null) {
+    return {
+      percent: sale.discountPercentInput.toString(),
+      reason: sale.discountReason,
+      type: "PERCENT",
+    };
+  }
+  throw new Error("Sale has an invalid discount snapshot.");
+}
+
+function safeHistoryPayment(
+  sale: SelectedHistorySale | SelectedHistorySummary,
+): SafePayment {
+  if (sale.payment === null) throw new Error("Sale is missing its Payment.");
+  if (sale.payment.method === "CASH") {
+    if (
+      sale.payment.amountTendered === null ||
+      sale.payment.changeAmount === null
+    ) {
+      throw new Error("Cash Sale is missing tender or change.");
+    }
+    return {
+      amount: sale.payment.amount.toFixed(2),
+      amountTendered: sale.payment.amountTendered.toFixed(2),
+      changeAmount: sale.payment.changeAmount.toFixed(2),
+      method: "CASH",
+      reference: null,
+    };
+  }
+  return {
+    amount: sale.payment.amount.toFixed(2),
+    amountTendered: null,
+    changeAmount: null,
+    method: "TRANSFER",
+    reference: sale.payment.transferReference,
+  };
+}
+
+function safeHistorySummary(
+  sale: SelectedHistorySale | SelectedHistorySummary,
+): SafeSalesHistorySummary {
+  if (
+    sale.currency !== "THB" ||
+    sale.salesVatStatusSnapshot === "UNCONFIGURED"
+  ) {
+    throw new Error("Sale has an unsupported historical snapshot.");
+  }
+  return {
+    actorDisplayName: sale.actorDisplayNameSnapshot,
+    createdAt: sale.createdAt.toISOString(),
+    currency: "THB",
+    discount: safeHistoryDiscount(sale),
+    discountAmount: sale.discountAmount.toFixed(2),
+    id: sale.id,
+    itemCount: "items" in sale ? sale.items.length : sale._count.items,
+    outputVatAmount: sale.outputVatAmount.toFixed(2),
+    payment: safeHistoryPayment(sale),
+    reference: sale.reference,
+    salesVatRate: sale.salesVatRateSnapshot?.toString() ?? null,
+    salesVatStatus: sale.salesVatStatusSnapshot,
+    subtotalAmount: sale.subtotalAmount.toFixed(2),
+    taxableAmount: sale.taxableAmount?.toFixed(2) ?? null,
+    totalAmount: sale.totalAmount.toFixed(2),
+  };
+}
+
+function safeHistoryDetail(
+  sale: SelectedHistorySale,
+  includeCosts: boolean,
+): SafeSalesHistoryDetail {
+  return {
+    ...safeHistorySummary(sale),
+    branchCode: sale.branchCodeSnapshot,
+    branchName: sale.branchNameSnapshot,
+    items: sale.items.map((item) => ({
+      ...(includeCosts
+        ? {
+            cogsAmount: item.cogsAmount?.toFixed(10) ?? null,
+            costBasisState: item.costBasisState,
+            unitCost: item.unitCost?.toFixed(6) ?? null,
+          }
+        : {}),
+      id: item.id,
+      lineDiscount: item.lineDiscount.toFixed(2),
+      lineGross: item.lineGross.toFixed(2),
+      lineNet: item.lineNet.toFixed(2),
+      lineOutputVat: item.lineOutputVat.toFixed(2),
+      lineTaxable: item.lineTaxable?.toFixed(2) ?? null,
+      productId: item.productId,
+      productName: item.productNameSnapshot,
+      productSku: item.productSkuSnapshot,
+      quantity: item.quantity.toFixed(4),
+      unit: item.productUnitSnapshot,
+      unitPrice: item.unitPrice.toFixed(4),
+    })),
+    organizationName: sale.organizationNameSnapshot,
+  };
 }
 
 function safeProfile(input: {
@@ -209,6 +529,33 @@ async function authorizedOrganization(
     : null;
 }
 
+async function authorizedHistoryBranch(
+  transaction: Transaction,
+  input: { actorUserId: string; branchId: string; organizationId: string },
+) {
+  const [branch, organization, context] = await Promise.all([
+    transaction.branch.findFirst({
+      select: { id: true, organizationId: true, status: true },
+      where: { id: input.branchId, organizationId: input.organizationId },
+    }),
+    transaction.organization.findFirst({
+      select: { id: true },
+      where: { id: input.organizationId, status: "ACTIVE" },
+    }),
+    trustedContext(transaction, input),
+  ]);
+  if (branch === null || organization === null || branch.status !== "ACTIVE") {
+    return null;
+  }
+  const scope = createTrustedBranchScope({
+    branchId: branch.id,
+    branchOrganizationId: branch.organizationId,
+    organizationId: input.organizationId,
+  });
+  if (!can(context, PERMISSIONS.SALES_HISTORY_VIEW, scope)) return null;
+  return { includeCosts: can(context, PERMISSIONS.SALES_COST_VIEW, scope) };
+}
+
 function nextUpdatedAt(expectedUpdatedAt: Date, currentTime: Date): Date {
   return new Date(
     Math.max(expectedUpdatedAt.getTime() + 1, currentTime.getTime()),
@@ -226,6 +573,91 @@ export function createPrismaSalesApiRepository(
         return organization === null
           ? { kind: "forbidden" as const }
           : { kind: "success" as const, profile: safeProfile(organization) };
+      });
+    },
+
+    async getSalesHistoryDetail(input) {
+      return prisma.$transaction(async (transaction) => {
+        const access = await authorizedHistoryBranch(transaction, input);
+        if (access === null) return { kind: "forbidden" as const };
+        const sale = await transaction.sale.findFirst({
+          select: historySaleSelection,
+          where: {
+            branchId: input.branchId,
+            id: input.saleId,
+            organizationId: input.organizationId,
+          },
+        });
+        return sale === null
+          ? { kind: "not_found" as const }
+          : {
+              kind: "success" as const,
+              sale: safeHistoryDetail(sale, access.includeCosts),
+            };
+      });
+    },
+
+    async listSalesHistory(input) {
+      return prisma.$transaction(async (transaction) => {
+        const access = await authorizedHistoryBranch(transaction, input);
+        if (access === null) return { kind: "forbidden" as const };
+        const hash = filterHash({
+          actorUserId: input.query.actorUserId ?? null,
+          branchId: input.branchId,
+          createdAtFrom: input.query.createdAtFrom?.toISOString() ?? null,
+          createdAtTo: input.query.createdAtTo?.toISOString() ?? null,
+          organizationId: input.organizationId,
+        });
+        const cursor =
+          input.query.cursor === undefined
+            ? null
+            : decodeSalesHistoryCursor(input.query.cursor, hash);
+        if (input.query.cursor !== undefined && cursor === null) {
+          return { kind: "invalid_cursor" as const };
+        }
+        const filters: Prisma.SaleWhereInput[] = [
+          { branchId: input.branchId, organizationId: input.organizationId },
+        ];
+        if (input.query.actorUserId !== undefined) {
+          filters.push({ actorUserId: input.query.actorUserId });
+        }
+        if (input.query.createdAtFrom !== undefined) {
+          filters.push({ createdAt: { gte: input.query.createdAtFrom } });
+        }
+        if (input.query.createdAtTo !== undefined) {
+          filters.push({ createdAt: { lt: input.query.createdAtTo } });
+        }
+        if (cursor !== null) {
+          const createdAt = new Date(cursor.createdAt);
+          filters.push({
+            OR: [
+              { createdAt: { lt: createdAt } },
+              { createdAt, id: { lt: cursor.id } },
+            ],
+          });
+        }
+        const rows = await transaction.sale.findMany({
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          select: historySummarySelection,
+          take: input.query.limit + 1,
+          where: { AND: filters },
+        });
+        const hasMore = rows.length > input.query.limit;
+        const page = hasMore ? rows.slice(0, input.query.limit) : rows;
+        const last = page.at(-1);
+        return {
+          kind: "success" as const,
+          nextCursor:
+            hasMore && last !== undefined
+              ? encodeSalesHistoryCursor({
+                  createdAt: last.createdAt.toISOString(),
+                  filterHash: hash,
+                  id: last.id,
+                  version: 1,
+                })
+              : null,
+          sales: page.map(safeHistorySummary),
+        };
       });
     },
 

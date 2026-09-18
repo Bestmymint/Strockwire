@@ -7,6 +7,8 @@ import type { CheckoutOutcome } from "./checkout-repository.ts";
 import type { CheckoutService } from "./checkout-service.ts";
 import type {
   PosProductSearchOutcome,
+  SalesHistoryDetailOutcome,
+  SalesHistoryListOutcome,
   SalesVatProfileOutcome,
   SalesVatProfileUpdateOutcome,
 } from "./sales-api-repository.ts";
@@ -16,12 +18,50 @@ import {
   checkoutRequestSchema,
   organizationSalesParamsSchema,
   posProductSearchQuerySchema,
+  saleDetailParamsSchema,
+  salesHistoryQuerySchema,
   salesVatProfileUpdateSchema,
 } from "./sales-schemas.ts";
 
 function requestId(response: Response): string {
   const value = response.getHeader("X-Request-Id");
   return typeof value === "string" ? value : "unavailable";
+}
+
+function sendSalesHistoryList(
+  response: Response,
+  outcome: SalesHistoryListOutcome,
+): void {
+  if (outcome.kind === "success") {
+    response.status(200).json({
+      data: { sales: outcome.sales },
+      meta: { nextCursor: outcome.nextCursor, requestId: requestId(response) },
+    });
+    return;
+  }
+  if (outcome.kind === "forbidden") {
+    error(response, 403, "FORBIDDEN", "The operation is not permitted.");
+    return;
+  }
+  error(response, 400, "INVALID_CURSOR", "The cursor is invalid.");
+}
+
+function sendSalesHistoryDetail(
+  response: Response,
+  outcome: SalesHistoryDetailOutcome,
+): void {
+  if (outcome.kind === "success") {
+    response.status(200).json({
+      data: { sale: outcome.sale },
+      meta: { requestId: requestId(response) },
+    });
+    return;
+  }
+  if (outcome.kind === "forbidden") {
+    error(response, 403, "FORBIDDEN", "The operation is not permitted.");
+    return;
+  }
+  error(response, 404, "SALE_NOT_FOUND", "The sale was not found.");
 }
 
 function error(
@@ -166,6 +206,57 @@ export function createSalesRouter({
 }): Router {
   const router = Router();
   const protectMutation = createCrossSiteRequestProtection(publicWebOrigin);
+
+  router.get(
+    "/organizations/:organizationId/branches/:branchId/sales",
+    authenticationMiddleware,
+    async (request, response, next) => {
+      const id = actorId(response);
+      const params = branchSalesParamsSchema.safeParse(request.params);
+      const query = salesHistoryQuerySchema.safeParse(request.query);
+      if (id === null) return authenticationRequired(response);
+      if (!params.success || !query.success) return invalidRequest(response);
+      try {
+        sendSalesHistoryList(
+          response,
+          await salesApiService.listSalesHistory({
+            actorUserId: id,
+            branchId: params.data.branchId,
+            organizationId: params.data.organizationId,
+            query: query.data,
+          }),
+        );
+      } catch (cause: unknown) {
+        next(cause);
+      }
+    },
+  );
+
+  router.get(
+    "/organizations/:organizationId/branches/:branchId/sales/:saleId",
+    authenticationMiddleware,
+    async (request, response, next) => {
+      const id = actorId(response);
+      const params = saleDetailParamsSchema.safeParse(request.params);
+      if (id === null) return authenticationRequired(response);
+      if (!params.success) {
+        return invalidRequest(response);
+      }
+      try {
+        sendSalesHistoryDetail(
+          response,
+          await salesApiService.getSalesHistoryDetail({
+            actorUserId: id,
+            branchId: params.data.branchId,
+            organizationId: params.data.organizationId,
+            saleId: params.data.saleId,
+          }),
+        );
+      } catch (cause: unknown) {
+        next(cause);
+      }
+    },
+  );
 
   router.get(
     "/organizations/:organizationId/sales-vat-profile",

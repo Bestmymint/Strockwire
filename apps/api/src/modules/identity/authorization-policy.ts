@@ -23,6 +23,7 @@ export const PERMISSIONS = {
   CHECKOUT_PERFORM: "checkout.perform",
   CHECKOUT_DISCOUNT_APPLY: "checkout.discount.apply",
   SALES_HISTORY_VIEW: "sales-history.view",
+  SALES_COST_VIEW: "sales-cost.view",
   BUSINESS_ANALYTICS_VIEW: "analytics.business.view",
   INVENTORY_ANALYTICS_VIEW: "analytics.inventory.view",
   FORECAST_REORDER_VIEW: "forecast-reorder.view",
@@ -73,6 +74,11 @@ const SALES_HISTORY_ROLES = [
   "ADMIN",
   "BRANCH_MANAGER",
   "CASHIER",
+] as const satisfies readonly OrganizationRole[];
+const SALES_COST_ROLES = [
+  "OWNER",
+  "ADMIN",
+  "BRANCH_MANAGER",
 ] as const satisfies readonly OrganizationRole[];
 const BUSINESS_ANALYTICS_ROLES = [
   "OWNER",
@@ -154,6 +160,10 @@ const PERMISSION_RULES = {
   },
   [PERMISSIONS.SALES_HISTORY_VIEW]: {
     roles: SALES_HISTORY_ROLES,
+    scope: "organization-or-branch",
+  },
+  [PERMISSIONS.SALES_COST_VIEW]: {
+    roles: SALES_COST_ROLES,
     scope: "organization-or-branch",
   },
   [PERMISSIONS.BUSINESS_ANALYTICS_VIEW]: {

@@ -865,9 +865,22 @@ inventory transaction, stock movement, cost update, or VAT record.
 | `PATCH /organizations/{organizationId}/sales-vat-profile` | `OWNER`, `ADMIN` | Exact `expectedUpdatedAt`; status and conditional rate | Updated sales VAT profile | Invalid state/rate, stale version, safe not-found/forbidden | Target contract; P5-M2-T02 |
 | `GET /organizations/{organizationId}/branches/{branchId}/pos/products` | Branch checkout | Query/barcode/cursor | Sellable product summaries with current server price/availability indicator | Invalid query, forbidden branch | Planned; P5-M2-T02 |
 | `POST /organizations/{organizationId}/branches/{branchId}/sales` | `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`, assigned `CASHIER` | Required `Idempotency-Key`; unique cart lines, optional authorized discount, CASH/TRANSFER intent | `201` completed Sale-backed receipt; exact replay `200` | VAT config, price, stock, payment, discount, idempotency, concurrency | Target contract; P5-M2-T02 after P5-M1-T02/P5-M2-T01; `ADR-027` |
-| `GET /organizations/{organizationId}/branches/{branchId}/sales` | Branch sales read | Cursor/date/user filters; no initial status filter | Sale summaries | Invalid range/cursor | Planned; P5-M3-T01; later status/projection filters require `OQ-009` |
-| `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}` | Branch sales read | None | Sale, immutable lines, permitted payment data | Safe not-found | Planned |
+| `GET /organizations/{organizationId}/branches/{branchId}/sales` | `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`, assigned `CASHIER` | `cursor`, `limit`, absolute `createdAtFrom`/`createdAtTo`, `actorUserId`; no initial status filter | Historical Sale summaries | Invalid query/range/cursor, safe forbidden | Implemented; P5-M3-T01; later status/projection filters require `OQ-009` |
+| `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}` | Branch sales read | None | Immutable Sale, line, permitted payment, and role-permitted cost snapshots | Safe not-found/forbidden | Implemented; P5-M3-T01 |
 | `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}/receipt` | Branch receipt read | None | Sale-backed receipt data; not arbitrary HTML and never COGS | Safe not-found/forbidden | Target contract; P5-M3-T01; browser print UI P5-M3-T02 |
+
+Sales-history listing is ordered by `createdAt DESC, id DESC`. Its opaque, versioned
+cursor is bound to the Organization, Branch, `createdAtFrom`, `createdAtTo`, and
+`actorUserId` filter context and continues that two-field keyset; changing any path or
+filter makes the cursor invalid. `limit` defaults to `25` and is bounded from `1` to
+`100`. `createdAtFrom` is inclusive and `createdAtTo` exclusive; both accept only
+RFC3339 absolute timestamps with an explicit offset or `Z`, and the former must be before
+the latter. These filters do not define a business day or reporting timezone: `OQ-016`
+remains unresolved. `actorUserId` is an exact UUID match against the persisted Sale actor
+and remains constrained by the authorized Organization/Branch query. Summary and detail
+values come only from immutable Sale/SaleItem/Payment snapshots. Cost/COGS fields appear
+only to OWNER, ADMIN, and assigned BRANCH_MANAGER detail readers; they never appear in
+Sale summaries or cashier/customer receipt data.
 
 Sales VAT profile target representation:
 

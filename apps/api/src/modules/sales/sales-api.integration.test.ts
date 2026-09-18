@@ -833,4 +833,172 @@ describe("sales HTTP API with PostgreSQL", () => {
       ).status,
     ).toBe(400);
   });
+
+  it("lists and reads immutable, cursor-paginated Sales history with safe scoped fields", async () => {
+    const value = await scope({ label: "Sales history" });
+    const owner = await actor({ ...value, role: "OWNER" });
+    const manager = await actor({ ...value, role: "BRANCH_MANAGER" });
+    const cashier = await actor({ ...value, role: "CASHIER" });
+    const [ownerToken, managerToken, cashierToken] = await Promise.all([
+      session(owner.id),
+      session(manager.id),
+      session(cashier.id),
+    ]);
+    const productValue = await product({
+      branchId: value.branch.id,
+      name: "Historical coffee",
+      organizationId: value.organization.id,
+      quantity: "10",
+    });
+    const base = await start();
+    for (const [index, payment] of [
+      { amountTendered: "20.00", method: "CASH" },
+      { method: "TRANSFER", reference: "TRANSFER-HISTORY" },
+      { amountTendered: "20.00", method: "CASH" },
+    ].entries()) {
+      expect(
+        (
+          await postCheckout({
+            base,
+            body: checkoutBody(productValue, { payment }),
+            branchId: value.branch.id,
+            idempotencyKey: `history-${index}`,
+            organizationId: value.organization.id,
+            token: ownerToken,
+          })
+        ).status,
+      ).toBe(201);
+    }
+    const sales = await prisma.sale.findMany({
+      orderBy: { id: "asc" },
+      where: { organizationId: value.organization.id },
+    });
+    await Promise.all(
+      sales.map((sale, index) =>
+        prisma.sale.update({
+          data: {
+            createdAt: new Date(`2026-09-18T10:0${index}:00.000Z`),
+          },
+          where: { id: sale.id },
+        }),
+      ),
+    );
+    const endpoint = `${base}/organizations/${value.organization.id}/branches/${value.branch.id}/sales`;
+    const first = await fetch(`${endpoint}?limit=2`, {
+      headers: requestHeaders(ownerToken),
+    });
+    expect(first.status).toBe(200);
+    const firstBody = (await first.json()) as {
+      data: { sales: Array<{ createdAt: string; id: string }> };
+      meta: { nextCursor: string | null };
+    };
+    expect(firstBody.data.sales).toHaveLength(2);
+    expect(firstBody.data.sales.map((sale) => sale.createdAt)).toEqual([
+      "2026-09-18T10:02:00.000Z",
+      "2026-09-18T10:01:00.000Z",
+    ]);
+    expect(firstBody.meta.nextCursor).not.toBeNull();
+    const second = await fetch(
+      `${endpoint}?limit=2&cursor=${encodeURIComponent(firstBody.meta.nextCursor!)}`,
+      { headers: requestHeaders(ownerToken) },
+    );
+    const secondBody = (await second.json()) as {
+      data: { sales: Array<{ id: string }> };
+    };
+    expect(second.status).toBe(200);
+    expect(secondBody.data.sales).toHaveLength(1);
+    expect(
+      new Set(
+        [...firstBody.data.sales, ...secondBody.data.sales].map(({ id }) => id),
+      ).size,
+    ).toBe(3);
+
+    expect(
+      (
+        await fetch(
+          `${endpoint}?cursor=${encodeURIComponent(firstBody.meta.nextCursor!)}&actorUserId=${owner.id}`,
+          { headers: requestHeaders(ownerToken) },
+        )
+      ).status,
+    ).toBe(400);
+    for (const query of [
+      "limit=0",
+      "limit=101",
+      "createdAtFrom=2026-09-18",
+      "createdAtFrom=2026-09-18T10:01:00Z&createdAtTo=2026-09-18T10:01:00Z",
+      "cursor=not-a-cursor",
+    ]) {
+      expect(
+        (
+          await fetch(`${endpoint}?${query}`, {
+            headers: requestHeaders(ownerToken),
+          })
+        ).status,
+      ).toBe(400);
+    }
+    const range = await fetch(
+      `${endpoint}?createdAtFrom=2026-09-18T17:01:00%2B07:00&createdAtTo=2026-09-18T10:03:00Z&actorUserId=${owner.id}`,
+      { headers: requestHeaders(ownerToken) },
+    );
+    expect(range.status).toBe(200);
+    const rangeBody = (await range.json()) as { data: { sales: unknown[] } };
+    expect(rangeBody.data.sales).toHaveLength(2);
+    const noMatch = await fetch(`${endpoint}?actorUserId=${manager.id}`, {
+      headers: requestHeaders(ownerToken),
+    });
+    expect(noMatch.status).toBe(200);
+    const noMatchBody = (await noMatch.json()) as {
+      data: { sales: unknown[] };
+    };
+    expect(noMatchBody.data.sales).toEqual([]);
+
+    const detailId = firstBody.data.sales[0]!.id;
+    await prisma.product.update({
+      data: { name: "Current renamed coffee" },
+      where: { id: productValue.id },
+    });
+    const ownerDetail = await fetch(`${endpoint}/${detailId}`, {
+      headers: requestHeaders(ownerToken),
+    });
+    const ownerBody = (await ownerDetail.json()) as {
+      data: { sale: { items: Array<Record<string, unknown>> } };
+    };
+    expect(ownerDetail.status).toBe(200);
+    expect(ownerBody.data.sale.items[0]).toMatchObject({
+      productName: "Historical coffee",
+      quantity: "1.0000",
+      unitPrice: "10.0000",
+    });
+    expect(ownerBody.data.sale.items[0]).toHaveProperty("unitCost", null);
+    const cashierDetail = await fetch(`${endpoint}/${detailId}`, {
+      headers: requestHeaders(cashierToken),
+    });
+    const cashierBody = await cashierDetail.json();
+    expect(cashierDetail.status).toBe(200);
+    expect(JSON.stringify(cashierBody)).not.toMatch(/unitCost|cogsAmount/i);
+    expect(
+      (
+        await fetch(`${endpoint}/${detailId}`, {
+          headers: requestHeaders(managerToken),
+        })
+      ).status,
+    ).toBe(200);
+
+    const other = await scope({ label: "Other history" });
+    expect(
+      (
+        await fetch(
+          `${base}/organizations/${other.organization.id}/branches/${other.branch.id}/sales`,
+          { headers: requestHeaders(ownerToken) },
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await fetch(`${endpoint}/${randomUUID()}`, {
+          headers: requestHeaders(ownerToken),
+        })
+      ).status,
+    ).toBe(404);
+  });
 });
