@@ -1,0 +1,627 @@
+"use client";
+
+import {
+  type InfiniteData,
+  useInfiniteQuery,
+  useQuery,
+} from "@tanstack/react-query";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+
+import {
+  applicationContextUrl,
+  resolveApplicationContext,
+} from "@/application-context";
+import {
+  type AccessibleOrganization,
+  fetchAccessContext,
+} from "@/branch-api-client";
+import {
+  getSalesHistoryDetail,
+  listSalesHistory,
+  type SalesApiErrorKind,
+  SalesApiError,
+  type SalesHistoryDetail,
+  type SalesHistorySummary,
+  type SalesRequestContext,
+} from "@/sales-api-client";
+
+type SalesHistoryRole = AccessibleOrganization["role"];
+type SalesHistoryPage = Awaited<ReturnType<typeof listSalesHistory>>;
+
+const HISTORY_ROLES = new Set<SalesHistoryRole>([
+  "OWNER",
+  "ADMIN",
+  "BRANCH_MANAGER",
+  "CASHIER",
+]);
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function salesUrl(organizationId: string, branchId: string | null): string {
+  const params = new URLSearchParams({ organizationId });
+  if (branchId !== null) params.set("branchId", branchId);
+  return `/app/sales?${params.toString()}`;
+}
+
+function salesScopeKey(context: SalesRequestContext): readonly unknown[] {
+  return ["branch-scoped", context.organizationId, context.branchId, "sales"];
+}
+
+function formatThb(value: string): string {
+  return `THB ${value}`;
+}
+
+function formatAbsoluteTimestamp(value: string): string {
+  return value.replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
+}
+
+function errorMessage(error: unknown): string {
+  if (!(error instanceof SalesApiError)) {
+    return "Sales history is temporarily unavailable. Try again.";
+  }
+  const messages: Record<SalesApiErrorKind, string> = {
+    authentication_required: "Sign in again to view sales history.",
+    branch_inactive: "This branch is inactive.",
+    forbidden: "Sales history is not available for your current access.",
+    idempotency_conflict:
+      "Sales history is temporarily unavailable. Try again.",
+    insufficient_stock: "Sales history is temporarily unavailable. Try again.",
+    invalid_cursor: "This sales list changed. Refresh the latest results.",
+    price_changed: "Sales history is temporarily unavailable. Try again.",
+    product_inactive: "Sales history is temporarily unavailable. Try again.",
+    product_not_found: "Sales history is temporarily unavailable. Try again.",
+    sale_not_found: "This sale is no longer available at this branch.",
+    stale_vat_profile: "Sales history is temporarily unavailable. Try again.",
+    unavailable: "Sales history is temporarily unavailable. Try again.",
+    validation: "Check the cashier user ID and try again.",
+    vat_configuration_required:
+      "Sales history is temporarily unavailable. Try again.",
+  };
+  return messages[error.kind];
+}
+
+function SecondaryButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+      {...props}
+    />
+  );
+}
+
+export function SalesHistoryManagement() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedOrganizationId = searchParams.get("organizationId");
+  const requestedBranchId = searchParams.get("branchId");
+  const contextQuery = useQuery({
+    queryFn: fetchAccessContext,
+    queryKey: ["access-context"],
+  });
+  const resolved = contextQuery.data
+    ? resolveApplicationContext(
+        contextQuery.data,
+        requestedOrganizationId,
+        requestedBranchId,
+      )
+    : null;
+
+  useEffect(() => {
+    if (resolved?.organization === null || resolved?.organization === undefined)
+      return;
+    const canonical = salesUrl(
+      resolved.organization.id,
+      resolved.branch?.id ?? null,
+    );
+    const current = salesUrl(requestedOrganizationId ?? "", requestedBranchId);
+    if (canonical !== current) router.replace(canonical);
+  }, [requestedBranchId, requestedOrganizationId, resolved, router]);
+
+  if (contextQuery.isPending) return <p aria-live="polite">Loading access…</p>;
+  if (contextQuery.isError)
+    return <p role="alert">Your access context could not be loaded.</p>;
+  if (resolved?.organization === null) {
+    return (
+      <ContextUnavailable message="Choose an active organization from the workspace before viewing sales." />
+    );
+  }
+  if (resolved === null) return null;
+  if (resolved.branch === null) {
+    return (
+      <ContextUnavailable
+        message="Choose an active branch before viewing sales."
+        title="Branch context required"
+      />
+    );
+  }
+  if (!HISTORY_ROLES.has(resolved.organization.role)) {
+    return (
+      <ContextUnavailable
+        message="Your current role cannot view sales history."
+        title="Sales history unavailable"
+      />
+    );
+  }
+  return (
+    <SalesHistoryContent
+      branch={resolved.branch}
+      organization={resolved.organization}
+    />
+  );
+}
+
+function ContextUnavailable({
+  message,
+  title = "Sales history unavailable",
+}: {
+  message: string;
+  title?: string;
+}) {
+  return (
+    <section className="space-y-4">
+      <h1 className="text-2xl font-semibold">{title}</h1>
+      <p className="text-muted-foreground">{message}</p>
+      <Link className="underline" href="/app">
+        Return to workspace
+      </Link>
+    </section>
+  );
+}
+
+function SalesHistoryContent({
+  branch,
+  organization,
+}: {
+  branch: AccessibleOrganization["branches"][number];
+  organization: AccessibleOrganization;
+}) {
+  const context = {
+    branchId: branch.id,
+    organizationId: organization.id,
+  } satisfies SalesRequestContext;
+  const scopeKey = salesScopeKey(context);
+  const [actorInput, setActorInput] = useState("");
+  const [actorUserId, setActorUserId] = useState<string | undefined>();
+  const [filterError, setFilterError] = useState<string | null>(null);
+  const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
+  const historyQuery = useInfiniteQuery<
+    SalesHistoryPage,
+    Error,
+    InfiniteData<SalesHistoryPage>,
+    readonly unknown[],
+    string | null
+  >({
+    getNextPageParam: (page) => page.meta.nextCursor,
+    initialPageParam: null,
+    queryFn: ({ pageParam }) =>
+      listSalesHistory(context, {
+        ...(actorUserId === undefined ? {} : { actorUserId }),
+        cursor: pageParam,
+      }),
+    queryKey: [...scopeKey, "history", { actorUserId: actorUserId ?? null }],
+  });
+  const sales =
+    historyQuery.data?.pages.flatMap((page) => page.data.sales) ?? [];
+
+  useEffect(() => {
+    setSelectedSaleId(null);
+  }, [branch.id, organization.id, actorUserId]);
+
+  return (
+    <section className="w-full space-y-8">
+      <header className="space-y-2">
+        <Link
+          className="text-sm underline"
+          href={applicationContextUrl(organization.id, branch.id)}
+        >
+          Back to workspace
+        </Link>
+        <h1 className="text-2xl font-semibold">Sales history</h1>
+        <p className="text-muted-foreground">
+          Completed sales at {branch.code} — {branch.name}. Times are shown in
+          UTC; business-day filtering remains unavailable while OQ-016 is open.
+        </p>
+      </header>
+
+      <form
+        aria-label="Filter sales history"
+        className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const value = actorInput.trim();
+          if (value !== "" && !UUID_PATTERN.test(value)) {
+            setFilterError("Enter a valid cashier user ID or leave it blank.");
+            return;
+          }
+          setFilterError(null);
+          setActorUserId(value === "" ? undefined : value);
+        }}
+      >
+        <label className="grid min-w-64 gap-1 text-sm font-medium">
+          Cashier user ID (optional)
+          <input
+            aria-describedby={filterError ? "sales-filter-error" : undefined}
+            className="min-h-11 rounded-md border bg-background px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onChange={(event) => setActorInput(event.target.value)}
+            placeholder="Exact UUID only"
+            value={actorInput}
+          />
+        </label>
+        <SecondaryButton type="submit">Apply filter</SecondaryButton>
+        <SecondaryButton
+          disabled={actorInput === "" && actorUserId === undefined}
+          onClick={() => {
+            setActorInput("");
+            setActorUserId(undefined);
+            setFilterError(null);
+          }}
+          type="button"
+        >
+          Clear filter
+        </SecondaryButton>
+        {filterError ? (
+          <p id="sales-filter-error" role="alert">
+            {filterError}
+          </p>
+        ) : null}
+      </form>
+
+      <SalesList
+        error={historyQuery.error}
+        hasNextPage={historyQuery.hasNextPage}
+        isLoading={historyQuery.isPending}
+        isLoadingNext={historyQuery.isFetchingNextPage}
+        onLoadMore={() => void historyQuery.fetchNextPage()}
+        onSelect={setSelectedSaleId}
+        sales={sales}
+        selectedSaleId={selectedSaleId}
+      />
+      {selectedSaleId !== null ? (
+        <SalesDetail
+          context={context}
+          saleId={selectedSaleId}
+          scopeKey={scopeKey}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function SalesList({
+  error,
+  hasNextPage,
+  isLoading,
+  isLoadingNext,
+  onLoadMore,
+  onSelect,
+  sales,
+  selectedSaleId,
+}: {
+  error: Error | null;
+  hasNextPage: boolean;
+  isLoading: boolean;
+  isLoadingNext: boolean;
+  onLoadMore: () => void;
+  onSelect: (saleId: string) => void;
+  sales: SalesHistorySummary[];
+  selectedSaleId: string | null;
+}) {
+  if (isLoading) return <p aria-live="polite">Loading sales history…</p>;
+  if (error !== null) return <p role="alert">{errorMessage(error)}</p>;
+  if (sales.length === 0) {
+    return (
+      <p className="rounded-lg border p-5 text-muted-foreground">
+        No completed sales match this branch and filter.
+      </p>
+    );
+  }
+  return (
+    <section aria-label="Sales history" className="space-y-4">
+      <div className="overflow-x-auto rounded-lg border bg-card">
+        <table className="w-full min-w-[45rem] text-left text-sm">
+          <thead className="border-b bg-muted text-xs uppercase tracking-wide text-muted-foreground">
+            <tr>
+              <th className="px-4 py-3 font-medium">Sale</th>
+              <th className="px-4 py-3 font-medium">Cashier</th>
+              <th className="px-4 py-3 font-medium">Payment</th>
+              <th className="px-4 py-3 text-right font-medium">Total</th>
+              <th className="px-4 py-3 font-medium">
+                <span className="sr-only">Open detail</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {sales.map((sale) => (
+              <tr className="border-b last:border-0" key={sale.id}>
+                <td className="px-4 py-3">
+                  <p className="font-medium">{sale.reference}</p>
+                  <p className="text-muted-foreground">
+                    {formatAbsoluteTimestamp(sale.createdAt)} · {sale.itemCount}{" "}
+                    item{sale.itemCount === 1 ? "" : "s"}
+                  </p>
+                </td>
+                <td className="px-4 py-3">{sale.actorDisplayName}</td>
+                <td className="px-4 py-3">{sale.payment.method}</td>
+                <td className="px-4 py-3 text-right font-medium">
+                  {formatThb(sale.totalAmount)}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <SecondaryButton
+                    aria-pressed={selectedSaleId === sale.id}
+                    onClick={() => onSelect(sale.id)}
+                    type="button"
+                  >
+                    View detail
+                  </SecondaryButton>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {hasNextPage ? (
+        <SecondaryButton
+          disabled={isLoadingNext}
+          onClick={onLoadMore}
+          type="button"
+        >
+          {isLoadingNext ? "Loading more…" : "Load more sales"}
+        </SecondaryButton>
+      ) : null}
+    </section>
+  );
+}
+
+function SalesDetail({
+  context,
+  saleId,
+  scopeKey,
+}: {
+  context: SalesRequestContext;
+  saleId: string;
+  scopeKey: readonly unknown[];
+}) {
+  const detailQuery = useQuery({
+    queryFn: () => getSalesHistoryDetail(context, saleId),
+    queryKey: [...scopeKey, "detail", saleId],
+  });
+  return (
+    <section
+      aria-live="polite"
+      className="space-y-6 rounded-lg border bg-card p-5 sm:p-7"
+    >
+      {detailQuery.isPending ? <p>Loading sale detail…</p> : null}
+      {detailQuery.isError ? (
+        <p role="alert">{errorMessage(detailQuery.error)}</p>
+      ) : null}
+      {detailQuery.data ? <SaleDetailContent sale={detailQuery.data} /> : null}
+    </section>
+  );
+}
+
+function SaleDetailContent({ sale }: { sale: SalesHistoryDetail }) {
+  const includesCosts = sale.items.some(
+    (item) => item.cogsAmount !== undefined || item.unitCost !== undefined,
+  );
+  return (
+    <>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold">{sale.reference}</h2>
+          <p className="text-sm text-muted-foreground">
+            {formatAbsoluteTimestamp(sale.createdAt)} · {sale.actorDisplayName}
+          </p>
+        </div>
+        <SecondaryButton onClick={() => window.print()} type="button">
+          Print receipt
+        </SecondaryButton>
+      </div>
+      <SaleItems sale={sale} />
+      <SaleTotals sale={sale} />
+      <PaymentDetails payment={sale.payment} />
+      {includesCosts ? <CostDetails sale={sale} /> : null}
+      <Receipt sale={sale} />
+    </>
+  );
+}
+
+function SaleItems({ sale }: { sale: SalesHistoryDetail }) {
+  return (
+    <section aria-labelledby="sale-items-heading" className="space-y-3">
+      <h3 className="font-semibold" id="sale-items-heading">
+        Items
+      </h3>
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full min-w-[40rem] text-left text-sm">
+          <thead className="border-b bg-muted text-xs uppercase tracking-wide text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2">Product</th>
+              <th className="px-3 py-2">Quantity</th>
+              <th className="px-3 py-2 text-right">Unit price</th>
+              <th className="px-3 py-2 text-right">Line total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sale.items.map((item) => (
+              <tr className="border-b last:border-0" key={item.id}>
+                <td className="px-3 py-2">
+                  <p className="font-medium">{item.productName}</p>
+                  <p className="text-muted-foreground">
+                    {item.productSku} · {item.unit}
+                  </p>
+                </td>
+                <td className="px-3 py-2">{item.quantity}</td>
+                <td className="px-3 py-2 text-right">
+                  {formatThb(item.unitPrice)}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {formatThb(item.lineNet)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function SaleTotals({ sale }: { sale: SalesHistoryDetail }) {
+  return (
+    <section
+      aria-label="Sale totals"
+      className="ml-auto max-w-sm space-y-2 text-sm"
+    >
+      <TotalRow label="Subtotal" value={sale.subtotalAmount} />
+      {sale.discountAmount !== "0.00" ? (
+        <TotalRow label="Discount" value={sale.discountAmount} />
+      ) : null}
+      {sale.taxableAmount !== null ? (
+        <TotalRow label="Taxable amount" value={sale.taxableAmount} />
+      ) : null}
+      <TotalRow label="VAT" value={sale.outputVatAmount} />
+      <TotalRow emphasis label="Total" value={sale.totalAmount} />
+    </section>
+  );
+}
+
+function TotalRow({
+  emphasis = false,
+  label,
+  value,
+}: {
+  emphasis?: boolean;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div
+      className={
+        emphasis
+          ? "flex justify-between border-t pt-2 text-base font-semibold"
+          : "flex justify-between"
+      }
+    >
+      <span>{label}</span>
+      <span>{formatThb(value)}</span>
+    </div>
+  );
+}
+
+function PaymentDetails({
+  payment,
+}: {
+  payment: SalesHistoryDetail["payment"];
+}) {
+  return (
+    <section
+      aria-labelledby="payment-heading"
+      className="rounded-md border p-4 text-sm"
+    >
+      <h3 className="font-semibold" id="payment-heading">
+        Payment
+      </h3>
+      <p className="mt-2">
+        {payment.method} · {formatThb(payment.amount)}
+      </p>
+      {payment.method === "CASH" ? (
+        <p className="text-muted-foreground">
+          Tendered {formatThb(payment.amountTendered)} · Change{" "}
+          {formatThb(payment.changeAmount)}
+        </p>
+      ) : null}
+      {payment.method === "TRANSFER" && payment.reference !== null ? (
+        <p className="text-muted-foreground">Reference {payment.reference}</p>
+      ) : null}
+    </section>
+  );
+}
+
+function CostDetails({ sale }: { sale: SalesHistoryDetail }) {
+  return (
+    <section
+      aria-labelledby="cost-details-heading"
+      className="rounded-md border p-4 text-sm"
+    >
+      <h3 className="font-semibold" id="cost-details-heading">
+        Internal cost details
+      </h3>
+      <ul className="mt-2 space-y-1">
+        {sale.items.map((item) =>
+          item.cogsAmount !== undefined ? (
+            <li key={item.id}>
+              {item.productName}: COGS{" "}
+              {item.cogsAmount === null
+                ? "Unavailable"
+                : formatThb(item.cogsAmount)}
+            </li>
+          ) : null,
+        )}
+      </ul>
+    </section>
+  );
+}
+
+function Receipt({ sale }: { sale: SalesHistoryDetail }) {
+  return (
+    <article
+      aria-label="Printable receipt"
+      className="sales-receipt rounded-lg border p-5 sm:p-7"
+    >
+      <header className="border-b pb-4 text-center">
+        <h2 className="text-xl font-semibold">{sale.organizationName}</h2>
+        <p>
+          {sale.branchCode} — {sale.branchName}
+        </p>
+        <p className="mt-2 text-sm">Operational sale receipt</p>
+      </header>
+      <div className="space-y-1 py-4 text-sm">
+        <p>Sale {sale.reference}</p>
+        <p>{formatAbsoluteTimestamp(sale.createdAt)}</p>
+        <p>Cashier: {sale.actorDisplayName}</p>
+      </div>
+      <ul className="space-y-3 border-y py-4 text-sm">
+        {sale.items.map((item) => (
+          <li key={item.id}>
+            <div className="flex justify-between gap-3">
+              <span className="font-medium">{item.productName}</span>
+              <span>{formatThb(item.lineNet)}</span>
+            </div>
+            <p className="text-muted-foreground">
+              {item.productSku} · {item.quantity} {item.unit} ×{" "}
+              {formatThb(item.unitPrice)}
+            </p>
+          </li>
+        ))}
+      </ul>
+      <div className="space-y-2 py-4 text-sm">
+        <TotalRow label="Subtotal" value={sale.subtotalAmount} />
+        {sale.discountAmount !== "0.00" ? (
+          <TotalRow label="Discount" value={sale.discountAmount} />
+        ) : null}
+        {sale.taxableAmount !== null ? (
+          <TotalRow label="Taxable amount" value={sale.taxableAmount} />
+        ) : null}
+        <TotalRow label="VAT" value={sale.outputVatAmount} />
+        <TotalRow emphasis label="Total" value={sale.totalAmount} />
+      </div>
+      <footer className="border-t pt-4 text-sm">
+        <p>
+          Payment: {sale.payment.method} · {formatThb(sale.payment.amount)}
+        </p>
+        {sale.payment.method === "CASH" ? (
+          <p>
+            Tendered {formatThb(sale.payment.amountTendered)} · Change{" "}
+            {formatThb(sale.payment.changeAmount)}
+          </p>
+        ) : null}
+        {sale.payment.method === "TRANSFER" &&
+        sale.payment.reference !== null ? (
+          <p>Transfer reference: {sale.payment.reference}</p>
+        ) : null}
+      </footer>
+    </article>
+  );
+}

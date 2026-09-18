@@ -113,6 +113,9 @@ describe("application context shell", () => {
     expect(
       screen.getByRole("link", { name: "Point of sale" }).getAttribute("href"),
     ).toBe(`/app/pos?organizationId=${ORG_ONE}&branchId=${BRANCH_A}`);
+    expect(
+      screen.getByRole("link", { name: "Sales history" }).getAttribute("href"),
+    ).toBe(`/app/sales?organizationId=${ORG_ONE}&branchId=${BRANCH_A}`);
     await waitFor(() =>
       expect(replace).toHaveBeenCalledWith(
         `/app?organizationId=${ORG_ONE}&branchId=${BRANCH_A}`,
@@ -207,5 +210,20 @@ describe("application context shell", () => {
       "Your access context could not be loaded.",
     );
     expect(screen.queryByText("Set up StockWise")).toBeNull();
+  });
+
+  it("does not offer sales history navigation to inventory staff", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          accessResponse([organization(ORG_ONE, "INVENTORY_STAFF")]),
+        ),
+    );
+    renderShell();
+
+    await screen.findByRole("heading", { name: "Store One" });
+    expect(screen.queryByRole("link", { name: "Sales history" })).toBeNull();
   });
 });

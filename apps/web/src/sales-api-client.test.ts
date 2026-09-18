@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   checkoutSale,
+  getSalesHistoryDetail,
   getSalesVatProfile,
+  listSalesHistory,
   SalesApiError,
   searchPosProducts,
   updateSalesVatProfile,
@@ -11,6 +13,7 @@ import {
 const ORGANIZATION_ID = "10000000-0000-4000-8000-000000000001";
 const BRANCH_ID = "20000000-0000-4000-8000-000000000001";
 const PRODUCT_ID = "30000000-0000-4000-8000-000000000001";
+const SALE_ID = "40000000-0000-4000-8000-000000000001";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -161,6 +164,84 @@ describe("sales API client", () => {
     expect(
       String((fetchMock.mock.calls[1]?.[1] as RequestInit).body),
     ).toContain("2026-09-18T10:00:00.000Z");
+  });
+
+  it("uses the existing scoped sale reads for history and immutable detail", async () => {
+    const summary = {
+      actorDisplayName: "Cashier",
+      createdAt: "2026-09-18T10:00:00.000Z",
+      currency: "THB",
+      discount: null,
+      discountAmount: "0.00",
+      id: SALE_ID,
+      itemCount: 1,
+      outputVatAmount: "0.00",
+      payment: {
+        amount: "60.12",
+        amountTendered: "100.00",
+        changeAmount: "39.88",
+        method: "CASH",
+        reference: null,
+      },
+      reference: "SALE-001",
+      salesVatRate: null,
+      salesVatStatus: "NOT_REGISTERED",
+      subtotalAmount: "60.12",
+      taxableAmount: null,
+      totalAmount: "60.12",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: { sales: [summary] },
+          meta: { nextCursor: "next" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            sale: {
+              ...summary,
+              branchCode: "MAIN",
+              branchName: "Main",
+              items: [
+                {
+                  id: PRODUCT_ID,
+                  lineDiscount: "0.00",
+                  lineGross: "60.12",
+                  lineNet: "60.12",
+                  lineOutputVat: "0.00",
+                  lineTaxable: null,
+                  productId: PRODUCT_ID,
+                  productName: "Historical coffee",
+                  productSku: "COFFEE-OLD",
+                  quantity: "1.0000",
+                  unit: "EA",
+                  unitPrice: "60.1234",
+                },
+              ],
+              organizationName: "Store",
+            },
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const context = { branchId: BRANCH_ID, organizationId: ORGANIZATION_ID };
+    const page = await listSalesHistory(context, {
+      actorUserId: "50000000-0000-4000-8000-000000000001",
+      cursor: "opaque-next",
+    });
+    const detail = await getSalesHistoryDetail(context, SALE_ID);
+
+    expect(page.data.sales[0]?.totalAmount).toBe("60.12");
+    expect(detail.items[0]?.productName).toBe("Historical coffee");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+      "sales?limit=25&actorUserId=50000000-0000-4000-8000-000000000001&cursor=opaque-next",
+    );
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain(`/sales/${SALE_ID}`);
+    expect(String(fetchMock.mock.calls[1]?.[0])).not.toContain("/receipt");
   });
 
   it.each([

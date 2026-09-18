@@ -90,11 +90,61 @@ const posProductsResponseSchema = z.object({
 const checkoutResponseSchema = z.object({
   data: z.object({ sale: saleSchema }),
 });
+const salesHistorySummarySchema = z.object({
+  actorDisplayName: z.string(),
+  createdAt: timestampSchema,
+  currency: z.literal("THB"),
+  discount: checkoutDiscountSchema.nullable(),
+  discountAmount: z.string(),
+  id: z.string().uuid(),
+  itemCount: z.number().int().nonnegative(),
+  outputVatAmount: z.string(),
+  payment: saleSchema.shape.payment,
+  reference: z.string(),
+  salesVatRate: z.string().nullable(),
+  salesVatStatus: z.enum(["NOT_REGISTERED", "REGISTERED"]),
+  subtotalAmount: z.string(),
+  taxableAmount: z.string().nullable(),
+  totalAmount: z.string(),
+});
+const salesHistoryDetailSchema = salesHistorySummarySchema.extend({
+  branchCode: z.string(),
+  branchName: z.string(),
+  items: z.array(
+    z.object({
+      cogsAmount: z.string().nullable().optional(),
+      costBasisState: z.enum(["KNOWN", "UNKNOWN"]).optional(),
+      id: z.string().uuid(),
+      lineDiscount: z.string(),
+      lineGross: z.string(),
+      lineNet: z.string(),
+      lineOutputVat: z.string(),
+      lineTaxable: z.string().nullable(),
+      productId: z.string().uuid(),
+      productName: z.string(),
+      productSku: z.string(),
+      quantity: z.string(),
+      unit: z.string(),
+      unitCost: z.string().nullable().optional(),
+      unitPrice: z.string(),
+    }),
+  ),
+  organizationName: z.string(),
+});
+const salesHistoryListResponseSchema = z.object({
+  data: z.object({ sales: z.array(salesHistorySummarySchema) }),
+  meta: z.object({ nextCursor: z.string().nullable() }),
+});
+const salesHistoryDetailResponseSchema = z.object({
+  data: z.object({ sale: salesHistoryDetailSchema }),
+});
 
 export type SalesVatProfile = z.infer<typeof salesVatProfileSchema>;
 export type PosProduct = z.infer<typeof posProductSchema>;
 export type PosUnit = z.infer<typeof productUnitSchema>;
 export type CompletedSale = z.infer<typeof saleSchema>;
+export type SalesHistorySummary = z.infer<typeof salesHistorySummarySchema>;
+export type SalesHistoryDetail = z.infer<typeof salesHistoryDetailSchema>;
 export type CheckoutInput = {
   discount:
     | { amount: string; reason: string; type: "AMOUNT" }
@@ -121,6 +171,7 @@ export type SalesApiErrorKind =
   | "price_changed"
   | "product_inactive"
   | "product_not_found"
+  | "sale_not_found"
   | "stale_vat_profile"
   | "unavailable"
   | "validation"
@@ -171,6 +222,7 @@ function errorFromResponse(status: number, body: unknown): SalesApiError {
     PRICE_CHANGED: "price_changed",
     PRODUCT_INACTIVE: "product_inactive",
     PRODUCT_NOT_FOUND: "product_not_found",
+    SALE_NOT_FOUND: "sale_not_found",
     SALES_VAT_PROFILE_STALE: "stale_vat_profile",
     VAT_CONFIGURATION_REQUIRED: "vat_configuration_required",
     VALIDATION_ERROR: "validation",
@@ -240,5 +292,32 @@ export async function checkoutSale(
       headers: { "Idempotency-Key": idempotencyKey },
       method: "POST",
     }),
+  ).data.sale;
+}
+
+export async function listSalesHistory(
+  context: SalesRequestContext,
+  options: { actorUserId?: string; cursor?: string | null } = {},
+) {
+  const query = new URLSearchParams({ limit: "25" });
+  if (options.actorUserId !== undefined) {
+    query.set("actorUserId", options.actorUserId);
+  }
+  if (options.cursor !== null && options.cursor !== undefined) {
+    query.set("cursor", options.cursor);
+  }
+  return parse(
+    salesHistoryListResponseSchema,
+    await request(`${salesPath(context, "sales")}?${query.toString()}`),
+  );
+}
+
+export async function getSalesHistoryDetail(
+  context: SalesRequestContext,
+  saleId: string,
+): Promise<SalesHistoryDetail> {
+  return parse(
+    salesHistoryDetailResponseSchema,
+    await request(salesPath(context, `sales/${saleId}`)),
   ).data.sale;
 }

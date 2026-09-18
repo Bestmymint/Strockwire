@@ -867,7 +867,6 @@ inventory transaction, stock movement, cost update, or VAT record.
 | `POST /organizations/{organizationId}/branches/{branchId}/sales` | `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`, assigned `CASHIER` | Required `Idempotency-Key`; unique cart lines, optional authorized discount, CASH/TRANSFER intent | `201` completed Sale-backed receipt; exact replay `200` | VAT config, price, stock, payment, discount, idempotency, concurrency | Target contract; P5-M2-T02 after P5-M1-T02/P5-M2-T01; `ADR-027` |
 | `GET /organizations/{organizationId}/branches/{branchId}/sales` | `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`, assigned `CASHIER` | `cursor`, `limit`, absolute `createdAtFrom`/`createdAtTo`, `actorUserId`; no initial status filter | Historical Sale summaries | Invalid query/range/cursor, safe forbidden | Implemented; P5-M3-T01; later status/projection filters require `OQ-009` |
 | `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}` | Branch sales read | None | Immutable Sale, line, permitted payment, and role-permitted cost snapshots | Safe not-found/forbidden | Implemented; P5-M3-T01 |
-| `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}/receipt` | Branch receipt read | None | Sale-backed receipt data; not arbitrary HTML and never COGS | Safe not-found/forbidden | Target contract; P5-M3-T01; browser print UI P5-M3-T02 |
 
 Sales-history listing is ordered by `createdAt DESC, id DESC`. Its opaque, versioned
 cursor is bound to the Organization, Branch, `createdAtFrom`, `createdAtTo`, and
@@ -880,7 +879,8 @@ remains unresolved. `actorUserId` is an exact UUID match against the persisted S
 and remains constrained by the authorized Organization/Branch query. Summary and detail
 values come only from immutable Sale/SaleItem/Payment snapshots. Cost/COGS fields appear
 only to OWNER, ADMIN, and assigned BRANCH_MANAGER detail readers; they never appear in
-Sale summaries or cashier/customer receipt data.
+Sale summaries or cashier/customer receipt data. Browser receipt printing uses the existing
+Sale detail response as its immutable data source; this phase has no separate receipt API.
 
 Sales VAT profile target representation:
 

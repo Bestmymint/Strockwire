@@ -151,6 +151,8 @@ function errorMessage(error: unknown): string {
       "A product in this cart is inactive. Remove it and try again.",
     product_not_found:
       "A product in this cart no longer exists. Remove it and try again.",
+    sale_not_found:
+      "Checkout is temporarily unavailable. Your cart was kept unchanged.",
     stale_vat_profile:
       "The VAT profile changed. Refresh the latest VAT settings.",
     unavailable:
