@@ -458,19 +458,31 @@ all optional stock/cost effects share the transaction.
 Refund concurrency uses Organization idempotency first, then the original Sale row to
 serialize cumulative eligibility, then the existing shared Branch/Product locks in
 sorted Product-ID order for restock. The API revalidates tenant/branch/role authority
-against the persisted Sale. There is no time cutoff, approval chain, gateway, or
-dependency on `OQ-016`/`OQ-019`.
+against the persisted Sale. There is no time cutoff, approval chain, gateway, generic
+`OQ-019` audit dependency, or dependence on the reporting calendar later fixed by
+`ADR-029`.
 
 ### 6.6 Deterministic analytics
 
-1. The actor requests a period, branch, or allowed organization aggregate.
-2. The API resolves authorization and canonical period boundaries.
-3. Analytics reads only accepted completed-sale/inventory states once `OQ-011` is closed.
-4. SQL performs set aggregation; TypeScript applies accepted formulas where appropriate.
-5. The response includes period, scope, metric version, data completeness, and values.
-6. Reusable scheduled snapshots may be stored to avoid repeated expensive computation.
+1. The actor supplies strict local date-only `from`/`to`, granularity, and candidate
+   Branch/Organization scope.
+2. The API derives active membership/assignments and `BUSINESS_ANALYTICS_VIEW` or
+   `INVENTORY_ANALYTICS_VIEW`; cost outputs additionally require `SALES_COST_VIEW`.
+3. The period engine loads the Organization IANA timezone and converts aligned local
+   day/Monday-week/month/year boundaries to half-open UTC instants with DST rules.
+4. One captured `sourceCutoff` and transactionally consistent read snapshot select
+   immutable Sales/refunds/receipts/ledger facts in their own event periods plus
+   current balance/cost state where the metric explicitly requires current state.
+5. SQL performs exact set aggregation; TypeScript applies only accepted Decimal/null/
+   coverage formulas and gap-fills canonical buckets.
+6. The response includes `analytics-v1`, exact UTC/local period metadata, timezone,
+   source cutoff, included authorized Branch scope, completeness, cost coverage, and
+   values/null reasons.
 
-`docs/ANALYTICS.md` exclusively owns formulas and period semantics.
+`ADR-029` resolves `OQ-011`/`OQ-016`, and `docs/ANALYTICS.md` exclusively owns formulas
+and period semantics. Analytics V1 reads normalized operational tables directly; no
+warehouse, OLAP service, stream, materialized view, scheduled rollup, or summary table
+is introduced before measured need. Scheduled AI snapshots remain a later concern.
 
 ### 6.7 Scheduled AI insight
 
@@ -666,7 +678,8 @@ Scale in measured stages:
 
 1. Correct scoped queries, constraints, transactions, and indexes.
 2. Paginate lists and avoid N+1 queries.
-3. Precompute reusable analytics snapshots.
+3. Precompute reusable analytics snapshots only after measured query/schedule need;
+   normalized operational facts remain authoritative.
 4. Scale stateless web/API compute within the chosen hosting topology.
 5. Tune RDS, connection pools, and read patterns.
 6. Introduce SQS only if job duration, concurrency, retries, or backpressure demonstrates a need.
@@ -678,12 +691,17 @@ This document does not answer the following canonical questions from `BUILD_SPEC
 
 - `OQ-012` forecasting V1
 - `OQ-015` exact production hosting
-- `OQ-016` timezone
 - `OQ-017` schedule timing
 - `OQ-018` OpenRouter model/fallback/budget
 - `OQ-020` production targets
 
 Implementation touching one of these areas must stop at its accepted boundary until the referenced question is resolved and all affected documents are updated.
+
+`ADR-029` resolves `OQ-011` and `OQ-016` with one configurable Organization IANA
+timezone, event-period attribution, canonical half-open periods, accepted Analytics V1
+metrics, explicit threshold deferrals, exact decimal/null semantics, and direct
+normalized-table query authority. P6-M1-T01 creates no runtime/schema/API/UI behavior;
+P6-M1-T02 is the next implementation task.
 
 Sales payment, Output VAT, discount, receipt, monetary, checkout, and UNKNOWN-cost
 behavior are accepted by `ADR-027`, which resolves `OQ-008`. P5-M1 and P5-M2 implement

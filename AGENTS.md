@@ -5,13 +5,13 @@ This file is the execution contract for human and AI developers working in the `
 | Field | Value |
 | --- | --- |
 | Documentation baseline | Architecture Freeze v1 |
-| Last updated | 2026-09-19 |
+| Last updated | 2026-09-20 |
 
 ## 1. Project overview
 
 StockWise is a responsive, cloud-based retail platform for SMEs. It covers organization-level product and supplier management; branch-level inventory, purchasing/receiving, POS, and sales; deterministic analytics and forecasting; and scheduled aggregate summaries through OpenRouter.
 
-The repository contains the repository/tooling foundation; identity, tenancy, authentication, onboarding, branch, invitation, and membership workflows; organization-scoped Catalog and Supplier persistence/API/UI; branch inventory balance/history/manual-adjustment persistence/API/UI; Purchase Order and Receiving persistence/API/UI; P5-M1 Sales persistence; P5-M2 atomic checkout, POS API, and responsive POS UI; complete P5-M3 Sales History list/detail/browser-receipt API/UI; and the P5-M4 linked immutable refund persistence/service/API/history/UI workflow with optional per-item same-branch restock. `ADR-028` excludes VOID from V1. The exact current task is P6-M1-T01 — Close metric/timezone decisions. Branch pricing, analytics, AI insights, generic accounting/tax/audit systems, and production infrastructure remain unimplemented. Do not treat later planned directories, commands, schemas, endpoints, or features as existing code.
+The repository contains the repository/tooling foundation; identity, tenancy, authentication, onboarding, branch, invitation, and membership workflows; organization-scoped Catalog and Supplier persistence/API/UI; branch inventory balance/history/manual-adjustment persistence/API/UI; Purchase Order and Receiving persistence/API/UI; P5-M1 Sales persistence; P5-M2 atomic checkout, POS API, and responsive POS UI; complete P5-M3 Sales History list/detail/browser-receipt API/UI; and the P5-M4 linked immutable refund persistence/service/API/history/UI workflow with optional per-item same-branch restock. `ADR-028` excludes VOID from V1, and the P6-M1-T01 documentation gate closes Analytics V1 metrics/reporting time in `ADR-029`. The exact current task is P6-M1-T02 — Period and scope engine. Branch pricing, analytics runtime/API/UI, forecasting, AI insights, generic accounting/tax/audit systems, and production infrastructure remain unimplemented. Do not treat later planned directories, commands, schemas, endpoints, or features as existing code.
 
 ## 2. Read before changing anything
 
@@ -40,7 +40,8 @@ At minimum, enforce these gates:
 - POS/sales monetary behavior: `ADR-027` plus `ADR-016`, `ADR-022`, `ADR-024`, and `ADR-026`; `OQ-008` is resolved
 - Refund behavior: `ADR-028` plus `ADR-016`, `ADR-022`, `ADR-024`, `ADR-026`, and `ADR-027`; `OQ-009` is resolved and VOID is excluded from V1
 - Purchasing/receiving behavior: `ADR-024`, `ADR-026`; quantity representation is accepted by `ADR-022`
-- Analytics and forecasting: `OQ-011`, `OQ-012`; plus any metric-specific dependency documented in `docs/ANALYTICS.md`
+- Analytics periods/base metrics: `ADR-029`; forecasting, risk, and reorder:
+  `OQ-012` plus any metric-specific dependency documented in `docs/ANALYTICS.md`
 
 The accepted MVP roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER`. Authorization is fixed, deny-by-default RBAC from `ADR-016` and `BUILD_SPEC.md` section 8: a user has one organization role per organization; `OWNER`/`ADMIN` have organization-wide branch access; the remaining roles need explicit branch assignments. The Express API, not the frontend, is the security boundary. At least one OWNER must remain. `ADR-028` allows refund creation only for `OWNER`, `ADMIN`, and assigned `BRANCH_MANAGER`; authorized `CASHIER` may view refund records but cannot create them, and `INVENTORY_STAFF` has no refund access.
 
@@ -247,7 +248,9 @@ These rules are accepted; exact formatter/linter configuration is part of Reposi
 6. Sale items and purchase/receipt lines must retain historical snapshots needed to explain past totals and costs.
 7. Store money/cost in PostgreSQL `NUMERIC`/`DECIMAL` and Prisma `Decimal`.
 8. Enforce invariants with database constraints and indexes as well as application validation.
-9. Use UTC timestamps. Report/display timezone remains governed by `OQ-016`.
+9. Store event timestamps in UTC. Analytics/reporting uses the required Organization
+   IANA timezone and local-calendar half-open boundaries from `ADR-029`; V1 has no
+   Branch reporting timezone and never uses server/browser local time as authority.
 10. Use explicit idempotency for retryable creates such as checkout and scheduled snapshots.
 11. Do not hard-delete ledger, completed sale, payment, or completed receipt history. Use an explicit lifecycle/reversal rule.
 12. Physical ID types, exact columns, status enums, delete/retention behavior, costing, and receipt numbering must follow `docs/DATABASE.md` and unresolved Open Questions.
@@ -418,7 +421,7 @@ Across the later foundation/application-shell tasks:
 - Each process validates only its own environment with a process-owned Zod schema at startup. Separate strict empty Next.js and Express schemas and tests exist; there is no speculative shared root schema.
 - Local development values must be non-production and documented by the task that introduces the corresponding process or resource. Test values must identify isolated, disposable resources and must never target shared, staging, or production data.
 - Populated `.env` and `.env.*` files remain ignored. Only redacted example files may be committed. Never place real secrets, tokens, credentials, or production values in an example.
-- `P1-M2-T04` owns the verified local port/origin contract: `STOCKWISE_API_PORT=3001`, `STOCKWISE_API_ORIGIN=http://127.0.0.1:3001`, and fixed web port `3000`. `P1-M3-T01` owns the Docker-only local PostgreSQL inputs `STOCKWISE_POSTGRES_USER`, `STOCKWISE_POSTGRES_PASSWORD`, `STOCKWISE_POSTGRES_DATABASE`, and `STOCKWISE_POSTGRES_PORT`; they are non-production values, are never browser configuration, and require a unique replacement in a populated local `.env`. `P1-M3-T02` owns the API-only `DATABASE_URL`, which connects to that loopback database, is PostgreSQL-scheme validated by the API Zod boundary, and must never be web or `NEXT_PUBLIC_` configuration. P1-M3-T03 owns the server-only `TEST_DATABASE_URL`; the test harness accepts only an isolated loopback `*_test` target that differs from `DATABASE_URL`, and this value is never web configuration. P2-M2-T03 owns API-only `STOCKWISE_PUBLIC_WEB_ORIGIN`; production-only `STOCKWISE_EMAIL_FROM` and `RESEND_API_KEY`; and runtime-selected Resend/non-delivery behavior. None is browser or `NEXT_PUBLIC_` configuration. Reporting/schedule/provider settings remain with `OQ-016`–`OQ-018`/Phase 7; AWS topology/secret management remains `OQ-015`/`OQ-020`/Phase 8.
+- `P1-M2-T04` owns the verified local port/origin contract: `STOCKWISE_API_PORT=3001`, `STOCKWISE_API_ORIGIN=http://127.0.0.1:3001`, and fixed web port `3000`. `P1-M3-T01` owns the Docker-only local PostgreSQL inputs `STOCKWISE_POSTGRES_USER`, `STOCKWISE_POSTGRES_PASSWORD`, `STOCKWISE_POSTGRES_DATABASE`, and `STOCKWISE_POSTGRES_PORT`; they are non-production values, are never browser configuration, and require a unique replacement in a populated local `.env`. `P1-M3-T02` owns the API-only `DATABASE_URL`, which connects to that loopback database, is PostgreSQL-scheme validated by the API Zod boundary, and must never be web or `NEXT_PUBLIC_` configuration. P1-M3-T03 owns the server-only `TEST_DATABASE_URL`; the test harness accepts only an isolated loopback `*_test` target that differs from `DATABASE_URL`, and this value is never web configuration. P2-M2-T03 owns API-only `STOCKWISE_PUBLIC_WEB_ORIGIN`; production-only `STOCKWISE_EMAIL_FROM` and `RESEND_API_KEY`; and runtime-selected Resend/non-delivery behavior. None is browser or `NEXT_PUBLIC_` configuration. Reporting timezone is Organization data under `ADR-029`, not an environment value; schedule/provider settings remain `OQ-017`–`OQ-018`/Phase 7, and AWS topology/secret management remains `OQ-015`/`OQ-020`/Phase 8.
 
 P1-M1-T04 added no runtime validation before a process existed. P1-M2-T04 updates the web and API schemas with the only concrete local integration values; both schemas select only their owned input and reject missing, invalid, and unowned values. P1-M3-T03 adds a distinct test-only environment boundary for the database harness. All remaining configuration stays assigned to later tasks or decisions.
 

@@ -236,7 +236,8 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-INV-001 — View branch stock and inventory history
 
-- **Status:** Ready after inventory foundation; some labels/classification blocked by `OQ-011`
+- **Status:** Implemented inventory foundation; factual availability is accepted by
+  `ADR-029`, while low/risk labels remain deferred/blocked by `OQ-012`
 - **Actor:** Authorized branch user or organization-level viewer
 - **Preconditions:** Actor has access to the requested branch or authorized aggregate.
 - **Trigger:** Actor opens inventory list/product history.
@@ -409,26 +410,35 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-AN-001 — View sales and inventory analytics
 
-- **Status:** Blocked by `OQ-011`, `OQ-016`; framework ready after analytics definitions close
+- **Status:** Metric/time contract ready under `ADR-029`; runtime planned in Phase 6
 - **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` within the accepted analytics scope
 - **Preconditions:** Actor has access to requested branch or aggregate; relevant operational data exists or an explicit empty state can be returned.
 - **Trigger:** Actor opens dashboard or changes period/scope.
 - **Main flow:**
-  1. API validates canonical scope/period selector.
-  2. It derives authorized branches and canonical period boundaries.
-  3. It calculates/loads only metric definitions from `docs/ANALYTICS.md`.
-  4. It returns values with metric version, period, timezone, scope, completeness, and null reasons.
+  1. API validates required date-only `from`/`to`, granularity, and candidate scope.
+  2. It derives authorized Branches and converts Organization-local calendar boundaries
+     to half-open UTC instants under IANA/DST rules.
+  3. At one source cutoff/consistent read snapshot, it calculates only Accepted metric
+     definitions from normalized authoritative records in `docs/ANALYTICS.md`.
+  4. It returns `analytics-v1`, local/UTC period bounds, reporting timezone, included
+     Branch scope, source cutoff, completeness/cost coverage, values, and null reasons.
   5. UI presents numbers/charts plus accessible textual/empty/partial/stale states.
 - **Alternative flows:** Organization aggregate uses only authorized branches; snapshot is served when valid; insufficient history returns explicit status rather than fabricated zero/trend.
-- **Error cases:** Invalid/non-comparable period; inaccessible branch; missing timezone decision; stale/incompatible snapshot; calculation failure; database timeout.
-- **Business rules:** No OpenRouter call occurs. No formula is defined in UI/API code outside the analytics contract.
-- **Authorization:** `OWNER`/`ADMIN` have organization-wide analytics, `BRANCH_MANAGER` assigned-branch analytics, `INVENTORY_STAFF` inventory-relevant analytics only, and `CASHIER` none. Cost/margin visibility remains limited to data expressly permitted for the role.
+- **Error cases:** Invalid/unaligned/over-366-day/non-comparable period; invalid IANA timezone state; inaccessible Branch; stale/incompatible snapshot; calculation failure; database timeout.
+- **Business rules:** Sale, refund, receipt, and inventory facts use their own persisted
+  event times. Financial refund and restock quantities remain distinct. UNKNOWN cost
+  produces explicit unavailable cost/profit/value rather than zero. No OpenRouter call
+  occurs, and no formula is redefined in UI/API code.
+- **Authorization:** `OWNER`/`ADMIN` have Organization-wide analytics (including inactive
+  Branch history), `BRANCH_MANAGER` assigned-active-Branch business/inventory analytics,
+  `INVENTORY_STAFF` assigned-active-Branch inventory-relevant non-cost analytics, and
+  `CASHIER` none. Cost/profit/inventory value additionally require `SALES_COST_VIEW`.
 - **Expected result:** Reproducible, correctly scoped deterministic analytics or an explicit unavailable state.
 - **Acceptance criteria:** Fixed-fixture formula tests; period boundary tests; cross-tenant/branch aggregation tests; zero/partial/insufficient cases; accessible responsive chart alternatives.
 
 ### UC-AN-002 — View forecast and reorder recommendation
 
-- **Status:** Blocked by `OQ-011` and `OQ-012`; future costing and incoming-order semantics follow `ADR-026`; quantity inputs
+- **Status:** Blocked by `OQ-012`; Analytics V1 inputs/time follow `ADR-029`, future costing and incoming-order semantics follow `ADR-026`; quantity inputs
   follow `ADR-022` and no-negative stock follows `ADR-024`
 - **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` within the accepted forecast/reorder scope
 - **Preconditions:** Forecasting V1 and input definitions are accepted; actor has scope access.
@@ -445,7 +455,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-AI-001 — Generate a scheduled AI insight
 
-- **Status:** Cadences accepted; blocked in execution detail by `OQ-011`, `OQ-016`, `OQ-017`, `OQ-018`
+- **Status:** Analytics periods accepted by `ADR-029`; blocked in execution detail by `OQ-017`, `OQ-018` and forecast content by `OQ-012`
 - **Actor:** System scheduler/job
 - **Preconditions:** A due report identity exists; deterministic metrics for the period can be computed or marked insufficient; provider configuration is available for an attempt.
 - **Trigger:** Production EventBridge schedule or an authorized operational replay mechanism triggers the job.

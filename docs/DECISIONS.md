@@ -224,7 +224,8 @@ Use PostgreSQL SQL and TypeScript for metrics, period comparisons, classificatio
 
 ### Consequences
 
-- Exact formulas and Forecasting V1 must close `OQ-011`/`OQ-012` before implementation.
+- `ADR-029` later closes exact Analytics V1 formulas in `OQ-011`; Forecasting V1 still
+  requires `OQ-012` before implementation.
 - Forecast experiments compare a named baseline using accepted reproducible metrics.
 - Introducing Python/ML later requires measured improvement and a superseding ADR.
 
@@ -947,7 +948,7 @@ The catalog schema needs a stable organization-level price, base-unit, normaliza
 
 Use option 3. Branch-level price overrides are out of MVP scope. A Product has one required organization-level non-negative `basePrice`, represented in APIs as a decimal string at scale at most four and targeted to `DECIMAL(19,4)` persistence. Excess scale is invalid rather than rounded. This configured catalog price affects future operations only; future sale items snapshot the unit price actually used. `OQ-008` was left open by this decision and is now resolved by `ADR-027` for tax, discount, currency, receipt/payment behavior, and transaction rounding.
 
-Each Product stores exactly one immutable base unit from `EA`, `PACK`, `BOX`, `KG`, `G`, `L`, `ML`, `M`, or `CM`. `EA`, `PACK`, and `BOX` are integer-only. The others permit up to four fractional digits. Quantity APIs are decimal strings, target `DECIMAL(18,4)`, reject excess precision rather than rounding, and require positive values when an operation requests a positive amount. MVP has no unit, pack-size, or purchasing/selling-UOM conversion. Signed inventory-ledger semantics remain for inventory work; derived analytics rounding remains `OQ-011`.
+Each Product stores exactly one immutable base unit from `EA`, `PACK`, `BOX`, `KG`, `G`, `L`, `ML`, `M`, or `CM`. `EA`, `PACK`, and `BOX` are integer-only. The others permit up to four fractional digits. Quantity APIs are decimal strings, target `DECIMAL(18,4)`, reject excess precision rather than rounding, and require positive values when an operation requests a positive amount. MVP has no unit, pack-size, or purchasing/selling-UOM conversion. Signed inventory-ledger semantics remain for inventory work; `ADR-029` later fixes derived analytics precision and prohibits mixed-unit scalar totals.
 
 Product names are trimmed, nonblank, Unicode-preserving, and non-unique. SKU is canonical trim/NFKC/uppercase, must match `^[A-Z0-9][A-Z0-9._-]{0,63}$`, and is unique within an organization. Barcode is optional, trimmed, blank-to-null, control-character-free, at most 128 characters, and exact-match unique within an organization when present. Categories are flat with a nullable product relation. Their display names are trimmed/nonblank while an NFKC/trim/collapsed-Unicode-whitespace/lowercase key is unique within an organization.
 
@@ -1027,7 +1028,10 @@ assignment is protected through the write transaction.
   and barcode races, while the API returns only accepted domain conflict codes.
 - No schema/migration, UI, inventory, costing, valuation, or branch-price model
   is introduced by this decision.
-- At this decision point, sales-side `OQ-008` and `OQ-011` remained open and did not block catalog CRUD. `ADR-027` now resolves `OQ-008`; `OQ-011` remains open, and `ADR-026` governs purchasing/receiving cost without changing this catalog decision.
+- At this decision point, sales-side `OQ-008` and `OQ-011` remained open and did not
+  block catalog CRUD. `ADR-027` later resolves `OQ-008`, `ADR-029` later resolves
+  `OQ-011`, and `ADR-026` governs purchasing/receiving cost without changing this
+  catalog decision.
 
 ## ADR-024 — Use signed deltas, no-negative stock, and a locked balance projection
 
@@ -1510,8 +1514,9 @@ receipt, cart, and reversal systems.
 - P5-M2-T01 owns the atomic checkout service. P5-M2-T02 owns the target VAT-profile
   read/update and POS/checkout HTTP contracts. P5-M2-T03 owns VAT-configuration and
   checkout-blocked UI plus POS interaction. P5-M3 retains sales history/receipt work.
-- `OQ-008` is resolved by this ADR. `OQ-009`, `OQ-011`, and `OQ-016` remain open and
-  continue to govern reversal, analytics eligibility, and display/report timezone.
+- `OQ-008` is resolved by this ADR. At this decision point `OQ-009`, `OQ-011`, and
+  `OQ-016` remained open; `ADR-028` later resolves reversal and `ADR-029` later resolves
+  analytics eligibility and reporting time.
 - Sales/POS implementation remains absent until its separately authorized roadmap
   tasks are completed. The exact next task is P5-M1-T02 — Sale/payment schema.
 
@@ -1529,8 +1534,8 @@ inventory movements, and receipt immutable. `ADR-024` requires append-only stock
 movements under shared Branch/Product serialization, while `ADR-026` preserves
 `UNKNOWN` versus `KNOWN` moving-weighted-average cost. A reversal contract therefore
 must compensate those facts without editing them, must support fractional Product
-units and repeated partial operations, and must not depend on unresolved reporting
-timezone `OQ-016` or generic audit question `OQ-019`.
+units and repeated partial operations, and at this decision point could not depend on
+then-unresolved reporting timezone `OQ-016` or generic audit question `OQ-019`.
 
 ### Alternatives considered
 
@@ -1563,8 +1568,8 @@ Resolve `OQ-009` with the following V1 contract.
   every SaleItem. Partial refund selects one or more unique SaleItems and a positive
   quantity. Multiple sequential refunds are allowed until every line reaches its
   original quantity. A fully refunded Sale rejects further refund attempts.
-- There is no time or calendar cutoff, so `OQ-016` remains unresolved and irrelevant
-  to eligibility. The original Branch must be active. Current Product inactivity does
+- There is no time or calendar cutoff, so `OQ-016` remained irrelevant to refund
+  eligibility and was later resolved separately by `ADR-029`. The original Branch must be active. Current Product inactivity does
   not block refund because the immutable SaleItem is the authority and inactive stock
   may still be returned to its original Branch.
 - Refund quantity follows the original Product unit under `ADR-022`: `DECIMAL(18,4)`,
@@ -1800,13 +1805,152 @@ keep the design compatible with checkout and receiving.
 
 ### Consequences
 
-- `OQ-009` is resolved. `OQ-016` remains open and no refund rule depends on it.
+- `OQ-009` is resolved. No refund eligibility rule depends on reporting time;
+  `ADR-029` later resolves `OQ-016` for analytics/calendar presentation.
 - P5-M4-T01 is a documentation gate only; it creates no schema, migration, permission,
   service, endpoint, inventory/payment mutation, or UI.
 - P5-M4-T02 may implement only this bounded REFUND contract. VOID and every listed
   non-goal require a later accepted decision and separately planned task.
-- Analytics receives immutable refund facts, but `OQ-011` still decides metric
-  eligibility and whether recognition uses Sale time or refund time.
+- Analytics receives immutable refund facts. `ADR-029` later resolves `OQ-011` by
+  recognizing financial refund and optional restock/COGS facts in refund event time.
+
+## ADR-029 — Use Organization IANA reporting time and event-period operational analytics
+
+- **Date:** 2026-09-20
+- **Status:** Accepted
+- **Type:** Analytics metric, reporting-time, authorization, and query decision gate
+
+### Context
+
+`OQ-011` and `OQ-016` blocked deterministic Analytics V1. Persisted Sales and refunds
+already contain immutable document-first money/VAT/discount and historical COGS facts;
+refund financial quantity and optional restock quantity are deliberately different.
+Inventory has an append-oriented ledger plus current balance/cost projections. The
+analytics contract must interpret those facts without rewriting them, must not turn
+UNKNOWN cost into zero, and must not let browser/server locale define business dates.
+
+### Alternatives considered
+
+1. Fix every tenant to `Asia/Bangkok`. This matches the THB-first MVP but prevents a
+   tenant from selecting another valid reporting calendar.
+2. Give each Branch its own timezone. This makes Organization totals and comparisons
+   span incompatible calendar buckets and adds configuration the current Branch model
+   does not need.
+3. Snapshot timezone on every event. This preserves original bucket labels but adds
+   write-path/schema scope and yields mixed calendars after a settings change.
+4. Move refunds back to original Sale periods. This silently rewrites previously shown
+   periods and hides when compensation actually occurred.
+5. Calculate Gross Profit from known lines while treating UNKNOWN as zero. This would
+   fabricate cost and contradict `ADR-026`/`ADR-027`.
+6. Add rollup/materialized tables now. No measured workload justifies another source of
+   truth before direct normalized-table queries are implemented and profiled.
+
+### Decision
+
+#### Reporting timezone and periods
+
+- Each Organization has one required IANA timezone; V1 has no Branch timezone. The
+  explicit new/backfill default is `Asia/Bangkok`, and `OWNER`/`ADMIN` may change it
+  through later Organization-settings implementation. UTC `timestamptz` storage is
+  unchanged. Missing/invalid persisted timezone is an error, never a query-time fallback
+  to the server/browser/default.
+- On-demand history always re-buckets with the Organization's current timezone. A
+  change never rewrites events; persisted snapshots retain their original timezone and
+  UTC boundaries and current reusable snapshots are invalidated for recomputation.
+- Current writes use server-assigned commit-time event timestamps and accept no client
+  backdating. Any future late import/repair is attributed by its authoritative event
+  time; later queries may change that historical bucket and expose a later source cutoff.
+- Local days begin at `00:00`; weeks begin Monday `00:00`; months and years begin on
+  their first local calendar day at `00:00`. Boundaries convert with IANA/DST rules to
+  half-open UTC `[startInclusive,endExclusive)` instants.
+- Analytics accepts required date-only `from` inclusive and `to` exclusive plus
+  `day|week|month|year` granularity, rejects date-times/unaligned ranges, and caps an
+  interactive query at 366 local dates. Empty buckets are gap-filled; additive facts
+  use zero and undefined ratios retain explicit null reasons.
+
+#### Event attribution and monetary metrics
+
+- Sale facts belong to `Sale.completedAt`; refund facts to `SaleRefund.completedAt`;
+  receipts to `PurchaseReceipt.receivedAt`; and inventory movements to
+  `InventoryTransaction.occurredAt`. Late refunds never change the original Sale
+  period. Sale existence means completion; full/partial refunds do not remove it from
+  Sale Count.
+- Gross Sales is persisted SaleItem gross before whole-Sale discount and is not reduced
+  by refunds. Discount and Sales After Discount are shown separately. These headline
+  amounts are VAT-inclusive; Output VAT and registered taxable amounts are explicit
+  breakouts, with NOT_REGISTERED taxable values remaining null.
+- Refund Amount uses immutable reversed line net and financial refund quantity. Units
+  Refunded and Units Restocked are distinct. Net Sales is Sales After Discount minus
+  refund amount in their respective event periods and may be negative.
+- AOV is Sales After Discount divided by Sale Count for Sale events only; refunds are
+  excluded from both inputs. Net Sales Growth compares only complete adjacent canonical
+  periods. Category share uses positive Sales After Discount and current Product
+  category, with `UNCATEGORIZED`; category history can reclassify after catalog edits.
+
+#### Cost, profit, quantity, and inventory metrics
+
+- Net COGS is immutable SaleItem COGS in Sale periods minus persisted COGS reversal in
+  refund periods. Under `ADR-028`, COGS reversal follows restock quantity, not financial
+  refund quantity. A non-restocked refund has zero cost effect; a positive UNKNOWN-cost
+  restock has unknown cost effect.
+- Any required UNKNOWN cost makes authoritative COGS, Gross Profit, and Margin null.
+  Responses may expose a clearly named known-cost subtotal and coverage counts/status,
+  never as the total. Gross Profit is Net Sales minus Net COGS. Margin is returned only
+  with complete cost and positive Net Sales.
+- Product quantities aggregate only per Product or identical immutable base-unit group;
+  no mixed-unit scalar exists. Sale, refund, restock, receipt, and adjustment quantities
+  remain separately named.
+- Inventory V1 accepts current on-hand, in-stock/out-of-stock counts, source-separated
+  ledger movements, 28-complete-day sale-depletion velocity, coverage, and current
+  inventory value. Persisted ten-decimal `InventoryCostState.inventoryValue`, not
+  multiplication by the rounded average, is valuation authority. Positive UNKNOWN
+  stock makes total value null with known-value/coverage metadata.
+- Fast/slow, low-stock, stockout-risk, overstock-risk, safety-stock, and reorder labels
+  are explicitly deferred/blocked pending `OQ-012` or a separate threshold decision.
+  Factual zero on-hand is not a forecast-risk label.
+
+#### Authorization, precision, and query authority
+
+- Existing `BUSINESS_ANALYTICS_VIEW` and `INVENTORY_ANALYTICS_VIEW` own analytics
+  access. `OWNER`/`ADMIN` are Organization-wide; assigned `BRANCH_MANAGER` has both for
+  assigned active Branches; assigned `INVENTORY_STAFF` has inventory analytics only;
+  `CASHIER` has none. Organization-wide owner/admin history includes inactive Branches.
+- Cost-derived analytics additionally reuse existing `SALES_COST_VIEW`; this keeps cost
+  visibility with `OWNER`, `ADMIN`, and assigned `BRANCH_MANAGER` and prevents
+  `INVENTORY_STAFF` from seeing inventory value. The Express API is the boundary.
+- Metric definition version is `analytics-v1`. Sale/refund money outputs retain two
+  decimals; quantity four; COGS/inventory value/Gross Profit ten; AOV and percentages
+  round HALF_UP to two after exact aggregation. PostgreSQL NUMERIC/Prisma Decimal and
+  decimal-string JSON remain authoritative; JavaScript `number` is not.
+- Analytics reads normalized operational tables at one captured `sourceCutoff` in a
+  transactionally consistent snapshot. V1 introduces no warehouse, OLAP service,
+  materialized view, stream, scheduled rollup, or summary table. Detail/ranking rows
+  paginate stably; indexes are added only by later implementation after query-plan
+  evidence.
+
+`docs/ANALYTICS.md` contains the complete formulas, null states, bucket labels, and
+hand-calculated boundary examples and is authoritative if this summary is abbreviated.
+
+### Why selected
+
+One Organization calendar makes cross-Branch totals comparable while retaining a
+deliberate Thailand-first default. Event-period recognition matches immutable
+operational history and makes late refunds visible. Direct exact-decimal aggregation is
+the smallest correct architecture, and explicit UNKNOWN coverage keeps profit/value
+honest without delaying non-cost analytics.
+
+### Consequences
+
+- `OQ-011` and `OQ-016` are resolved. `OQ-012`, `OQ-017`, and `OQ-018` remain open.
+- P6-M1-T01 is documentation-only. It adds no Organization timezone column,
+  migration, period engine, query repository, endpoint, dashboard, chart, job,
+  forecast, AI integration, or index.
+- P6-M1-T02 is the next task and owns the Organization timezone persistence/settings
+  boundary plus canonical period/scope/completeness engine as planned. Later P6 tasks
+  implement only metrics marked Accepted; deferred/blocked classifications remain out.
+- Timezone changes can alter historical on-demand bucket membership. Responses and
+  snapshots must expose timezone, exact UTC boundaries, definition version, scope, and
+  source cutoff so this behavior is reviewable.
 
 ## 2. Explicitly superseded planning directions
 

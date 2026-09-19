@@ -117,7 +117,9 @@ profile.
 4. Branch-owned records must reference a branch and only organization-owned resources from that branch's organization.
 5. Tenant and branch authorization is enforced in application policy and scoped persistence queries; foreign keys and constraints provide defense in depth.
 6. Money and costs use PostgreSQL `NUMERIC`/`DECIMAL` and Prisma `Decimal`, never unconstrained binary floating point.
-7. Timestamps are stored in UTC. Reporting timezone semantics remain `OQ-016`.
+7. Event timestamps are stored in UTC. `ADR-029` derives analytics periods from one
+   required Organization IANA reporting timezone; no Branch/server/browser timezone is
+   authoritative.
 8. Stock truth consists of an append-oriented ledger plus a transactionally consistent current-balance projection.
 9. Checkout, receiving, adjustment, and reversal changes are atomic. Every accepted
    stock-decreasing movement rejects a resulting negative quantity inside its
@@ -235,7 +237,8 @@ Required logical attributes:
 - Organization status
 - Sales VAT application status: `UNCONFIGURED`, `NOT_REGISTERED`, or `REGISTERED`
 - Nullable sales VAT rate targeting `DECIMAL(9,6)`
-- Reporting timezone/config after `OQ-016`
+- Required IANA reporting timezone accepted by `ADR-029`; the P6-M1-T02 forward schema
+  task will add it with explicit `Asia/Bangkok` default/backfill and no Branch timezone
 - Created/updated timestamps
 
 Constraints and indexes:
@@ -1307,7 +1310,7 @@ The implementation may choose row locking, conditional/versioned updates, atomic
   remainder with Product-ID tie-break. Apply/allocate the document discount, derive
   total, then extract/allocate registered Output VAT. Derive taxable amounts by
   subtraction. Do not independently round lines or taxable base into a mismatched sum.
-- Catalog, inventory, purchasing, and sales quantities use `DECIMAL(18,4)` and decimal-string APIs under `ADR-022`. Inputs with greater scale are rejected, never rounded; integer-only units must be mathematically integral. Derived analytics rounding remains `OQ-011`.
+- Catalog, inventory, purchasing, and sales quantities use `DECIMAL(18,4)` and decimal-string APIs under `ADR-022`. Inputs with greater scale are rejected, never rounded; integer-only units must be mathematically integral. `ADR-029` keeps analytics quantity at four decimals, COGS/inventory value/Gross Profit at ten, Sale/refund money at two, and rounds AOV/percentages HALF_UP to two only after exact aggregation.
 - PostgreSQL coerces direct writes to the declared inventory scale and can round
   excess fractional digits before a row check can observe the source value.
   Therefore excess-scale rejection and EA/PACK/BOX integrality remain mandatory
@@ -1382,7 +1385,7 @@ At minimum, database-backed tests must cover:
 - Ledger-to-balance reconciliation
 - Historical snapshot immutability after product changes
 - Decimal precision and accepted rounding
-- Daily/monthly/yearly timezone and boundary fixtures after `OQ-016`
+- Daily/Monday-weekly/monthly/yearly Organization-timezone boundary, DST, timezone-change rebucketing, and half-open range fixtures under `ADR-029`
 
 ## 13. Blocking Open Questions and deferred scope
 
@@ -1394,11 +1397,15 @@ The canonical definitions live in `BUILD_SPEC.md`:
 - `OQ-009` is resolved by `ADR-028`: linked REFUND records, optional same-branch
   restock, historical allocation/cost authority, and no VOID operation.
 - `ADR-026` fixes future receipt/sale cost data and later valuation on a Branch/Product moving weighted-average basis; Product remains without an organization-wide cost/valuation field.
-- `OQ-011` completed-sale and metric definitions affect indexes/snapshots.
+- `OQ-011` is resolved by `ADR-029`: Sale/refund/receipt/movement event-time
+  attribution, direct normalized-table aggregates, exact decimals, UNKNOWN-cost
+  coverage, and accepted/deferred metrics affect later query indexes/snapshots.
 - `OQ-012` forecast definition affects forecast storage.
 - Stock transfer is deferred from MVP by `ADR-025`; inventory records intentionally
   contain no transfer lifecycle, source, or linkage.
-- `OQ-016` timezone affects period/schedule fields.
+- `OQ-016` is resolved by `ADR-029`: one configurable Organization IANA timezone,
+  explicit `Asia/Bangkok` default/backfill, current-timezone historical rebucketing,
+  and persisted-snapshot timezone/boundary retention. Job timing remains `OQ-017`.
 - `OQ-017` schedule affects job identity.
 - `OQ-018` provider/fallback/retention affects AI report fields.
 - `OQ-019` audit scope affects operational support records.

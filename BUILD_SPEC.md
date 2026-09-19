@@ -134,7 +134,7 @@ The MVP permission baseline is:
 | Forecast/reorder | `OWNER`/`ADMIN` organization-wide; `BRANCH_MANAGER`/`INVENTORY_STAFF` assigned branches; `CASHIER` none |
 | AI business summaries | `OWNER`/`ADMIN` organization-wide; `BRANCH_MANAGER` assigned branches; `INVENTORY_STAFF`/`CASHIER` none |
 
-`OWNER` has full organization operational access, manages owners, and performs OWNER-only ownership actions. `ADMIN` manages branches and non-owner memberships but cannot promote to OWNER, demote/remove an OWNER, transfer ownership, or perform OWNER-only destructive ownership actions. `BRANCH_MANAGER` cannot manage organization settings, create/delete branches, or administer users/roles. `INVENTORY_STAFF` cannot check out, refund, administer employees, access broad analytics, or view management AI summaries. `CASHIER` cannot edit products, adjust stock, create refunds, manage purchasing/suppliers, access analytics/forecasting/AI insights, or administer employees. At least one OWNER must always remain; an OWNER cannot remove, demote, or leave if that would leave no OWNER. V1 has no VOID action or approval workflow.
+`OWNER` has full organization operational access, manages owners, and performs OWNER-only ownership actions. `ADMIN` manages branches and non-owner memberships but cannot promote to OWNER, demote/remove an OWNER, transfer ownership, or perform OWNER-only destructive ownership actions. `BRANCH_MANAGER` cannot manage organization settings, create/delete branches, or administer users/roles. `INVENTORY_STAFF` cannot check out, refund, administer employees, access broad analytics, view cost-derived analytics/inventory value, or view management AI summaries. `CASHIER` cannot edit products, adjust stock, create refunds, manage purchasing/suppliers, access analytics/forecasting/AI insights, or administer employees. Cost-derived analytics require the relevant analytics permission plus existing `SALES_COST_VIEW`; do not duplicate this policy in frontend role checks. At least one OWNER must always remain; an OWNER cannot remove, demote, or leave if that would leave no OWNER. V1 has no VOID action or approval workflow.
 
 ## 9. Tenant and operational model
 
@@ -267,14 +267,18 @@ Partial/over/short receipt, multiple receipt events, receiving without a PO, sup
 
 - Calculate sales and inventory metrics using the definitions in `docs/ANALYTICS.md`.
 - Support branch-level results and authorized organization-level aggregation.
-- Support daily, weekly, monthly, and yearly reporting periods.
+- Use one configurable Organization IANA reporting timezone, defaulting explicitly to
+  `Asia/Bangkok`; store event timestamps in UTC and derive half-open daily,
+  Monday-based weekly, monthly, and yearly local-calendar periods under `ADR-029`.
 - Provide sales totals, units, transaction counts, average order value, category performance, branch performance, trends, and movement indicators.
 - Provide stock coverage, low-stock/stockout risk, overstock risk, and replenishment guidance once their exact definitions are accepted.
 - Calculate forecasting in the application using TypeScript and SQL. No Python service is used now.
 - Retain reproducible metric inputs or snapshots needed for reports and experiments.
 - Compare forecast results with actual values using accepted evaluation metrics.
 
-Several formulas are deliberately unresolved. `docs/ANALYTICS.md` is the only place where their accepted definitions may be finalized.
+`OQ-011`/`OQ-016` are resolved by `ADR-029`. `docs/ANALYTICS.md` is the only place
+where accepted formulas, null semantics, period boundaries, or explicit deferrals may
+be changed. Forecasting/risk/reorder definitions remain `OQ-012`.
 
 ### 10.7 Scheduled AI summaries
 
@@ -286,7 +290,9 @@ Several formulas are deliberately unresolved. `docs/ANALYTICS.md` is the only pl
 - Make scheduled generation idempotent and resilient to provider failure.
 - Preserve the last successful insight and surface stale/failed status without blocking core retail workflows.
 
-Exact schedule times, model selection, fallback policy, retention, and organization timezone behavior are open questions.
+Exact schedule times, model selection, fallback policy, and retention remain open
+questions. Scheduled jobs use the Organization timezone/period rules from `ADR-029`;
+`OQ-017` still decides local run times, retries, and catch-up.
 
 ### 10.8 Cloud and operations
 
@@ -419,7 +425,10 @@ multi-instance, production DoS, and long-term telemetry controls remain open in
 
 - **FR-AN-001:** Metric outputs shall be derived only from definitions in `docs/ANALYTICS.md`.
 - **FR-AN-002:** Organization results shall aggregate authorized branch results without cross-tenant leakage.
-- **FR-AN-003:** Forecasting and replenishment calculations shall run in deterministic application/database logic, not an LLM.
+- **FR-AN-003:** Each event shall be attributed by its accepted persisted event time in the Organization reporting timezone; later refunds shall not rewrite original Sale periods.
+- **FR-AN-004:** UNKNOWN cost shall never be treated as zero; affected COGS, Gross Profit, Gross Margin, and inventory value shall be null with explicit coverage metadata.
+- **FR-AN-005:** Financial refund quantity, optional physical restock quantity, and restock-driven COGS reversal shall remain distinct analytics facts.
+- **FR-AN-006:** Forecasting and replenishment calculations shall run in deterministic application/database logic, not an LLM.
 - **FR-AI-001:** AI reports shall be scheduled for daily, weekly, monthly, and yearly periods.
 - **FR-AI-002:** OpenRouter shall receive only minimized aggregate snapshots.
 - **FR-AI-003:** AI output shall be persisted and served without an on-demand provider call.
@@ -443,7 +452,9 @@ multi-instance, production DoS, and long-term telemetry controls remain open in
 - Use PostgreSQL transactions for checkout, receiving, adjustments, and reversals.
 - Represent money and unit costs with PostgreSQL `NUMERIC`/`DECIMAL` and Prisma `Decimal`; do not use unbounded binary floating-point arithmetic for money.
 - Use database constraints in addition to application validation.
-- Use timestamps in UTC; organization display/report timezone behavior is unresolved.
+- Use UTC event timestamps and one required Organization IANA reporting timezone with
+  `Asia/Bangkok` as the explicit V1 default; derive periods under `ADR-029`, never from
+  server/browser local time.
 - Make scheduled reports and retried write requests idempotent.
 
 ### Maintainability
@@ -532,8 +543,8 @@ These decisions are mandatory gates before the affected domain implementation:
 | POS checkout and sales monetary truth | `ADR-027` plus `ADR-016`, `ADR-022`, `ADR-024`, and `ADR-026` (`OQ-008` resolved) |
 | Sales refund | `ADR-028` plus `ADR-016`, `ADR-022`, `ADR-024`, `ADR-026`, and `ADR-027` (`OQ-009` resolved; VOID excluded) |
 | Purchasing/receiving behavior | `ADR-024`, `ADR-026` plus the accepted quantity contract in `ADR-022` |
-| Analytics definitions | `OQ-011` |
-| Forecasting V1 and reorder recommendation | `OQ-011`, `OQ-012` plus accepted costing/quantity inputs where used |
+| Analytics definitions and reporting periods | `ADR-029` (`OQ-011`, `OQ-016` resolved) |
+| Forecasting V1 and reorder recommendation | `OQ-012` plus `ADR-029` and accepted costing/quantity inputs where used |
 
 Other questions remain task-specific. In particular, exact AWS topology, scheduled-report times, OpenRouter model/fallback, audit-log hardening, and performance/recovery targets may remain open until their relevant phases; they do not block Repository Foundation or unrelated implementation.
 
@@ -555,6 +566,8 @@ This is the canonical list. Other documents reference these IDs and must not red
 | **OQ-008** | Keep the cart transient and create a completed-by-existence immutable Sale atomically with exactly one CASH or manually confirmed TRANSFER Payment, THB-only server-authoritative pricing, optional manager-or-higher whole-Sale AMOUNT/PERCENT discount before VAT, Organization-authoritative single-rate VAT-inclusive Output VAT, `SALE-<UUID>` Sale-backed receipt, exact Decimal/document-first largest-remainder allocation, no-negative shared inventory locking, explicit UNKNOWN COGS, and Organization-scoped checkout idempotency. The initial model has no Sale status. No Customer/CRM, split/CARD/gateway/offline payment, generic/product tax engine, separate Sales Receipt aggregate, or refund/void behavior is included. | `ADR-027` |
 | **OQ-009** | Support immutable linked REFUND records, not VOID. Allow full and sequential partial per-item quantity refunds with optional per-item same-branch restock, historical snapshot-based money/VAT/discount and cost, matching-method manual refund payment, manager-or-higher creation, exact cumulative caps, Organization-scoped idempotency, deterministic Sale/product locking, one atomic transaction, and separate history/detail projections. There is no time cutoff or approval chain. | `ADR-028` |
 | **OQ-010** | Use Branch/Product moving weighted-average cost. Receipt `actualUnitCost` is authoritative intake; PO `expectedUnitCost` is planning/history only. The cost basis may be `UNKNOWN` for quantity created before an authoritative receipt; the first receipt initializes the cost basis for all then-on-hand quantity without reconstructing historical cost. Later cost-dependent facts use the current known average. FIFO, cost layers, zero-cost fabrication, and an Opening Cost/Recost workflow are out of MVP. | `ADR-026` |
+| **OQ-011** | Use event-period operational Analytics V1 from immutable normalized facts: completed-by-existence Sales at `Sale.completedAt`; refunds at their own `completedAt`; VAT-inclusive gross/after-discount/refund/net Sales with separate discount/VAT/taxable breakouts; AOV over Sale events; distinct financial refund/restock quantities; restock-driven COGS reversal; null cost/profit/value when required cost is UNKNOWN; product/unit-safe quantities; current-category attribution; complete-period comparisons; source-separated inventory movement, 28-day velocity/coverage, current availability/value, and explicit deferral of threshold/forecast/reorder classifications. | `ADR-029` |
+| **OQ-016** | Store server-assigned event timestamps in UTC and use one required configurable Organization IANA timezone, with explicit default `Asia/Bangkok` and no Branch timezone. Derive day/week/month/year as local-calendar half-open intervals (Monday week start) with IANA/DST rules. Current writes accept no client backdating; any future late import/repair belongs to its authoritative event-time bucket. On-demand history re-buckets under the current setting after a change; persisted snapshots retain their recorded timezone/bounds. | `ADR-029` |
 | **OQ-013** | **DEFERRED FROM MVP.** Inter-branch stock transfer remains broader/full product scope, but no transfer schema, API, UI, permission, lifecycle, ledger-source, or idempotency contract is part of the current MVP. A previously discussed `SEND → IN_TRANSIT → RECEIVE → RECEIVED` direction with exact quantity and no partial/discrepancy workflow is non-binding future guidance only and must be re-reviewed before implementation resumes. | `ADR-025` |
 | **OQ-021** | A PO is `DRAFT`, `ORDERED`, `RECEIVED`, or `CANCELLED`; only `DRAFT` is editable, and `ORDERED` freezes Supplier, Branch, Product lines, quantities, expected unit costs, and accepted commercial snapshots. One ordered PO produces at most one all-at-once immutable receipt whose quantities are server-derived from PO lines. Partial/over/short/multiple receipt, discrepancy, receiving without a PO, supplier return, receipt reversal, and receipt correction are out of MVP. | `ADR-026` |
 | **OQ-022** | Use fixed, deny-by-default RBAC with one organization role per user/organization and explicit branch assignments for branch-only roles. `OWNER`/`ADMIN` are organization-wide; `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER` are assigned-branch roles. The role, governance, delegation, capability, analytics, forecast, and AI-summary baseline in section 8 is authoritative; `ADR-028` adds the accepted refund capabilities without changing role topology. | `ADR-016`, `ADR-028` |
@@ -566,10 +579,8 @@ This is the canonical list. Other documents reference these IDs and must not red
 
 | ID | Question | Blocks | Priority |
 | --- | --- | --- | --- |
-| **OQ-011** | Which exact analytics thresholds, comparison windows, inclusions/exclusions, and completed-sale state are accepted? | Analytics | Critical |
 | **OQ-012** | What is Forecasting V1, including horizon, granularity, baseline algorithm, minimum data, cold-start behavior, seasonality, and evaluation metric? | Forecast and reorder | Critical |
 | **OQ-015** | What are the exact production hosting topology, region, ingress, secret-management, IaC, availability, backup, and cost targets? | Cloud deployment | High |
-| **OQ-016** | Does each organization choose a timezone, or is reporting fixed to `Asia/Bangkok`? How are DST and late transactions handled? | Database, analytics, schedules | High |
 | **OQ-017** | At what local times do daily, weekly, monthly, and yearly jobs run, and how are retries/catch-up handled? | AI scheduler | Medium |
 | **OQ-018** | Which OpenRouter model, fallback policy, timeout, budget, prompt review, and retention rules are accepted? | AI integration | Medium |
 | **OQ-019** | Is a durable audit-log feature required in MVP or only production hardening? | Security/compliance | Medium |

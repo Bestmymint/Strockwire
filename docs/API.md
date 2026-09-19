@@ -674,7 +674,7 @@ stock, quantity, branch pricing, or hard deletion.
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `GET /organizations/{organizationId}/branches/{branchId}/inventory` | Branch inventory read | Cursor, category/status filters | Product + current balance page | Invalid filter/cursor, forbidden branch | Implemented in P3-M2-T03; stock classification filters remain blocked `OQ-011` |
+| `GET /organizations/{organizationId}/branches/{branchId}/inventory` | Branch inventory read | Cursor, category/status filters | Product + current balance page | Invalid filter/cursor, forbidden branch | Implemented in P3-M2-T03; threshold-based low/risk classification remains deferred by `ADR-029`/blocked `OQ-012` |
 | `GET /organizations/{organizationId}/branches/{branchId}/inventory/{productId}` | Branch inventory read | None | Current balance and product summary | Safe not-found/cross-tenant | Implemented in P3-M2-T03 |
 | `GET /organizations/{organizationId}/branches/{branchId}/inventory/{productId}/transactions` | Branch inventory read | Cursor, source/date filters | Stable ledger page | Invalid range/cursor, safe product not-found | Implemented in P3-M2-T03 |
 | `POST /organizations/{organizationId}/branches/{branchId}/inventory/adjustments` | Branch stock adjust | `Idempotency-Key`; product, signed `delta`, reason, optional note | Movement + new balance | Invalid/zero/excess-scale delta, inactive/cross-tenant resource, `INSUFFICIENT_STOCK`, `IDEMPOTENCY_CONFLICT` | Implemented in P3-M2-T04; `ADR-022`, `ADR-024` |
@@ -875,8 +875,9 @@ cursor is bound to the Organization, Branch, `createdAtFrom`, `createdAtTo`, and
 filter makes the cursor invalid. `limit` defaults to `25` and is bounded from `1` to
 `100`. `createdAtFrom` is inclusive and `createdAtTo` exclusive; both accept only
 RFC3339 absolute timestamps with an explicit offset or `Z`, and the former must be before
-the latter. These filters do not define a business day or reporting timezone: `OQ-016`
-remains unresolved. `actorUserId` is an exact UUID match against the persisted Sale actor
+the latter. These Sales History filters intentionally remain absolute instants and do
+not become Organization-calendar selectors; `ADR-029` applies its date-only reporting
+range contract to analytics endpoints. `actorUserId` is an exact UUID match against the persisted Sale actor
 and remains constrained by the authorized Organization/Branch query. Summary and detail
 values come only from immutable Sale/SaleItem/Payment snapshots. Cost/COGS fields appear
 only to OWNER, ADMIN, and assigned BRANCH_MANAGER detail readers; they never appear in
@@ -1132,31 +1133,56 @@ printable refund document.
 
 ## 12. Analytics endpoints
 
-All analytics endpoints return metadata required by `docs/ANALYTICS.md` and only Accepted metrics. Until `OQ-011`/`OQ-016` close, they are blocked as production contracts.
+`ADR-029` accepts Analytics V1 metric and reporting-time semantics. The endpoints remain
+unimplemented and are delivered only by their planned Phase 6 tasks. Every response
+returns the metadata required by `docs/ANALYTICS.md` and only metrics marked Accepted.
 
 Common query concepts:
 
 ```text
 scope=branch|organization
 branchId=<allowed branch when branch scope>
-periodType=daily|weekly|monthly|yearly
-period=<canonical selector derived from OQ-011 and OQ-016>
+from=YYYY-MM-DD                 # Organization-local, inclusive
+to=YYYY-MM-DD                   # Organization-local, exclusive
+granularity=day|week|month|year
+cursor=<opaque>                 # detail/ranking rows only
+limit=<bounded>                 # detail/ranking rows only
 ```
+
+`from`, `to`, and `granularity` are required; the API has no implicit period. Dates are
+interpreted only in the Organization IANA reporting timezone. Date-times/offsets,
+unaligned week/month/year boundaries, `from >= to`, and spans beyond 366 local dates
+are validation errors. Week boundaries are Monday local `00:00`. The server converts
+local boundaries to half-open UTC instants with IANA/DST rules and returns both forms.
+Summary/timeseries buckets are ascending, gap-filled, and not paginated. Dimension
+detail/ranking rows use stable opaque cursors and deterministic ID tie-breaks.
+
+Common success metadata includes `metricDefinitionVersion: "analytics-v1"`, scope,
+included authorized Branch IDs/count, requested local dates/granularity, exact UTC
+`periodStartInclusive`/`periodEndExclusive`, `reportingTimezone`, `generatedAt`,
+`sourceCutoff`, and `dataStatus`. Monetary/quantity/percentage fields are decimal
+strings; null metrics carry a stable reason. Cost outputs also carry cost coverage.
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `GET /organizations/{organizationId}/analytics/sales` | Analytics read | Scope + canonical period + optional dimensions | Accepted sales metrics/trends | Non-comparable/insufficient/stale/inaccessible | Blocked `OQ-011`, `OQ-016` |
-| `GET /organizations/{organizationId}/analytics/inventory` | Analytics read | Scope + period/cutoff + optional dimensions | Coverage/movement/risk metrics | Insufficient/zero/reconciliation anomaly/unknown thresholds | Blocked `OQ-011`, `OQ-012`; stock policy `ADR-024` |
-| `GET /organizations/{organizationId}/analytics/branches` | Organization analytics read | Period + authorized branch set/filter | Comparable branch metrics | Unauthorized branch/non-comparable period | Blocked `OQ-011`, `OQ-016`; authorization follows `ADR-016` |
+| `GET /organizations/{organizationId}/analytics/sales` | `BUSINESS_ANALYTICS_VIEW`; cost fields also `SALES_COST_VIEW` | Scope + accepted range/granularity + optional dimensions | Accepted Sales/discount/VAT/refund/count/AOV/growth/profit metrics | Invalid/non-comparable/insufficient/inaccessible | Planned P6-M2; contract accepted by `ADR-029` |
+| `GET /organizations/{organizationId}/analytics/inventory` | `INVENTORY_ANALYTICS_VIEW`; value/cost fields also `SALES_COST_VIEW` | Scope + accepted range/granularity + optional dimensions/current cutoff | Current availability/value and accepted source-separated movement/velocity/coverage | Insufficient/zero/reconciliation anomaly/deferred classification | Planned P6-M3; forecast/risk/reorder fields remain blocked `OQ-012` |
+| `GET /organizations/{organizationId}/analytics/branches` | `BUSINESS_ANALYTICS_VIEW` | Accepted period + authorized Branch set/filter | Same-definition comparable Branch metrics | Unauthorized Branch/non-comparable period | Planned P6-M2; contract accepted by `ADR-029` |
 | `GET /organizations/{organizationId}/analytics/forecast` | Forecast read | Scope + product/category + horizon | Versioned forecast + data status | Unsupported horizon/insufficient data | Blocked `OQ-012` |
-| `GET /organizations/{organizationId}/analytics/reorder-recommendations` | Reorder read | Scope + horizon/filter | Inputs + deterministic recommendations | Missing lead time/forecast/cost/unit | Blocked `OQ-011`, `OQ-012`; future cost/incoming-order semantics follow `ADR-026`; quantity representation follows `ADR-022` |
+| `GET /organizations/{organizationId}/analytics/reorder-recommendations` | Reorder read | Scope + horizon/filter | Inputs + deterministic recommendations | Missing lead time/forecast/cost/unit | Blocked `OQ-012`; Analytics V1 inputs follow `ADR-029`, future cost/incoming-order semantics follow `ADR-026`, and quantity representation follows `ADR-022` |
 
 Analytics error/null semantics:
 
 - No eligible facts may be a successful response with zero counts and explicit null reasons, not necessarily `404`.
 - Insufficient history is not a server error.
 - A computation failure is not converted to a numeric zero.
-- Organization response identifies included authorized branch scope.
+- `OWNER`/`ADMIN` Organization scope includes all Organization Branch history;
+  branch-only roles include only currently assigned active Branches. Organization
+  responses identify only included authorized Branch scope.
+- Net Sales may be negative. Margin is null when Net Sales is non-positive or required
+  cost is incomplete.
+- `INVENTORY_STAFF` receives only inventory-relevant non-cost analytics. `CASHIER` has
+  no analytics endpoint access. Frontend role checks are not the security boundary.
 
 ## 13. Persisted AI insight endpoints
 
@@ -1243,7 +1269,8 @@ Canonical definitions live in `BUILD_SPEC.md`:
 - Checkout/receipt/payment: `ADR-027` plus `ADR-016`, `ADR-022`, `ADR-024`, and `ADR-026`; `OQ-008` is resolved
 - Refund: `ADR-028` plus the applicable Sales/inventory/cost decisions; `OQ-009` is
   resolved and VOID is excluded from V1
-- Analytics/forecast: `OQ-011`, `OQ-012`, `OQ-016`
+- Analytics periods/base metrics: `ADR-029` (`OQ-011`, `OQ-016` resolved);
+  forecast/risk/reorder: `OQ-012`
 - AI scheduling/provider: `OQ-017`, `OQ-018`
 - Hosting, S3, operational exposure: `OQ-015`, `OQ-020`
 - Catalog normalization and lifecycle: `ADR-022`; supplier implementation remains sequenced for P4

@@ -52,7 +52,7 @@ Completing checks makes work ready for commit; it does not authorize a commit, p
 | [x] **P0-M2-T02 — Establish change protocol** | Prevent silent requirement drift | Record OQ/ADR/affected-document/plan update workflow | P0-M1-T10 | Future decisions have one owner and update path; implementers must stop at product/architecture ambiguity | Manual workflow trace completed |
 | [x] **P0-M2-T03 — Identity/onboarding/authorization gate** | Finalize rules before identity-domain implementation | Recorded accepted `OQ-003`–`OQ-006` and `OQ-022` rules for sessions, email lifecycle, onboarding, invitations, and fixed RBAC | Before affected Phase 2 implementation | Decisions accepted; build/data/API/use cases/ADR and permission matrix updated consistently | Cross-document trace plus session/token, invitation, delegation, escalation, and last-owner decision-boundary review completed 2026-08-22 |
 | [x] **P0-M2-T04 — Inventory/purchasing/sales gate** | Finalize stock, money, and cost rules before affected operations | `OQ-007` is resolved by `ADR-024`, `OQ-010`/`OQ-021` by `ADR-026`, sales-side `OQ-008` by `ADR-027`, refund behavior `OQ-009` by `ADR-028`, and `OQ-023` by `ADR-022` | Before affected inventory, purchasing, sales, and refund implementation | Worked examples and affected contracts agree; VOID is excluded and REFUND is implementation-ready | Stock, decimal, costing, checkout, receiving, and 12 refund boundary scenarios reviewed 2026-09-19 |
-| [ ] **P0-M2-T05 — Analytics/forecast gate** | Finalize numerical truth before analytics/forecast implementation | Resolve `OQ-011`, then `OQ-012`; preserve TypeScript/SQL calculation and summary-only LLM boundary | Before affected Phase 6 implementation | Every implemented metric/forecast/reorder rule has one accepted definition/version | Hand-calculated fixtures, time-boundary review, backtest design and leakage review |
+| [ ] **P0-M2-T05 — Analytics/forecast gate** | Finalize numerical truth before analytics/forecast implementation | `OQ-011` is resolved by `ADR-029`; resolve remaining `OQ-012` while preserving TypeScript/SQL calculation and summary-only LLM boundary | Before affected Phase 6 implementation | Every implemented metric/forecast/reorder rule has one accepted definition/version | Analytics fixtures/time-boundary review completed 2026-09-20; forecast backtest design and leakage review remain |
 
 The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, application shells, or unrelated work. Each gate blocks only the affected business-domain implementation. Cloud/operations questions such as `OQ-015`, `OQ-017`–`OQ-020` remain open until their relevant phases.
 
@@ -202,7 +202,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
-| [ ] **P6-M1-T01 — Close metric/timezone decisions** | Make analytics executable | Resolve `OQ-011`, `OQ-016`; eligible states, periods, comparisons, thresholds | Stable sales/inventory | Every metric in `docs/ANALYTICS.md` accepted/deferred with examples | Hand-calculated fixtures and boundary review |
+| [x] **P6-M1-T01 — Close metric/timezone decisions** | Make analytics executable | Resolved `OQ-011`, `OQ-016`; event eligibility, Organization IANA time, periods, comparisons, explicit accepted/deferred thresholds, exact decimal/null/cost rules | Stable sales/inventory | `ADR-029` and `docs/ANALYTICS.md` accept/defer every metric without runtime work | 14 hand-calculated Sale/refund/cost/time-boundary examples plus cross-document scrutiny completed 2026-09-20 |
 | [ ] **P6-M1-T02 — Period and scope engine** | Canonicalize time/authorized aggregation | Period selectors/boundaries, branch set resolution, completeness metadata | T01 | Half-open windows; no unauthorized branch; reproducible context | Timezone/boundary/DST-if-applicable/security tests |
 
 ### Milestone 6.2 — Deterministic sales analytics
@@ -218,7 +218,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
 | [ ] **P6-M3-T01 — Movement and coverage metrics** | Compute accepted velocity/coverage | ADS, coverage, fast/slow classifications as accepted | P6-M1, inventory/sales | Explicit zero/insufficient states | Fixed data, zero demand, negative-stock reconciliation anomaly, branch tests |
-| [ ] **P6-M3-T02 — Stock risk analytics** | Compute deterministic low/stockout/overstock risk | Accepted thresholds/input facts; no LLM | T01, forecast if required | Explainable inputs/status; no arbitrary thresholds | Threshold/boundary/insufficient fixtures |
+| [ ] **P6-M3-T02 — Stock risk analytics** | Compute deterministic low/stockout/overstock risk | Only classifications later accepted by `OQ-012` or a separate threshold decision; no LLM | T01 plus resolved threshold/forecast dependency | Explainable inputs/status; no arbitrary thresholds | Threshold/boundary/insufficient fixtures |
 | [ ] **P6-M3-T03 — Inventory analytics API/UI** | Deliver risk/movement views | Planned endpoints/charts/tables/filters | T01–T02 | Accessible, scoped, versioned outputs | API/UI/E2E/security/empty tests |
 
 ### Milestone 6.4 — Forecast and replenishment
@@ -327,7 +327,10 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 ## 2. Next Codex task
 
-Phase 1, Phase 2, Milestone 3.1, Milestone 3.2, the deferred-transfer decision gate, Phase 4 purchasing/receiving work, and Phase 5 are complete. `ADR-027` resolves `OQ-008`, and `ADR-028` resolves `OQ-009` with implemented REFUND behavior and no VOID operation. The exact current task is **P6-M1-T01 — Close metric/timezone decisions**.
+Phase 1, Phase 2, Milestone 3.1, Milestone 3.2, the deferred-transfer decision gate,
+Phase 4 purchasing/receiving work, Phase 5, and P6-M1-T01 are complete. `ADR-029`
+resolves `OQ-011` and `OQ-016` without runtime implementation. The exact current task
+is **P6-M1-T02 — Period and scope engine**.
 
 Current-state constraints that the next task must preserve:
 
@@ -339,7 +342,12 @@ Current-state constraints that the next task must preserve:
 - `.github/workflows/ci.yml` reproduces the frozen install, format-check, lint, typecheck, test, and build gates for pushes and pull requests with read-only repository permission and immutable action pins.
 - `apps/web` contains the Next.js App Router root shell, Tailwind/shadcn baseline, TanStack Query provider, strict environment boundary, same-origin health and `/api/v1` rewrites, authentication/onboarding, URL-owned `/app` context, Catalog, Inventory, branch/member, Supplier, Purchase Order/Receiving, POS, and `/app/sales` Sales History/detail/browser-receipt/refund UI. It has no Next.js business Route Handlers, persisted selection authority, dashboard, VOID UI, or branch-price behavior. The browser receipt uses the existing Sale detail response and remains original-Sale-only; no separate receipt or refund-document endpoint exists.
 - `OQ-002` is resolved by `ADR-012`: App Router under `src/app`, Server Components by default, justified Client Components only, deferred Route Groups, and Express-owned business REST APIs.
-- `OQ-003`–`OQ-010`, `OQ-021`, and `OQ-022` are resolved by `ADR-013`–`ADR-028`. `ADR-024` fixes quantity-only no-negative stock, `ADR-026` fixes moving-weighted-average cost, `ADR-027` fixes checkout, and `ADR-028` fixes the implemented linked REFUND contract without a VOID operation. P5-M1 through P5-M4 are implemented. `OQ-019` remains open beyond refund-owned immutable attribution/provenance, and `OQ-020` remains open beyond its narrow application-level limiter exceptions.
+- `OQ-003`–`OQ-011`, `OQ-016`, `OQ-021`, and `OQ-022` are resolved by
+  `ADR-013`–`ADR-029`. `ADR-029` fixes Organization reporting timezone, canonical
+  periods, event attribution, Analytics V1 metrics, cost/null/decimal semantics, and
+  explicit threshold deferrals. `OQ-012` remains open for forecasting/risk/reorder;
+  `OQ-019` remains open beyond refund-owned immutable attribution/provenance; and
+  `OQ-020` remains open beyond its narrow application-level limiter exceptions.
 - `OQ-013` is resolved by `ADR-025` as **DEFERRED FROM MVP**. Stock transfer remains broader/full future scope, but no transfer schema, API, UI, permission, lifecycle, ledger-source, or idempotency contract is implemented or frozen.
 - `apps/api` contains the Express app/server bootstrap, safe transport/errors, Prisma client, all accepted authentication endpoints, first onboarding, `GET /me/access-context`, branch lifecycle endpoints, invitation/member workflows, Catalog, Inventory, Supplier, Purchase Order, Receiving, and Sales. Sales includes bounded Organization VAT configuration, completed Sale/SaleItem/Payment snapshots and constraints, `SALE_CHECKOUT` hashes, tenant-safe negative `SALE` ledger provenance, atomic checkout, POS reads/checkout transport, branch-scoped history/detail reads with field-level cost permission, and immutable linked SaleRefund/SaleRefundItem/RefundPayment compensation with optional positive `SALE_REFUND_RETURN` stock/cost effects. Existing protected writes continue to derive the verified actor, re-evaluate centralized policy and tenant scope, and serialize their accepted invariants.
 - The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, and the bounded refund workflow are implemented. Analytics, AI, AWS resources, deployment, and release automation remain unimplemented.
@@ -350,9 +358,14 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P6-M1-T01 — Close metric/timezone decisions
+Task: P6-M1-T02 — Period and scope engine
 
-Follow the exact task row and resolve only `OQ-011` and `OQ-016`: accepted analytics metric eligibility/definitions and canonical reporting periods/timezone behavior, with hand-calculated examples and synchronized Source of Truth updates. Do not implement the period engine, analytics endpoints/UI, forecasting, AI, or infrastructure in this decision task.
+Implement only the canonical Organization reporting-time, period, authorized Branch-set,
+source-cutoff, and completeness engine accepted by `ADR-029`. Preserve half-open local
+calendar boundaries, Monday weeks, IANA/DST behavior, current-timezone rebucketing,
+the 366-local-day query limit, centralized authorization, and exact metadata. Do not
+implement sales/inventory metric repositories, analytics endpoints/UI, forecasting,
+AI, or infrastructure in this task.
 
 Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not commit without separate authorization.
 ```
