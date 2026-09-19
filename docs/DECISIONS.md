@@ -1945,9 +1945,9 @@ honest without delaying non-cost analytics.
 - P6-M1-T01 is documentation-only. It adds no Organization timezone column,
   migration, period engine, query repository, endpoint, dashboard, chart, job,
   forecast, AI integration, or index.
-- P6-M1-T02 is the next task and owns the Organization timezone persistence/settings
-  boundary plus canonical period/scope/completeness engine as planned. Later P6 tasks
-  implement only metrics marked Accepted; deferred/blocked classifications remain out.
+- P6-M1-T02 implements the Organization timezone persistence boundary plus canonical
+  period/scope/source-cutoff/completeness engine without a settings endpoint. Later P6
+  tasks implement only metrics marked Accepted; deferred/blocked classifications remain out.
 - Timezone changes can alter historical on-demand bucket membership. Responses and
   snapshots must expose timezone, exact UTC boundaries, definition version, scope, and
   source cutoff so this behavior is reviewable.

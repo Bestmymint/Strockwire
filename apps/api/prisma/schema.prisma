@@ -177,14 +177,15 @@ model User {
 }
 
 model Organization {
-  id             String             @id @default(uuid()) @db.Uuid
-  name           String             @db.VarChar(200)
-  status         OrganizationStatus @default(ACTIVE)
-  salesVatStatus SalesVatStatus     @default(UNCONFIGURED) @map("sales_vat_status")
-  salesVatRate   Decimal?           @map("sales_vat_rate") @db.Decimal(9, 6)
-  deactivatedAt  DateTime?          @map("deactivated_at") @db.Timestamptz(3)
-  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                String             @id @default(uuid()) @db.Uuid
+  name              String             @db.VarChar(200)
+  status            OrganizationStatus @default(ACTIVE)
+  salesVatStatus    SalesVatStatus     @default(UNCONFIGURED) @map("sales_vat_status")
+  salesVatRate      Decimal?           @map("sales_vat_rate") @db.Decimal(9, 6)
+  reportingTimezone String             @default("Asia/Bangkok") @map("reporting_timezone") @db.VarChar(255)
+  deactivatedAt     DateTime?          @map("deactivated_at") @db.Timestamptz(3)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   memberships           OrganizationMembership[]
   branches              Branch[]

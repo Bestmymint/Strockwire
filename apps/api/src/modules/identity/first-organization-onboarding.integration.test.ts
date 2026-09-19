@@ -181,6 +181,9 @@ describe("first organization onboarding with PostgreSQL", () => {
       await prisma.firstOrganizationOnboarding.findUniqueOrThrow({
         where: { userId: user.id },
       });
+    const persistedOrganization = await prisma.organization.findUniqueOrThrow({
+      where: { id: onboarding.organizationId },
+    });
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
@@ -207,6 +210,7 @@ describe("first organization onboarding with PostgreSQL", () => {
       displayName: "Owner  Name",
       phone: null,
     });
+    expect(persistedOrganization.reportingTimezone).toBe("Asia/Bangkok");
     expect(onboarding.requestHash).toBe(
       hashFirstOrganizationOnboardingRequest(canonicalInput),
     );

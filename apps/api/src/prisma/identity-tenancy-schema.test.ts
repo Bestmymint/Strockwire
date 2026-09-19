@@ -131,6 +131,11 @@ describe("identity and tenancy database schema", () => {
         finished: true,
         active: true,
       },
+      {
+        migrationName: "20260920120000_add_organization_reporting_timezone",
+        finished: true,
+        active: true,
+      },
     ]);
     expect(tables.map(({ tableName }) => tableName)).toEqual([
       "branch_assignments",
@@ -163,6 +168,39 @@ describe("identity and tenancy database schema", () => {
       "suppliers",
       "users",
     ]);
+  });
+
+  it("persists one required Organization reporting timezone and no Branch timezone", async () => {
+    const organization = await createOrganization("Reporting Timezone");
+    const organizationColumns = await prisma.$queryRaw<
+      { columnName: string; columnDefault: string | null; nullable: string }[]
+    >`
+      SELECT
+        column_name AS "columnName",
+        column_default AS "columnDefault",
+        is_nullable AS "nullable"
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'organizations'
+        AND column_name = 'reporting_timezone'
+    `;
+    const branchColumns = await prisma.$queryRaw<{ columnName: string }[]>`
+      SELECT column_name AS "columnName"
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'branches'
+        AND column_name = 'reporting_timezone'
+    `;
+
+    expect(organization.reportingTimezone).toBe("Asia/Bangkok");
+    expect(organizationColumns).toEqual([
+      {
+        columnDefault: "'Asia/Bangkok'::character varying",
+        columnName: "reporting_timezone",
+        nullable: "NO",
+      },
+    ]);
+    expect(branchColumns).toEqual([]);
   });
 
   it("creates tenant-safe multi-organization and multi-branch relationships", async () => {

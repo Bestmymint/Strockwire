@@ -237,8 +237,8 @@ Required logical attributes:
 - Organization status
 - Sales VAT application status: `UNCONFIGURED`, `NOT_REGISTERED`, or `REGISTERED`
 - Nullable sales VAT rate targeting `DECIMAL(9,6)`
-- Required IANA reporting timezone accepted by `ADR-029`; the P6-M1-T02 forward schema
-  task will add it with explicit `Asia/Bangkok` default/backfill and no Branch timezone
+- Required IANA reporting timezone accepted by `ADR-029`; P6-M1-T02 adds it through a
+  forward schema migration with explicit `Asia/Bangkok` default/backfill and no Branch timezone
 - Created/updated timestamps
 
 Constraints and indexes:
