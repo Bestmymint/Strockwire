@@ -126,6 +126,11 @@ describe("identity and tenancy database schema", () => {
         finished: true,
         active: true,
       },
+      {
+        migrationName: "20260919120000_add_sale_refunds",
+        finished: true,
+        active: true,
+      },
     ]);
     expect(tables.map(({ tableName }) => tableName)).toEqual([
       "branch_assignments",
@@ -149,7 +154,10 @@ describe("identity and tenancy database schema", () => {
       "purchase_orders",
       "purchase_receipt_items",
       "purchase_receipts",
+      "refund_payments",
       "sale_items",
+      "sale_refund_items",
+      "sale_refunds",
       "sales",
       "sessions",
       "suppliers",

@@ -690,7 +690,9 @@ behavior are accepted by `ADR-027`, which resolves `OQ-008`. P5-M1 and P5-M2 imp
 Sales persistence, checkout, HTTP, and POS UI; P5-M3 implements history/detail/browser
 receipt. `ADR-028` resolves `OQ-009` with linked REFUND compensation, optional
 same-branch restock, historical allocation/cost authority, and no VOID operation.
-P5-M4-T01 is documentation-only; P5-M4-T02 owns future refund runtime implementation.
+P5-M4-T01 accepted the decision contract, and P5-M4-T02 implements the bounded
+refund persistence, atomic service, authenticated API, history projection, and
+responsive UI without a VOID operation.
 
 Purchasing/receiving costing and receipt lifecycle are accepted by `ADR-026`.
 P4-M3-T01 implements Receipt persistence, the atomic receiving service, and the

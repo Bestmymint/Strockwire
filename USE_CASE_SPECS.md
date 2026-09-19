@@ -378,14 +378,14 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 - **Main flow:** Validate filters and scope; query paginated branch sales; load one allowed sale with immutable line/payment snapshots; render a browser-printable receipt.
 - **Alternative flows:** `CASHIER` sees assigned-branch sales history as required for cashier operations; `OWNER`/`ADMIN` may query organization-wide history and `BRANCH_MANAGER` assigned-branch history.
 - **Error cases:** Invalid range/cursor; inaccessible sale; revoked branch; missing historical optional product; database failure. Inaccessible and nonexistent records use safe behavior.
-- **Business rules:** Historical names/prices/costs/VAT/discount/payment come from Sale snapshots, not current Product, Organization VAT, or actor/Branch names. Receipt is a projection of Sale/SaleItems/Payment, not a separate aggregate, and never exposes COGS. Internal history never exposes cost to a role without permission. P5-M3 has no reversal projection; P5-M4-T02 may add the derived refund summary and linked detail accepted by `ADR-028` without mutating the original Sale or receipt.
+- **Business rules:** Historical names/prices/costs/VAT/discount/payment come from Sale snapshots, not current Product, Organization VAT, or actor/Branch names. Receipt is a projection of Sale/SaleItems/Payment, not a separate aggregate, and never exposes COGS. Internal history never exposes cost to a role without permission. P5-M4-T02 adds the derived refund summary and linked detail accepted by `ADR-028` without mutating the original Sale or receipt.
 - **Authorization:** Sales-read/receipt permission at resource branch; cost/margin fields need separate permission.
 - **Expected result:** Accurate, stable historical representation scoped to actor.
 - **Acceptance criteria:** Snapshot stability after catalog change; pagination/filter tests; cost-field authorization; cross-tenant and inaccessible-branch tests; printable responsive view.
 
 ### UC-SALE-003 — Refund a sale
 
-- **Status:** Accepted by `ADR-028` and ready for P5-M4-T02; no runtime implementation exists. VOID is not a V1 operation. Original Sales follow `ADR-027`, cost follows `ADR-026`, and stock follows `ADR-024`.
+- **Status:** Implemented by P5-M4-T02 under `ADR-028`. VOID is not a V1 operation. Original Sales follow `ADR-027`, cost follows `ADR-026`, and stock follows `ADR-024`.
 - **Actor:** `OWNER`, `ADMIN`, or an assigned `BRANCH_MANAGER`; CASHIER and INVENTORY_STAFF cannot create refunds.
 - **Preconditions:** The immutable original Sale belongs to the trusted Organization and an active authorized Branch, has one confirmed CASH or TRANSFER Payment, and at least one SaleItem has refundable quantity. There is no time cutoff. Current Product inactivity does not invalidate historical refund eligibility.
 - **Trigger:** Actor submits a required idempotency key, one or more unique original SaleItem IDs with positive refund quantity and a same-unit restock quantity from zero through the refund quantity, a required reason, and—when the original payment was TRANSFER—a manual refund-transfer reference.

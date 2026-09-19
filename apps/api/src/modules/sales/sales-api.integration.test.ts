@@ -17,6 +17,8 @@ import { SESSION_COOKIE_NAME } from "../identity/session-cookie.ts";
 import { generateSessionToken } from "../identity/session-token.ts";
 import { createPrismaCheckoutRepository } from "./checkout-repository.ts";
 import { createCheckoutService } from "./checkout-service.ts";
+import { createPrismaRefundRepository } from "./refund-repository.ts";
+import { createRefundService } from "./refund-service.ts";
 import { createPrismaSalesApiRepository } from "./sales-api-repository.ts";
 import { createSalesApiService } from "./sales-api-service.ts";
 import { createSalesRouter } from "./sales-router.ts";
@@ -181,6 +183,9 @@ describe("sales HTTP API with PostgreSQL", () => {
         repository: createPrismaCheckoutRepository(prisma, { now: () => NOW }),
       }),
       publicWebOrigin: "http://localhost:3000",
+      refundService: createRefundService({
+        repository: createPrismaRefundRepository(prisma, { now: () => NOW }),
+      }),
       salesApiService: createSalesApiService({
         repository: createPrismaSalesApiRepository(prisma, { now: () => NOW }),
       }),
@@ -237,6 +242,31 @@ describe("sales HTTP API with PostgreSQL", () => {
   }) {
     return fetch(
       `${input.base}/organizations/${input.organizationId}/branches/${input.branchId}/sales`,
+      {
+        body: JSON.stringify(input.body),
+        headers: requestHeaders(input.token, {
+          ...(input.idempotencyKey === undefined
+            ? {}
+            : { "idempotency-key": input.idempotencyKey }),
+          ...(input.origin === undefined ? {} : { origin: input.origin }),
+        }),
+        method: "POST",
+      },
+    );
+  }
+
+  async function postRefund(input: {
+    base: string;
+    body: unknown;
+    branchId: string;
+    idempotencyKey?: string | undefined;
+    organizationId: string;
+    origin?: string | undefined;
+    saleId: string;
+    token?: string | undefined;
+  }) {
+    return fetch(
+      `${input.base}/organizations/${input.organizationId}/branches/${input.branchId}/sales/${input.saleId}/refunds`,
       {
         body: JSON.stringify(input.body),
         headers: requestHeaders(input.token, {
@@ -1000,5 +1030,193 @@ describe("sales HTTP API with PostgreSQL", () => {
         })
       ).status,
     ).toBe(404);
+  });
+
+  it("creates linked refunds and projects partial/full state with role-filtered historical costs", async () => {
+    const value = await scope({ label: "Refund HTTP" });
+    const manager = await actor({ ...value, role: "BRANCH_MANAGER" });
+    const cashier = await actor({ ...value, role: "CASHIER" });
+    const inventoryStaff = await actor({ ...value, role: "INVENTORY_STAFF" });
+    const unassignedManager = await actor({
+      ...value,
+      assigned: false,
+      role: "BRANCH_MANAGER",
+    });
+    const [managerToken, cashierToken, staffToken, unassignedToken] =
+      await Promise.all(
+        [manager, cashier, inventoryStaff, unassignedManager].map(({ id }) =>
+          session(id),
+        ),
+      );
+    const productValue = await product({
+      basePrice: "25.0000",
+      branchId: value.branch.id,
+      name: "Refundable product",
+      organizationId: value.organization.id,
+      quantity: "10",
+    });
+    await prisma.inventoryCostState.update({
+      data: {
+        averageUnitCost: "10",
+        basisState: "KNOWN",
+        inventoryValue: "100",
+      },
+      where: {
+        branchId_productId: {
+          branchId: value.branch.id,
+          productId: productValue.id,
+        },
+      },
+    });
+    const base = await start();
+    const checkout = await postCheckout({
+      base,
+      body: {
+        items: [
+          {
+            expectedUnitPrice: "25.0000",
+            productId: productValue.id,
+            quantity: "2",
+          },
+        ],
+        payment: { amountTendered: "100", method: "CASH" },
+      },
+      branchId: value.branch.id,
+      idempotencyKey: "refund-source-sale",
+      organizationId: value.organization.id,
+      token: cashierToken,
+    });
+    expect(checkout.status).toBe(201);
+    const checkoutBody = (await checkout.json()) as {
+      data: { sale: { id: string; items: Array<{ id: string }> } };
+    };
+    const saleId = checkoutBody.data.sale.id;
+    const saleItemId = checkoutBody.data.sale.items[0]!.id;
+    const partialBody = {
+      items: [{ quantity: "1", restockQuantity: "1", saleItemId }],
+      reason: "Partial customer return",
+    };
+    const refundInput = {
+      base,
+      body: partialBody,
+      branchId: value.branch.id,
+      idempotencyKey: "refund-http-partial",
+      organizationId: value.organization.id,
+      saleId,
+      token: managerToken,
+    };
+    const created = await postRefund(refundInput);
+    expect(created.status).toBe(201);
+    expect(await created.json()).toMatchObject({
+      data: {
+        refund: {
+          items: [
+            {
+              cogsReversalAmount: "10.0000000000",
+              originalCostBasisState: "KNOWN",
+              refundQuantity: "1",
+              restockQuantity: "1",
+            },
+          ],
+          payment: { amount: "25.00", method: "CASH", reference: null },
+          totalAmount: "25.00",
+        },
+      },
+    });
+    expect((await postRefund(refundInput)).status).toBe(200);
+    expect(
+      (
+        await postRefund({
+          ...refundInput,
+          body: { ...partialBody, reason: "Changed retry intent" },
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await postRefund({
+          ...refundInput,
+          idempotencyKey: "refund-cashier-denied",
+          token: cashierToken,
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await postRefund({
+          ...refundInput,
+          idempotencyKey: "refund-unassigned-denied",
+          token: unassignedToken,
+        })
+      ).status,
+    ).toBe(403);
+
+    const historyEndpoint = `${base}/organizations/${value.organization.id}/branches/${value.branch.id}/sales`;
+    const summary = await fetch(historyEndpoint, {
+      headers: requestHeaders(cashierToken),
+    });
+    expect(summary.status).toBe(200);
+    expect(await summary.json()).toMatchObject({
+      data: {
+        sales: [
+          {
+            id: saleId,
+            refundedAmount: "25.00",
+            refundState: "PARTIALLY_REFUNDED",
+            remainingAmount: "25.00",
+          },
+        ],
+      },
+    });
+    const managerDetail = await fetch(`${historyEndpoint}/${saleId}`, {
+      headers: requestHeaders(managerToken),
+    });
+    expect(managerDetail.status).toBe(200);
+    const managerText = JSON.stringify(await managerDetail.json());
+    expect(managerText).toContain('"remainingRefundableQuantity":"1.0000"');
+    expect(managerText).toContain('"cogsReversalAmount":"10.0000000000"');
+    const cashierDetail = await fetch(`${historyEndpoint}/${saleId}`, {
+      headers: requestHeaders(cashierToken),
+    });
+    expect(cashierDetail.status).toBe(200);
+    expect(JSON.stringify(await cashierDetail.json())).not.toMatch(
+      /cogsReversalAmount|originalUnitCost|originalCostBasisState/,
+    );
+    expect(
+      (
+        await fetch(`${historyEndpoint}/${saleId}`, {
+          headers: requestHeaders(staffToken),
+        })
+      ).status,
+    ).toBe(403);
+
+    expect(
+      (
+        await postRefund({
+          ...refundInput,
+          body: {
+            items: [{ quantity: "1", restockQuantity: "1", saleItemId }],
+            reason: "Final customer return",
+          },
+          idempotencyKey: "refund-http-full",
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      await (
+        await fetch(historyEndpoint, { headers: requestHeaders(cashierToken) })
+      ).json(),
+    ).toMatchObject({
+      data: {
+        sales: [
+          {
+            id: saleId,
+            refundedAmount: "50.00",
+            refundState: "FULLY_REFUNDED",
+            remainingAmount: "0.00",
+          },
+        ],
+      },
+    });
   });
 });

@@ -153,6 +153,10 @@ function errorMessage(error: unknown): string {
       "A product in this cart no longer exists. Remove it and try again.",
     sale_not_found:
       "Checkout is temporarily unavailable. Your cart was kept unchanged.",
+    sale_already_fully_refunded:
+      "Checkout is temporarily unavailable. Your cart was kept unchanged.",
+    refund_quantity_exceeded:
+      "Checkout is temporarily unavailable. Your cart was kept unchanged.",
     stale_vat_profile:
       "The VAT profile changed. Refresh the latest VAT settings.",
     unavailable:

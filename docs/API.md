@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1 contract; implementation verified through P5-M3; refund API accepted for P5-M4-T02 |
+| Status | Architecture Freeze v1 contract; implementation verified through P5-M4 |
 | Base path | `/api/v1` |
 | Style | JSON REST |
 | Baseline | Architecture Freeze v1 |
@@ -865,9 +865,9 @@ inventory transaction, stock movement, cost update, or VAT record.
 | `PATCH /organizations/{organizationId}/sales-vat-profile` | `OWNER`, `ADMIN` | Exact `expectedUpdatedAt`; status and conditional rate | Updated sales VAT profile | Invalid state/rate, stale version, safe not-found/forbidden | Implemented; P5-M2-T02 |
 | `GET /organizations/{organizationId}/branches/{branchId}/pos/products` | Branch checkout | Query/barcode/cursor | Sellable product summaries with current server price/availability indicator | Invalid query, forbidden branch | Implemented; P5-M2-T02 |
 | `POST /organizations/{organizationId}/branches/{branchId}/sales` | `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`, assigned `CASHIER` | Required `Idempotency-Key`; unique cart lines, optional authorized discount, CASH/TRANSFER intent | `201` completed Sale-backed receipt; exact replay `200` | VAT config, price, stock, payment, discount, idempotency, concurrency | Implemented; P5-M2-T02; `ADR-027` |
-| `GET /organizations/{organizationId}/branches/{branchId}/sales` | `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`, assigned `CASHIER` | `cursor`, `limit`, absolute `createdAtFrom`/`createdAtTo`, `actorUserId`; no V1 refund-status filter | Historical Sale summaries; P5-M4 target adds derived refund state/amounts | Invalid query/range/cursor, safe forbidden | Implemented by P5-M3-T01; refund projection targeted by P5-M4-T02 |
-| `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}` | Branch sales read | None | Immutable Sale/line/payment/cost snapshots; P5-M4 target adds linked refunds and remaining quantities | Safe not-found/forbidden | Implemented by P5-M3-T01; refund projection targeted by P5-M4-T02 |
-| `POST /organizations/{organizationId}/branches/{branchId}/sales/{saleId}/refunds` | `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER` | Required `Idempotency-Key`; unique SaleItem quantities/restock quantities; required reason; conditional TRANSFER reference | `201` immutable linked SaleRefund; identical replay `200` | Historical allocation, cumulative quantity, payment, restock/cost, idempotency, concurrency | Planned for P5-M4-T02; `ADR-028`; no VOID endpoint |
+| `GET /organizations/{organizationId}/branches/{branchId}/sales` | `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`, assigned `CASHIER` | `cursor`, `limit`, absolute `createdAtFrom`/`createdAtTo`, `actorUserId`; no V1 refund-status filter | Historical Sale summaries with derived refund state/amounts | Invalid query/range/cursor, safe forbidden | Implemented by P5-M3-T01 and P5-M4-T02 |
+| `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}` | Branch sales read | None | Immutable Sale/line/payment/cost snapshots with linked refunds and remaining quantities | Safe not-found/forbidden | Implemented by P5-M3-T01 and P5-M4-T02 |
+| `POST /organizations/{organizationId}/branches/{branchId}/sales/{saleId}/refunds` | `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER` | Required `Idempotency-Key`; unique SaleItem quantities/restock quantities; required reason; conditional TRANSFER reference | `201` immutable linked SaleRefund; identical replay `200` | Historical allocation, cumulative quantity, payment, restock/cost, idempotency, concurrency | Implemented by P5-M4-T02; `ADR-028`; no VOID endpoint |
 
 Sales-history listing is ordered by `createdAt DESC, id DESC`. Its opaque, versioned
 cursor is bound to the Organization, Branch, `createdAtFrom`, `createdAtTo`, and
@@ -1051,10 +1051,10 @@ Rules:
   view later.
 - OpenRouter is never called in checkout.
 
-### Refund target contract
+### Refund contract
 
 `ADR-028` resolves `OQ-009` with REFUND only. No `/void`, Sale mutation, standalone
-refund-receipt, or refund-of-refund endpoint exists. P5-M4-T02 may implement the
+refund-receipt, or refund-of-refund endpoint exists. P5-M4-T02 implements the
 accepted create command and extend existing history/detail projections; the contract
 below does not claim that runtime implementation exists yet.
 
@@ -1121,7 +1121,7 @@ REFUND_QUANTITY_EXCEEDED`, `409 IDEMPOTENCY_CONFLICT`, and `400 VALIDATION_ERROR
 invalid quantity/restock/reason/reference or a zero-total request. Unexpected storage
 failures use generic `500 INTERNAL_ERROR` without SQL/Prisma details.
 
-P5-M4-T02 history projection adds derived refund state (`NONE`,
+The P5-M4-T02 history projection adds derived refund state (`NONE`,
 `PARTIALLY_REFUNDED`, `FULLY_REFUNDED`), cumulative refunded amount, and remaining
 amount while retaining the original Sale total. Detail adds linked refunds and
 per-line remaining quantities. Linked refunds order by `(completedAt ASC, id ASC)`;

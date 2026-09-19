@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   checkoutSale,
+  createSaleRefund,
   getSalesHistoryDetail,
   getSalesVatProfile,
   listSalesHistory,
@@ -184,6 +185,9 @@ describe("sales API client", () => {
         reference: null,
       },
       reference: "SALE-001",
+      refundedAmount: "0.00",
+      refundState: "NONE",
+      remainingAmount: "60.12",
       salesVatRate: null,
       salesVatStatus: "NOT_REGISTERED",
       subtotalAmount: "60.12",
@@ -217,11 +221,13 @@ describe("sales API client", () => {
                   productName: "Historical coffee",
                   productSku: "COFFEE-OLD",
                   quantity: "1.0000",
+                  remainingRefundableQuantity: "1.0000",
                   unit: "EA",
                   unitPrice: "60.1234",
                 },
               ],
               organizationName: "Store",
+              refunds: [],
             },
           },
         }),
@@ -244,6 +250,81 @@ describe("sales API client", () => {
     expect(String(fetchMock.mock.calls[1]?.[0])).not.toContain("/receipt");
   });
 
+  it("sends an idempotent linked refund intent and parses immutable refund snapshots", async () => {
+    const saleItemId = "50000000-0000-4000-8000-000000000001";
+    const refundId = "60000000-0000-4000-8000-000000000001";
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(
+        {
+          data: {
+            refund: {
+              actorDisplayName: "Manager",
+              branchId: BRANCH_ID,
+              completedAt: "2026-09-19T09:00:00.000Z",
+              currency: "THB",
+              discountAmount: "0.00",
+              grossAmount: "30.00",
+              id: refundId,
+              items: [
+                {
+                  cogsReversalAmount: "10.0000000000",
+                  id: "70000000-0000-4000-8000-000000000001",
+                  originalCostBasisState: "KNOWN",
+                  originalUnitCost: "10.000000",
+                  productId: PRODUCT_ID,
+                  refundQuantity: "1",
+                  restockQuantity: "1",
+                  reversedLineDiscount: "0.00",
+                  reversedLineGross: "30.00",
+                  reversedLineNet: "30.00",
+                  reversedLineOutputVat: "0.00",
+                  reversedLineTaxable: null,
+                  saleItemId,
+                },
+              ],
+              organizationId: ORGANIZATION_ID,
+              outputVatAmount: "0.00",
+              payment: { amount: "30.00", method: "CASH", reference: null },
+              reason: "Customer return",
+              reference: "REFUND-001",
+              saleId: SALE_ID,
+              salesVatRate: null,
+              salesVatStatus: "NOT_REGISTERED",
+              taxableAmount: null,
+              totalAmount: "30.00",
+            },
+          },
+        },
+        201,
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createSaleRefund(
+      { branchId: BRANCH_ID, organizationId: ORGANIZATION_ID },
+      SALE_ID,
+      "refund-key",
+      {
+        items: [{ quantity: "1", restockQuantity: "1", saleItemId }],
+        reason: "Customer return",
+        transferReference: null,
+      },
+    );
+
+    expect(result).toMatchObject({
+      id: refundId,
+      items: [{ cogsReversalAmount: "10.0000000000" }],
+      totalAmount: "30.00",
+    });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+      `/sales/${SALE_ID}/refunds`,
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      headers: { "Idempotency-Key": "refund-key" },
+      method: "POST",
+    });
+  });
+
   it.each([
     [409, "PRICE_CHANGED", "price_changed"],
     [409, "INSUFFICIENT_STOCK", "insufficient_stock"],
@@ -264,6 +345,30 @@ describe("sales API client", () => {
           discount: null,
           items: [],
           payment: { method: "TRANSFER", reference: null },
+        },
+      ),
+    ).rejects.toEqual(new SalesApiError(kind));
+  });
+
+  it.each([
+    [409, "REFUND_QUANTITY_EXCEEDED", "refund_quantity_exceeded"],
+    [409, "SALE_ALREADY_FULLY_REFUNDED", "sale_already_fully_refunded"],
+    [409, "IDEMPOTENCY_CONFLICT", "idempotency_conflict"],
+    [403, "FORBIDDEN", "forbidden"],
+  ] as const)("maps refund %s safely", async (status, code, kind) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ error: { code } }, status)),
+    );
+    await expect(
+      createSaleRefund(
+        { branchId: BRANCH_ID, organizationId: ORGANIZATION_ID },
+        SALE_ID,
+        "refund-key",
+        {
+          items: [],
+          reason: "Return",
+          transferReference: null,
         },
       ),
     ).rejects.toEqual(new SalesApiError(kind));

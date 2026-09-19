@@ -134,6 +134,21 @@ const PERMISSION_MATRIX = [
     scope: "organization-or-branch",
   },
   {
+    permission: PERMISSIONS.SALES_REFUND_CREATE,
+    allowedRoles: MANAGER_ROLES,
+    scope: "organization-or-branch",
+  },
+  {
+    permission: PERMISSIONS.SALES_REFUND_VIEW,
+    allowedRoles: CHECKOUT_AND_SALES_ROLES,
+    scope: "organization-or-branch",
+  },
+  {
+    permission: PERMISSIONS.SALES_REFUND_COST_VIEW,
+    allowedRoles: MANAGER_ROLES,
+    scope: "organization-or-branch",
+  },
+  {
     permission: PERMISSIONS.BUSINESS_ANALYTICS_VIEW,
     allowedRoles: MANAGER_ROLES,
     scope: "organization-or-branch",
@@ -576,13 +591,14 @@ describe("fail-closed and cross-tenant protections", () => {
     ).toBe(false);
   });
 
-  it("keeps OQ-009 refund and void authority outside the vocabulary", () => {
+  it("adds the accepted refund authority without adding void authority", () => {
     const permissions = Object.values(PERMISSIONS);
 
-    expect(permissions).not.toContain("sales.refund");
-    expect(permissions).not.toContain("sales.void");
-    expect(
-      permissions.every((permission) => !/refund|void/.test(permission)),
-    ).toBe(true);
+    expect(permissions).toContain("sales-refund.create");
+    expect(permissions).toContain("sales-refund.view");
+    expect(permissions).toContain("sales-refund-cost.view");
+    expect(permissions.every((permission) => !/void/.test(permission))).toBe(
+      true,
+    );
   });
 });

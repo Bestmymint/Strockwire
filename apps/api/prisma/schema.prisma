@@ -103,6 +103,12 @@ enum SaleIdempotencyOperation {
   @@map("sale_idempotency_operation")
 }
 
+enum SaleRefundIdempotencyOperation {
+  SALE_REFUND
+
+  @@map("sale_refund_idempotency_operation")
+}
+
 enum PaymentMethod {
   CASH
   TRANSFER
@@ -164,6 +170,7 @@ model User {
   inventoryTransactions    InventoryTransaction[]
   receivedPurchaseReceipts PurchaseReceipt[]        @relation("PurchaseReceiptReceiverUser")
   completedSales           Sale[]                   @relation("SaleActorUser")
+  completedSaleRefunds     SaleRefund[]             @relation("SaleRefundActorUser")
 
   @@unique([id, email], map: "users_id_email_key")
   @@map("users")
@@ -188,6 +195,7 @@ model Organization {
   purchaseOrders        PurchaseOrder[]
   purchaseReceipts      PurchaseReceipt[]
   sales                 Sale[]
+  saleRefunds           SaleRefund[]
   inventoryBalances     InventoryBalance[]
   inventoryCostStates   InventoryCostState[]
   inventoryTransactions InventoryTransaction[]
@@ -257,6 +265,7 @@ model Product {
   purchaseOrderItems    PurchaseOrderItem[]
   purchaseReceiptItems  PurchaseReceiptItem[]
   saleItems             SaleItem[]
+  saleRefundItems       SaleRefundItem[]
 
   @@unique([organizationId, sku], map: "products_organization_id_sku_key")
   @@unique([organizationId, barcode], map: "products_organization_id_barcode_key")
@@ -418,6 +427,7 @@ model Sale {
   actorMembership OrganizationMembership @relation("SaleActorMembership", fields: [organizationId, actorMembershipId, actorUserId], references: [organizationId, id, userId], onDelete: Restrict, onUpdate: Restrict, map: "sales_actor_membership_fkey")
   items           SaleItem[]
   payment         Payment?
+  refunds         SaleRefund[]
 
   @@unique([id, organizationId, branchId], map: "sales_item_scope_key")
   @@unique([id, organizationId, branchId, totalAmount], map: "sales_payment_scope_key")
@@ -451,9 +461,11 @@ model SaleItem {
   sale                 Sale                  @relation(fields: [saleId, organizationId, branchId], references: [id, organizationId, branchId], onDelete: Restrict, onUpdate: Restrict)
   product              Product               @relation(fields: [productId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
   inventoryTransaction InventoryTransaction?
+  refundItems          SaleRefundItem[]
 
   @@unique([saleId, productId], map: "sale_items_sale_id_product_id_key")
   @@unique([id, organizationId, branchId, productId], map: "sale_items_inventory_transaction_scope_key")
+  @@unique([id, saleId, organizationId, branchId, productId], map: "sale_items_refund_scope_key")
   @@map("sale_items")
 }
 
@@ -470,10 +482,102 @@ model Payment {
   confirmedAt       DateTime      @map("confirmed_at") @db.Timestamptz(3)
   createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  sale Sale @relation(fields: [saleId, organizationId, branchId, amount], references: [id, organizationId, branchId, totalAmount], onDelete: Restrict, onUpdate: Restrict, map: "payments_sale_scope_fkey")
+  sale           Sale            @relation(fields: [saleId, organizationId, branchId, amount], references: [id, organizationId, branchId, totalAmount], onDelete: Restrict, onUpdate: Restrict, map: "payments_sale_scope_fkey")
+  refundPayments RefundPayment[]
 
   @@unique([saleId, organizationId, branchId, amount], map: "payments_sale_scope_key")
+  @@unique([saleId, organizationId, branchId, method], map: "payments_refund_method_scope_key")
   @@map("payments")
+}
+
+model SaleRefund {
+  id                       String                         @id @default(uuid()) @db.Uuid
+  organizationId           String                         @map("organization_id") @db.Uuid
+  branchId                 String                         @map("branch_id") @db.Uuid
+  saleId                   String                         @map("sale_id") @db.Uuid
+  actorUserId              String                         @map("actor_user_id") @db.Uuid
+  actorMembershipId        String                         @map("actor_membership_id") @db.Uuid
+  reference                String                         @db.VarChar(43)
+  currency                 String                         @default("THB") @db.Char(3)
+  actorDisplayNameSnapshot String                         @map("actor_display_name_snapshot") @db.VarChar(200)
+  reason                   String                         @db.VarChar(200)
+  grossAmount              Decimal                        @map("gross_amount") @db.Decimal(38, 2)
+  discountAmount           Decimal                        @map("discount_amount") @db.Decimal(38, 2)
+  salesVatStatusSnapshot   SalesVatStatus                 @map("sales_vat_status_snapshot")
+  salesVatRateSnapshot     Decimal?                       @map("sales_vat_rate_snapshot") @db.Decimal(9, 6)
+  taxableAmount            Decimal?                       @map("taxable_amount") @db.Decimal(38, 2)
+  outputVatAmount          Decimal                        @map("output_vat_amount") @db.Decimal(38, 2)
+  totalAmount              Decimal                        @map("total_amount") @db.Decimal(38, 2)
+  idempotencyOperation     SaleRefundIdempotencyOperation @default(SALE_REFUND) @map("operation_type")
+  idempotencyKeyHash       String                         @map("idempotency_key_hash") @db.VarChar(64)
+  canonicalRequestHash     String                         @map("canonical_request_hash") @db.VarChar(64)
+  completedAt              DateTime                       @map("completed_at") @db.Timestamptz(3)
+  createdAt                DateTime                       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization    Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  branch          Branch                 @relation(fields: [branchId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
+  sale            Sale                   @relation(fields: [saleId, organizationId, branchId], references: [id, organizationId, branchId], onDelete: Restrict, onUpdate: Restrict)
+  actorUser       User                   @relation("SaleRefundActorUser", fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actorMembership OrganizationMembership @relation("SaleRefundActorMembership", fields: [organizationId, actorMembershipId, actorUserId], references: [organizationId, id, userId], onDelete: Restrict, onUpdate: Restrict, map: "sale_refunds_actor_membership_fkey")
+  items           SaleRefundItem[]
+  payment         RefundPayment?
+
+  @@unique([id, organizationId, branchId, saleId], map: "sale_refunds_item_scope_key")
+  @@unique([id, organizationId, branchId, saleId, totalAmount], map: "sale_refunds_payment_scope_key")
+  @@unique([organizationId, reference], map: "sale_refunds_organization_id_reference_key")
+  @@unique([organizationId, idempotencyOperation, idempotencyKeyHash], map: "sale_refunds_idempotency_scope_key")
+  @@index([organizationId, branchId, saleId, completedAt, id], map: "sale_refunds_sale_completed_at_id_idx")
+  @@map("sale_refunds")
+}
+
+model SaleRefundItem {
+  id                     String                  @id @default(uuid()) @db.Uuid
+  saleRefundId           String                  @map("sale_refund_id") @db.Uuid
+  saleId                 String                  @map("sale_id") @db.Uuid
+  saleItemId             String                  @map("sale_item_id") @db.Uuid
+  organizationId         String                  @map("organization_id") @db.Uuid
+  branchId               String                  @map("branch_id") @db.Uuid
+  productId              String                  @map("product_id") @db.Uuid
+  refundQuantity         Decimal                 @map("refund_quantity") @db.Decimal(18, 4)
+  restockQuantity        Decimal                 @map("restock_quantity") @db.Decimal(18, 4)
+  reversedLineGross      Decimal                 @map("reversed_line_gross") @db.Decimal(38, 2)
+  reversedLineDiscount   Decimal                 @map("reversed_line_discount") @db.Decimal(38, 2)
+  reversedLineNet        Decimal                 @map("reversed_line_net") @db.Decimal(38, 2)
+  reversedLineTaxable    Decimal?                @map("reversed_line_taxable") @db.Decimal(38, 2)
+  reversedLineOutputVat  Decimal                 @map("reversed_line_output_vat") @db.Decimal(38, 2)
+  originalCostBasisState InventoryCostBasisState @map("original_cost_basis_state")
+  originalUnitCost       Decimal?                @map("original_unit_cost") @db.Decimal(19, 6)
+  cogsReversalAmount     Decimal?                @map("cogs_reversal_amount") @db.Decimal(38, 10)
+  createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  saleRefund           SaleRefund            @relation(fields: [saleRefundId, organizationId, branchId, saleId], references: [id, organizationId, branchId, saleId], onDelete: Restrict, onUpdate: Restrict)
+  saleItem             SaleItem              @relation(fields: [saleItemId, saleId, organizationId, branchId, productId], references: [id, saleId, organizationId, branchId, productId], onDelete: Restrict, onUpdate: Restrict)
+  product              Product               @relation(fields: [productId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
+  inventoryTransaction InventoryTransaction?
+
+  @@unique([saleRefundId, saleItemId], map: "sale_refund_items_refund_item_key")
+  @@unique([id, organizationId, branchId, productId], map: "sale_refund_items_inventory_transaction_scope_key")
+  @@index([saleItemId], map: "sale_refund_items_sale_item_id_idx")
+  @@map("sale_refund_items")
+}
+
+model RefundPayment {
+  id                String        @id @default(uuid()) @db.Uuid
+  saleRefundId      String        @unique(map: "refund_payments_sale_refund_id_key") @map("sale_refund_id") @db.Uuid
+  saleId            String        @map("sale_id") @db.Uuid
+  organizationId    String        @map("organization_id") @db.Uuid
+  branchId          String        @map("branch_id") @db.Uuid
+  method            PaymentMethod
+  amount            Decimal       @db.Decimal(38, 2)
+  transferReference String?       @map("transfer_reference") @db.VarChar(100)
+  confirmedAt       DateTime      @map("confirmed_at") @db.Timestamptz(3)
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  saleRefund      SaleRefund @relation(fields: [saleRefundId, organizationId, branchId, saleId, amount], references: [id, organizationId, branchId, saleId, totalAmount], onDelete: Restrict, onUpdate: Restrict, map: "refund_payments_refund_scope_fkey")
+  originalPayment Payment    @relation(fields: [saleId, organizationId, branchId, method], references: [saleId, organizationId, branchId, method], onDelete: Restrict, onUpdate: Restrict, map: "refund_payments_original_method_fkey")
+
+  @@unique([saleRefundId, organizationId, branchId, saleId, amount], map: "refund_payments_refund_scope_key")
+  @@map("refund_payments")
 }
 
 model OrganizationMembership {
@@ -500,6 +604,7 @@ model OrganizationMembership {
   createdPurchaseOrders       PurchaseOrder[]              @relation("PurchaseOrderCreator")
   receivedPurchaseReceipts    PurchaseReceipt[]            @relation("PurchaseReceiptReceiverMembership")
   completedSales              Sale[]                       @relation("SaleActorMembership")
+  completedSaleRefunds        SaleRefund[]                 @relation("SaleRefundActorMembership")
 
   @@id([organizationId, userId], map: "organization_memberships_pkey")
   @@unique([organizationId, id], map: "organization_memberships_organization_id_id_key")
@@ -532,6 +637,7 @@ model Branch {
   purchaseOrders              PurchaseOrder[]
   purchaseReceipts            PurchaseReceipt[]
   sales                       Sale[]
+  saleRefunds                 SaleRefund[]
 
   @@unique([organizationId, code], map: "branches_organization_id_code_key")
   @@unique([id, organizationId], map: "branches_id_organization_id_key")
@@ -590,6 +696,7 @@ model InventoryTransaction {
   canonicalRequestHash  String?  @map("canonical_request_hash") @db.VarChar(64)
   purchaseReceiptItemId String?  @map("purchase_receipt_item_id") @db.Uuid
   saleItemId            String?  @map("sale_item_id") @db.Uuid
+  saleRefundItemId      String?  @map("sale_refund_item_id") @db.Uuid
   occurredAt            DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
 
   organization        Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
@@ -599,10 +706,12 @@ model InventoryTransaction {
   actorMembership     OrganizationMembership @relation("InventoryTransactionActorMembership", fields: [organizationId, actorMembershipId, actorUserId], references: [organizationId, id, userId], onDelete: Restrict, onUpdate: Restrict, map: "inventory_transactions_actor_membership_fkey")
   purchaseReceiptItem PurchaseReceiptItem?   @relation(fields: [purchaseReceiptItemId, organizationId, branchId, productId], references: [id, organizationId, branchId, productId], onDelete: Restrict, onUpdate: Restrict, map: "inventory_transactions_purchase_receipt_item_fkey")
   saleItem            SaleItem?              @relation(fields: [saleItemId, organizationId, branchId, productId], references: [id, organizationId, branchId, productId], onDelete: Restrict, onUpdate: Restrict, map: "inventory_transactions_sale_item_fkey")
+  saleRefundItem      SaleRefundItem?        @relation(fields: [saleRefundItemId, organizationId, branchId, productId], references: [id, organizationId, branchId, productId], onDelete: Restrict, onUpdate: Restrict, map: "inventory_transactions_sale_refund_item_fkey")
 
   @@unique([organizationId, idempotencyKeyHash], map: "inventory_transactions_organization_id_idempotency_key_hash_key")
   @@unique([purchaseReceiptItemId, organizationId, branchId, productId], map: "inventory_transactions_purchase_receipt_item_scope_key")
   @@unique([saleItemId, organizationId, branchId, productId], map: "inventory_transactions_sale_item_scope_key")
+  @@unique([saleRefundItemId, organizationId, branchId, productId], map: "inventory_transactions_sale_refund_item_scope_key")
   @@index([branchId, productId, occurredAt, id], map: "inventory_transactions_branch_product_time_idx")
   @@map("inventory_transactions")
 }

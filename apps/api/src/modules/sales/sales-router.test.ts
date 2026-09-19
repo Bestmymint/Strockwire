@@ -12,6 +12,8 @@ import type {
   SafeCheckoutSale,
 } from "./checkout-repository.ts";
 import { createCheckoutService } from "./checkout-service.ts";
+import type { RefundRepository, SafeSaleRefund } from "./refund-repository.ts";
+import { createRefundService } from "./refund-service.ts";
 import type { SalesApiRepository } from "./sales-api-repository.ts";
 import { createSalesApiService } from "./sales-api-service.ts";
 import { createSalesRouter } from "./sales-router.ts";
@@ -72,6 +74,43 @@ const sale: SafeCheckoutSale = {
   vatRateSnapshot: null,
 };
 
+const refund: SafeSaleRefund = {
+  actorDisplayName: "Manager",
+  branchId: BRANCH_ID,
+  completedAt: "2026-09-19T09:00:00.000Z",
+  currency: "THB",
+  discountAmount: "0.00",
+  grossAmount: "60.12",
+  id: "60000000-0000-4000-8000-000000000001",
+  items: [
+    {
+      cogsReversalAmount: "20.0000000000",
+      id: "70000000-0000-4000-8000-000000000001",
+      originalCostBasisState: "KNOWN",
+      originalUnitCost: "20.000000",
+      productId: PRODUCT_ID,
+      refundQuantity: "1",
+      restockQuantity: "1",
+      reversedLineDiscount: "0.00",
+      reversedLineGross: "60.12",
+      reversedLineNet: "60.12",
+      reversedLineOutputVat: "0.00",
+      reversedLineTaxable: null,
+      saleItemId: sale.items[0]!.id,
+    },
+  ],
+  organizationId: ORGANIZATION_ID,
+  outputVatAmount: "0.00",
+  payment: { amount: "60.12", method: "CASH", reference: null },
+  reason: "Customer return",
+  reference: "REFUND-60000000-0000-4000-8000-000000000001",
+  saleId: sale.id,
+  salesVatRate: null,
+  salesVatStatus: "NOT_REGISTERED",
+  taxableAmount: null,
+  totalAmount: "60.12",
+};
+
 describe("sales router", () => {
   let server: RunningApiServer | undefined;
 
@@ -85,6 +124,9 @@ describe("sales router", () => {
     checkout = vi
       .fn<CheckoutRepository["checkout"]>()
       .mockResolvedValue({ kind: "success", sale }),
+    createRefund = vi
+      .fn<RefundRepository["createRefund"]>()
+      .mockResolvedValue({ kind: "not_found" }),
     getSalesVatProfile = vi
       .fn<SalesApiRepository["getSalesVatProfile"]>()
       .mockResolvedValue({
@@ -131,6 +173,7 @@ describe("sales router", () => {
   }: {
     authenticated?: boolean;
     checkout?: CheckoutRepository["checkout"];
+    createRefund?: RefundRepository["createRefund"];
     getSalesVatProfile?: SalesApiRepository["getSalesVatProfile"];
     getSalesHistoryDetail?: SalesApiRepository["getSalesHistoryDetail"];
     listSalesHistory?: SalesApiRepository["listSalesHistory"];
@@ -165,6 +208,7 @@ describe("sales router", () => {
       }),
       checkoutService: createCheckoutService({ repository: { checkout } }),
       publicWebOrigin: "http://localhost:3000",
+      refundService: createRefundService({ repository: { createRefund } }),
       salesApiService: createSalesApiService({ repository: salesRepository }),
     });
     server = await startApiServer(createApp({ apiRouter: router, logger }), {
@@ -174,6 +218,7 @@ describe("sales router", () => {
     return {
       base: `http://${server.address.host}:${server.address.port}/api/v1`,
       checkout,
+      createRefund,
       getSalesVatProfile,
       getSalesHistoryDetail,
       listSalesHistory,
@@ -203,6 +248,128 @@ describe("sales router", () => {
       payment: { amountTendered: "100.00", method: "CASH" },
     };
   }
+
+  function refundBody() {
+    return {
+      items: [
+        {
+          quantity: "1.0000",
+          restockQuantity: "1.0000",
+          saleItemId: sale.items[0]!.id,
+        },
+      ],
+      reason: "  Customer return  ",
+    };
+  }
+
+  it("passes trusted scope and strict refund intent and returns create/replay status", async () => {
+    const createRefund = vi
+      .fn<RefundRepository["createRefund"]>()
+      .mockResolvedValueOnce({ kind: "success", refund })
+      .mockResolvedValueOnce({ kind: "replay", refund });
+    const value = await start({ createRefund });
+    const endpoint = `${value.base}/organizations/${ORGANIZATION_ID}/branches/${BRANCH_ID}/sales/${sale.id}/refunds`;
+
+    const created = await fetch(endpoint, {
+      body: JSON.stringify(refundBody()),
+      headers: headers({ "idempotency-key": "refund-key" }),
+      method: "POST",
+    });
+    const replayed = await fetch(endpoint, {
+      body: JSON.stringify(refundBody()),
+      headers: headers({ "idempotency-key": "refund-key" }),
+      method: "POST",
+    });
+
+    expect(created.status).toBe(201);
+    expect(replayed.status).toBe(200);
+    expect(value.createRefund).toHaveBeenNthCalledWith(1, {
+      actorUserId: "trusted-user-id",
+      branchId: BRANCH_ID,
+      idempotencyKey: "refund-key",
+      items: refundBody().items,
+      organizationId: ORGANIZATION_ID,
+      reason: "  Customer return  ",
+      saleId: sale.id,
+      transferReference: null,
+    });
+    const text = JSON.stringify(await created.json());
+    expect(text).toContain('"reference":"REFUND-');
+    expect(text).not.toMatch(/canonicalRequestHash|idempotencyKeyHash/i);
+  });
+
+  it.each([
+    ["forbidden", 403, "FORBIDDEN"],
+    ["not_found", 404, "SALE_NOT_FOUND"],
+    ["branch_inactive", 409, "BRANCH_INACTIVE"],
+    ["refund_quantity_exceeded", 409, "REFUND_QUANTITY_EXCEEDED"],
+    ["sale_already_fully_refunded", 409, "SALE_ALREADY_FULLY_REFUNDED"],
+    ["idempotency_conflict", 409, "IDEMPOTENCY_CONFLICT"],
+    ["invalid_quantity", 400, "VALIDATION_ERROR"],
+    ["invalid_restock", 400, "VALIDATION_ERROR"],
+    ["invalid_transfer_reference", 400, "VALIDATION_ERROR"],
+  ] as const)("maps refund %s safely", async (kind, status, code) => {
+    const createRefund = vi
+      .fn<RefundRepository["createRefund"]>()
+      .mockResolvedValue({ kind });
+    const value = await start({ createRefund });
+    const response = await fetch(
+      `${value.base}/organizations/${ORGANIZATION_ID}/branches/${BRANCH_ID}/sales/${sale.id}/refunds`,
+      {
+        body: JSON.stringify(refundBody()),
+        headers: headers({ "idempotency-key": "refund-key" }),
+        method: "POST",
+      },
+    );
+    expect(response.status).toBe(status);
+    const text = JSON.stringify(await response.json());
+    expect(text).toContain(code);
+    expect(text).not.toMatch(/Prisma|SQL|advisory|constraint|stack/i);
+  });
+
+  it("rejects unauthenticated, cross-site, missing-key, and malformed refund requests before the service", async () => {
+    const unauthenticated = await start({ authenticated: false });
+    const url = `${unauthenticated.base}/organizations/${ORGANIZATION_ID}/branches/${BRANCH_ID}/sales/${sale.id}/refunds`;
+    expect(
+      (
+        await fetch(url, {
+          body: JSON.stringify(refundBody()),
+          headers: headers({ "idempotency-key": "key" }),
+          method: "POST",
+        })
+      ).status,
+    ).toBe(401);
+    await server?.stop();
+    server = undefined;
+
+    const value = await start();
+    const endpoint = `${value.base}/organizations/${ORGANIZATION_ID}/branches/${BRANCH_ID}/sales/${sale.id}/refunds`;
+    for (const [body, extraHeaders, expected] of [
+      [
+        refundBody(),
+        { "idempotency-key": "key", origin: "https://evil.example" },
+        403,
+      ],
+      [refundBody(), {}, 400],
+      [
+        { ...refundBody(), unexpected: true },
+        { "idempotency-key": "key" },
+        400,
+      ],
+      [{ ...refundBody(), items: [] }, { "idempotency-key": "key" }, 400],
+    ] as const) {
+      expect(
+        (
+          await fetch(endpoint, {
+            body: JSON.stringify(body),
+            headers: headers(extraHeaders),
+            method: "POST",
+          })
+        ).status,
+      ).toBe(expected);
+    }
+    expect(value.createRefund).not.toHaveBeenCalled();
+  });
 
   it("passes trusted scope and strict checkout intent to the existing service", async () => {
     const value = await start();

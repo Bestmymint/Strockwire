@@ -90,6 +90,48 @@ const posProductsResponseSchema = z.object({
 const checkoutResponseSchema = z.object({
   data: z.object({ sale: saleSchema }),
 });
+const refundItemSchema = z.object({
+  cogsReversalAmount: z.string().nullable().optional(),
+  id: z.string().uuid(),
+  originalCostBasisState: z.enum(["KNOWN", "UNKNOWN"]).optional(),
+  originalUnitCost: z.string().nullable().optional(),
+  productId: z.string().uuid(),
+  refundQuantity: z.string(),
+  restockQuantity: z.string(),
+  reversedLineDiscount: z.string(),
+  reversedLineGross: z.string(),
+  reversedLineNet: z.string(),
+  reversedLineOutputVat: z.string(),
+  reversedLineTaxable: z.string().nullable(),
+  saleItemId: z.string().uuid(),
+});
+const refundSchema = z.object({
+  actorDisplayName: z.string(),
+  branchId: z.string().uuid(),
+  completedAt: timestampSchema,
+  currency: z.literal("THB"),
+  discountAmount: z.string(),
+  grossAmount: z.string(),
+  id: z.string().uuid(),
+  items: z.array(refundItemSchema),
+  organizationId: z.string().uuid(),
+  outputVatAmount: z.string(),
+  payment: z.object({
+    amount: z.string(),
+    method: z.enum(["CASH", "TRANSFER"]),
+    reference: z.string().nullable(),
+  }),
+  reason: z.string(),
+  reference: z.string(),
+  saleId: z.string().uuid(),
+  salesVatRate: z.string().nullable(),
+  salesVatStatus: z.enum(["NOT_REGISTERED", "REGISTERED"]),
+  taxableAmount: z.string().nullable(),
+  totalAmount: z.string(),
+});
+const refundResponseSchema = z.object({
+  data: z.object({ refund: refundSchema }),
+});
 const salesHistorySummarySchema = z.object({
   actorDisplayName: z.string(),
   createdAt: timestampSchema,
@@ -101,6 +143,9 @@ const salesHistorySummarySchema = z.object({
   outputVatAmount: z.string(),
   payment: saleSchema.shape.payment,
   reference: z.string(),
+  refundedAmount: z.string(),
+  refundState: z.enum(["NONE", "PARTIALLY_REFUNDED", "FULLY_REFUNDED"]),
+  remainingAmount: z.string(),
   salesVatRate: z.string().nullable(),
   salesVatStatus: z.enum(["NOT_REGISTERED", "REGISTERED"]),
   subtotalAmount: z.string(),
@@ -124,12 +169,14 @@ const salesHistoryDetailSchema = salesHistorySummarySchema.extend({
       productName: z.string(),
       productSku: z.string(),
       quantity: z.string(),
+      remainingRefundableQuantity: z.string(),
       unit: z.string(),
       unitCost: z.string().nullable().optional(),
       unitPrice: z.string(),
     }),
   ),
   organizationName: z.string(),
+  refunds: z.array(refundSchema),
 });
 const salesHistoryListResponseSchema = z.object({
   data: z.object({ sales: z.array(salesHistorySummarySchema) }),
@@ -145,6 +192,16 @@ export type PosUnit = z.infer<typeof productUnitSchema>;
 export type CompletedSale = z.infer<typeof saleSchema>;
 export type SalesHistorySummary = z.infer<typeof salesHistorySummarySchema>;
 export type SalesHistoryDetail = z.infer<typeof salesHistoryDetailSchema>;
+export type SaleRefund = z.infer<typeof refundSchema>;
+export type RefundInput = {
+  items: Array<{
+    quantity: string;
+    restockQuantity: string;
+    saleItemId: string;
+  }>;
+  reason: string;
+  transferReference: string | null;
+};
 export type CheckoutInput = {
   discount:
     | { amount: string; reason: string; type: "AMOUNT" }
@@ -172,6 +229,8 @@ export type SalesApiErrorKind =
   | "product_inactive"
   | "product_not_found"
   | "sale_not_found"
+  | "sale_already_fully_refunded"
+  | "refund_quantity_exceeded"
   | "stale_vat_profile"
   | "unavailable"
   | "validation"
@@ -223,6 +282,8 @@ function errorFromResponse(status: number, body: unknown): SalesApiError {
     PRODUCT_INACTIVE: "product_inactive",
     PRODUCT_NOT_FOUND: "product_not_found",
     SALE_NOT_FOUND: "sale_not_found",
+    SALE_ALREADY_FULLY_REFUNDED: "sale_already_fully_refunded",
+    REFUND_QUANTITY_EXCEEDED: "refund_quantity_exceeded",
     SALES_VAT_PROFILE_STALE: "stale_vat_profile",
     VAT_CONFIGURATION_REQUIRED: "vat_configuration_required",
     VALIDATION_ERROR: "validation",
@@ -320,4 +381,20 @@ export async function getSalesHistoryDetail(
     salesHistoryDetailResponseSchema,
     await request(salesPath(context, `sales/${saleId}`)),
   ).data.sale;
+}
+
+export async function createSaleRefund(
+  context: SalesRequestContext,
+  saleId: string,
+  idempotencyKey: string,
+  input: RefundInput,
+): Promise<SaleRefund> {
+  return parse(
+    refundResponseSchema,
+    await request(salesPath(context, `sales/${saleId}/refunds`), {
+      body: JSON.stringify(input),
+      headers: { "Idempotency-Key": idempotencyKey },
+      method: "POST",
+    }),
+  ).data.refund;
 }

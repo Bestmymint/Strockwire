@@ -23,6 +23,8 @@ import { createCheckoutService } from "./modules/sales/checkout-service.ts";
 import { createPrismaSalesApiRepository } from "./modules/sales/sales-api-repository.ts";
 import { createSalesApiService } from "./modules/sales/sales-api-service.ts";
 import { createSalesRouter } from "./modules/sales/sales-router.ts";
+import { createPrismaRefundRepository } from "./modules/sales/refund-repository.ts";
+import { createRefundService } from "./modules/sales/refund-service.ts";
 import { createPrismaAuthenticationRepository } from "./modules/identity/authentication-repository.ts";
 import { createPrismaAuthenticationSessionRepository } from "./modules/identity/authentication-repository.ts";
 import { createAuthenticationMiddleware } from "./modules/identity/authentication-context.ts";
@@ -128,6 +130,9 @@ async function main(): Promise<void> {
   const salesApiService = createSalesApiService({
     repository: createPrismaSalesApiRepository(prisma),
   });
+  const refundService = createRefundService({
+    repository: createPrismaRefundRepository(prisma),
+  });
   const apiRouter = Router();
   apiRouter.use(
     createRegistrationRouter({
@@ -213,6 +218,7 @@ async function main(): Promise<void> {
       authenticationMiddleware,
       checkoutService,
       publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
+      refundService,
       salesApiService,
     }),
   );

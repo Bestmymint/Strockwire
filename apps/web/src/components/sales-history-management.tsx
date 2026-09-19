@@ -3,11 +3,13 @@
 import {
   type InfiniteData,
   useInfiniteQuery,
+  useMutation,
   useQuery,
+  useQueryClient,
 } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   applicationContextUrl,
@@ -18,6 +20,7 @@ import {
   fetchAccessContext,
 } from "@/branch-api-client";
 import {
+  createSaleRefund,
   getSalesHistoryDetail,
   listSalesHistory,
   type SalesApiErrorKind,
@@ -35,6 +38,11 @@ const HISTORY_ROLES = new Set<SalesHistoryRole>([
   "ADMIN",
   "BRANCH_MANAGER",
   "CASHIER",
+]);
+const REFUND_CREATE_ROLES = new Set<SalesHistoryRole>([
+  "OWNER",
+  "ADMIN",
+  "BRANCH_MANAGER",
 ]);
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -73,6 +81,9 @@ function errorMessage(error: unknown): string {
     product_inactive: "Sales history is temporarily unavailable. Try again.",
     product_not_found: "Sales history is temporarily unavailable. Try again.",
     sale_not_found: "This sale is no longer available at this branch.",
+    sale_already_fully_refunded: "This sale is already fully refunded.",
+    refund_quantity_exceeded:
+      "A refund quantity exceeds what remains on the original sale.",
     stale_vat_profile: "Sales history is temporarily unavailable. Try again.",
     unavailable: "Sales history is temporarily unavailable. Try again.",
     validation: "Check the cashier user ID and try again.",
@@ -280,6 +291,7 @@ function SalesHistoryContent({
       />
       {selectedSaleId !== null ? (
         <SalesDetail
+          canCreateRefund={REFUND_CREATE_ROLES.has(organization.role)}
           context={context}
           saleId={selectedSaleId}
           scopeKey={scopeKey}
@@ -341,6 +353,10 @@ function SalesList({
                     {formatAbsoluteTimestamp(sale.createdAt)} · {sale.itemCount}{" "}
                     item{sale.itemCount === 1 ? "" : "s"}
                   </p>
+                  <p className="text-muted-foreground">
+                    {sale.refundState.replaceAll("_", " ")} · Remaining{" "}
+                    {formatThb(sale.remainingAmount)}
+                  </p>
                 </td>
                 <td className="px-4 py-3">{sale.actorDisplayName}</td>
                 <td className="px-4 py-3">{sale.payment.method}</td>
@@ -375,10 +391,12 @@ function SalesList({
 }
 
 function SalesDetail({
+  canCreateRefund,
   context,
   saleId,
   scopeKey,
 }: {
+  canCreateRefund: boolean;
   context: SalesRequestContext;
   saleId: string;
   scopeKey: readonly unknown[];
@@ -396,12 +414,29 @@ function SalesDetail({
       {detailQuery.isError ? (
         <p role="alert">{errorMessage(detailQuery.error)}</p>
       ) : null}
-      {detailQuery.data ? <SaleDetailContent sale={detailQuery.data} /> : null}
+      {detailQuery.data ? (
+        <SaleDetailContent
+          canCreateRefund={canCreateRefund}
+          context={context}
+          sale={detailQuery.data}
+          scopeKey={scopeKey}
+        />
+      ) : null}
     </section>
   );
 }
 
-function SaleDetailContent({ sale }: { sale: SalesHistoryDetail }) {
+function SaleDetailContent({
+  canCreateRefund,
+  context,
+  sale,
+  scopeKey,
+}: {
+  canCreateRefund: boolean;
+  context: SalesRequestContext;
+  sale: SalesHistoryDetail;
+  scopeKey: readonly unknown[];
+}) {
   const includesCosts = sale.items.some(
     (item) => item.cogsAmount !== undefined || item.unitCost !== undefined,
   );
@@ -422,8 +457,277 @@ function SaleDetailContent({ sale }: { sale: SalesHistoryDetail }) {
       <SaleTotals sale={sale} />
       <PaymentDetails payment={sale.payment} />
       {includesCosts ? <CostDetails sale={sale} /> : null}
+      <RefundHistory sale={sale} />
+      {canCreateRefund && sale.refundState !== "FULLY_REFUNDED" ? (
+        <RefundPanel
+          context={context}
+          key={sale.id}
+          sale={sale}
+          scopeKey={scopeKey}
+        />
+      ) : null}
       <Receipt sale={sale} />
     </>
+  );
+}
+
+function RefundHistory({ sale }: { sale: SalesHistoryDetail }) {
+  return (
+    <section aria-labelledby="refund-history-heading" className="space-y-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="font-semibold" id="refund-history-heading">
+          Refunds
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          {sale.refundState.replaceAll("_", " ")} · Refunded{" "}
+          {formatThb(sale.refundedAmount)} · Remaining{" "}
+          {formatThb(sale.remainingAmount)}
+        </p>
+      </div>
+      {sale.refunds.length === 0 ? (
+        <p className="rounded-md border p-4 text-sm text-muted-foreground">
+          No refunds are linked to this sale.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {sale.refunds.map((refund) => (
+            <article className="rounded-md border p-4 text-sm" key={refund.id}>
+              <div className="flex flex-wrap justify-between gap-2">
+                <div>
+                  <p className="font-medium">{refund.reference}</p>
+                  <p className="text-muted-foreground">
+                    {formatAbsoluteTimestamp(refund.completedAt)} ·{" "}
+                    {refund.actorDisplayName}
+                  </p>
+                </div>
+                <p className="font-medium">{formatThb(refund.totalAmount)}</p>
+              </div>
+              <p className="mt-2">Reason: {refund.reason}</p>
+              <p className="text-muted-foreground">
+                {refund.payment.method}
+                {refund.payment.reference === null
+                  ? ""
+                  : ` · ${refund.payment.reference}`}
+              </p>
+              <ul className="mt-3 space-y-1 border-t pt-3">
+                {refund.items.map((item) => {
+                  const original = sale.items.find(
+                    (saleItem) => saleItem.id === item.saleItemId,
+                  );
+                  return (
+                    <li key={item.id}>
+                      {original?.productName ?? item.productId}: refunded{" "}
+                      {item.refundQuantity}, restocked {item.restockQuantity} ·{" "}
+                      {formatThb(item.reversedLineNet)}
+                      {item.cogsReversalAmount === undefined
+                        ? ""
+                        : item.cogsReversalAmount === null
+                          ? " · COGS unavailable"
+                          : ` · COGS ${formatThb(item.cogsReversalAmount)}`}
+                    </li>
+                  );
+                })}
+              </ul>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function RefundPanel({
+  context,
+  sale,
+  scopeKey,
+}: {
+  context: SalesRequestContext;
+  sale: SalesHistoryDetail;
+  scopeKey: readonly unknown[];
+}) {
+  const queryClient = useQueryClient();
+  const [reason, setReason] = useState("");
+  const [transferReference, setTransferReference] = useState("");
+  const [lines, setLines] = useState(() =>
+    Object.fromEntries(
+      sale.items.map((item) => [
+        item.id,
+        { quantity: "", restockQuantity: "0" },
+      ]),
+    ),
+  );
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const lastAttempt = useRef<{ key: string; signature: string } | null>(null);
+  const mutation = useMutation({
+    mutationFn: (request: {
+      idempotencyKey: string;
+      input: Parameters<typeof createSaleRefund>[3];
+    }) =>
+      createSaleRefund(context, sale.id, request.idempotencyKey, request.input),
+    onSuccess: async () => {
+      setReason("");
+      setTransferReference("");
+      setLines(
+        Object.fromEntries(
+          sale.items.map((item) => [
+            item.id,
+            { quantity: "", restockQuantity: "0" },
+          ]),
+        ),
+      );
+      lastAttempt.current = null;
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: [...scopeKey, "detail", sale.id],
+        }),
+        queryClient.invalidateQueries({ queryKey: [...scopeKey, "history"] }),
+      ]);
+    },
+  });
+  const refundableItems = sale.items.filter(
+    (item) => item.remainingRefundableQuantity !== "0.0000",
+  );
+
+  return (
+    <form
+      aria-label="Create sale refund"
+      className="space-y-4 rounded-md border p-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const items = refundableItems.flatMap((item) => {
+          const line = lines[item.id];
+          const quantity = line?.quantity.trim() ?? "";
+          return quantity === ""
+            ? []
+            : [
+                {
+                  quantity,
+                  restockQuantity: line?.restockQuantity.trim() || "0",
+                  saleItemId: item.id,
+                },
+              ];
+        });
+        if (items.length === 0) {
+          setValidationError("Enter a refund quantity for at least one item.");
+          return;
+        }
+        if (reason.trim() === "") {
+          setValidationError("Enter a reason for this refund.");
+          return;
+        }
+        if (
+          sale.payment.method === "TRANSFER" &&
+          transferReference.trim() === ""
+        ) {
+          setValidationError("Enter the confirmed transfer reference.");
+          return;
+        }
+        const input = {
+          items,
+          reason,
+          transferReference:
+            sale.payment.method === "TRANSFER" ? transferReference : null,
+        };
+        const signature = JSON.stringify(input);
+        const idempotencyKey =
+          lastAttempt.current?.signature === signature
+            ? lastAttempt.current.key
+            : crypto.randomUUID();
+        lastAttempt.current = { key: idempotencyKey, signature };
+        setValidationError(null);
+        mutation.mutate({ idempotencyKey, input });
+      }}
+    >
+      <div>
+        <h3 className="font-semibold">Create refund</h3>
+        <p className="text-sm text-muted-foreground">
+          Refund money and returned stock are recorded separately. This action
+          cannot be edited or deleted.
+        </p>
+      </div>
+      <div className="space-y-3">
+        {refundableItems.map((item) => (
+          <fieldset
+            className="grid gap-3 rounded-md border p-3 sm:grid-cols-2"
+            key={item.id}
+          >
+            <legend className="px-1 text-sm font-medium">
+              {item.productName} · {item.remainingRefundableQuantity}{" "}
+              {item.unit} remaining
+            </legend>
+            <label className="grid gap-1 text-sm">
+              Refund quantity
+              <input
+                className="min-h-11 rounded-md border bg-background px-3"
+                inputMode="decimal"
+                onChange={(event) =>
+                  setLines((current) => ({
+                    ...current,
+                    [item.id]: {
+                      ...current[item.id]!,
+                      quantity: event.target.value,
+                    },
+                  }))
+                }
+                placeholder="0"
+                value={lines[item.id]?.quantity ?? ""}
+              />
+            </label>
+            <label className="grid gap-1 text-sm">
+              Restock quantity
+              <input
+                className="min-h-11 rounded-md border bg-background px-3"
+                inputMode="decimal"
+                onChange={(event) =>
+                  setLines((current) => ({
+                    ...current,
+                    [item.id]: {
+                      ...current[item.id]!,
+                      restockQuantity: event.target.value,
+                    },
+                  }))
+                }
+                value={lines[item.id]?.restockQuantity ?? "0"}
+              />
+            </label>
+          </fieldset>
+        ))}
+      </div>
+      <label className="grid gap-1 text-sm font-medium">
+        Reason
+        <textarea
+          className="min-h-24 rounded-md border bg-background p-3"
+          maxLength={200}
+          onChange={(event) => setReason(event.target.value)}
+          required
+          value={reason}
+        />
+      </label>
+      {sale.payment.method === "TRANSFER" ? (
+        <label className="grid gap-1 text-sm font-medium">
+          Confirmed transfer reference
+          <input
+            className="min-h-11 rounded-md border bg-background px-3"
+            maxLength={100}
+            onChange={(event) => setTransferReference(event.target.value)}
+            required
+            value={transferReference}
+          />
+        </label>
+      ) : null}
+      {validationError !== null ? <p role="alert">{validationError}</p> : null}
+      {mutation.isError ? (
+        <p role="alert">{errorMessage(mutation.error)}</p>
+      ) : null}
+      {mutation.data ? (
+        <p role="status">Refund {mutation.data.reference} completed.</p>
+      ) : null}
+      <SecondaryButton disabled={mutation.isPending} type="submit">
+        {mutation.isPending
+          ? "Recording refund…"
+          : "Confirm irreversible refund"}
+      </SecondaryButton>
+    </form>
   );
 }
 

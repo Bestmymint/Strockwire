@@ -24,6 +24,9 @@ export const PERMISSIONS = {
   CHECKOUT_DISCOUNT_APPLY: "checkout.discount.apply",
   SALES_HISTORY_VIEW: "sales-history.view",
   SALES_COST_VIEW: "sales-cost.view",
+  SALES_REFUND_CREATE: "sales-refund.create",
+  SALES_REFUND_VIEW: "sales-refund.view",
+  SALES_REFUND_COST_VIEW: "sales-refund-cost.view",
   BUSINESS_ANALYTICS_VIEW: "analytics.business.view",
   INVENTORY_ANALYTICS_VIEW: "analytics.inventory.view",
   FORECAST_REORDER_VIEW: "forecast-reorder.view",
@@ -163,6 +166,18 @@ const PERMISSION_RULES = {
     scope: "organization-or-branch",
   },
   [PERMISSIONS.SALES_COST_VIEW]: {
+    roles: SALES_COST_ROLES,
+    scope: "organization-or-branch",
+  },
+  [PERMISSIONS.SALES_REFUND_CREATE]: {
+    roles: SALES_COST_ROLES,
+    scope: "organization-or-branch",
+  },
+  [PERMISSIONS.SALES_REFUND_VIEW]: {
+    roles: SALES_HISTORY_ROLES,
+    scope: "organization-or-branch",
+  },
+  [PERMISSIONS.SALES_REFUND_COST_VIEW]: {
     roles: SALES_COST_ROLES,
     scope: "organization-or-branch",
   },

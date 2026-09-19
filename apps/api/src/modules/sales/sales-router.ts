@@ -5,6 +5,8 @@ import { createCrossSiteRequestProtection } from "../identity/credential-lifecyc
 import { idempotencyKeySchema } from "../inventory/inventory-schemas.ts";
 import type { CheckoutOutcome } from "./checkout-repository.ts";
 import type { CheckoutService } from "./checkout-service.ts";
+import type { RefundOutcome } from "./refund-repository.ts";
+import type { RefundService } from "./refund-service.ts";
 import type {
   PosProductSearchOutcome,
   SalesHistoryDetailOutcome,
@@ -18,6 +20,7 @@ import {
   checkoutRequestSchema,
   organizationSalesParamsSchema,
   posProductSearchQuerySchema,
+  refundRequestSchema,
   saleDetailParamsSchema,
   salesHistoryQuerySchema,
   salesVatProfileUpdateSchema,
@@ -193,15 +196,73 @@ function sendCheckout(response: Response, outcome: CheckoutOutcome): void {
   error(response, status, code, message);
 }
 
+function sendRefund(response: Response, outcome: RefundOutcome): void {
+  if (outcome.kind === "success" || outcome.kind === "replay") {
+    response.status(outcome.kind === "success" ? 201 : 200).json({
+      data: { refund: outcome.refund },
+      meta: { requestId: requestId(response) },
+    });
+    return;
+  }
+  const failures = {
+    branch_inactive: [409, "BRANCH_INACTIVE", "The branch is inactive."],
+    duplicate_item: [400, "VALIDATION_ERROR", "The request is invalid."],
+    forbidden: [403, "FORBIDDEN", "The operation is not permitted."],
+    idempotency_conflict: [
+      409,
+      "IDEMPOTENCY_CONFLICT",
+      "The idempotency key was already used for another request.",
+    ],
+    invalid_idempotency_key: [
+      400,
+      "VALIDATION_ERROR",
+      "The idempotency key is invalid.",
+    ],
+    invalid_payment_method: [
+      400,
+      "VALIDATION_ERROR",
+      "The payment is invalid.",
+    ],
+    invalid_quantity: [400, "VALIDATION_ERROR", "The quantity is invalid."],
+    invalid_reason: [400, "VALIDATION_ERROR", "The reason is invalid."],
+    invalid_restock: [
+      400,
+      "VALIDATION_ERROR",
+      "The restock quantity is invalid.",
+    ],
+    invalid_transfer_reference: [
+      400,
+      "VALIDATION_ERROR",
+      "The transfer reference is invalid.",
+    ],
+    not_found: [404, "SALE_NOT_FOUND", "The sale was not found."],
+    refund_quantity_exceeded: [
+      409,
+      "REFUND_QUANTITY_EXCEEDED",
+      "The refund quantity exceeds the remaining quantity.",
+    ],
+    sale_already_fully_refunded: [
+      409,
+      "SALE_ALREADY_FULLY_REFUNDED",
+      "The sale is already fully refunded.",
+    ],
+    zero_refund_amount: [400, "VALIDATION_ERROR", "The request is invalid."],
+  } as const;
+  const [status, code, message] = failures[outcome.kind];
+  error(response, status, code, message);
+}
+
 export function createSalesRouter({
   authenticationMiddleware,
   checkoutService,
   publicWebOrigin,
+  refundService,
   salesApiService,
 }: {
   authenticationMiddleware: RequestHandler;
   checkoutService: CheckoutService;
   publicWebOrigin: string;
+  refundService: RefundService;
   salesApiService: SalesApiService;
 }): Router {
   const router = Router();
@@ -356,6 +417,41 @@ export function createSalesRouter({
             items: body.data.items,
             organizationId: params.data.organizationId,
             payment: body.data.payment,
+          }),
+        );
+      } catch (cause: unknown) {
+        next(cause);
+      }
+    },
+  );
+
+  router.post(
+    "/organizations/:organizationId/branches/:branchId/sales/:saleId/refunds",
+    protectMutation,
+    authenticationMiddleware,
+    async (request, response, next) => {
+      const id = actorId(response);
+      const params = saleDetailParamsSchema.safeParse(request.params);
+      const body = refundRequestSchema.safeParse(request.body);
+      const idempotencyKey = idempotencyKeySchema.safeParse(
+        request.get("Idempotency-Key"),
+      );
+      if (id === null) return authenticationRequired(response);
+      if (!params.success || !body.success || !idempotencyKey.success) {
+        return invalidRequest(response);
+      }
+      try {
+        sendRefund(
+          response,
+          await refundService.createRefund({
+            actorUserId: id,
+            branchId: params.data.branchId,
+            idempotencyKey: idempotencyKey.data,
+            items: body.data.items,
+            organizationId: params.data.organizationId,
+            reason: body.data.reason,
+            saleId: params.data.saleId,
+            transferReference: body.data.transferReference,
           }),
         );
       } catch (cause: unknown) {

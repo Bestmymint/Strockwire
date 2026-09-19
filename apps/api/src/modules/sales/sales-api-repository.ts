@@ -13,6 +13,11 @@ import type {
   SalesHistoryQuery,
   SalesVatProfileUpdateInput,
 } from "./sales-schemas.ts";
+import {
+  refundSelection,
+  safeRefund,
+  type SafeSaleRefund,
+} from "./refund-repository.ts";
 
 type Transaction = Prisma.TransactionClient;
 
@@ -64,6 +69,9 @@ export interface SafeSalesHistorySummary {
   outputVatAmount: string;
   payment: SafePayment;
   reference: string;
+  refundedAmount: string;
+  refundState: "NONE" | "PARTIALLY_REFUNDED" | "FULLY_REFUNDED";
+  remainingAmount: string;
   salesVatRate: string | null;
   salesVatStatus: "NOT_REGISTERED" | "REGISTERED";
   subtotalAmount: string;
@@ -87,11 +95,13 @@ export interface SafeSalesHistoryDetail extends SafeSalesHistorySummary {
     productName: string;
     productSku: string;
     quantity: string;
+    remainingRefundableQuantity: string;
     unit: string;
     unitCost?: string | null;
     unitPrice: string;
   }>;
   organizationName: string;
+  refunds: SafeSaleRefund[];
 }
 
 type AuthorizationFailure = { kind: "forbidden" };
@@ -249,6 +259,7 @@ function encodeSalesHistoryCursor(value: SalesHistoryCursorValue): string {
 const historyItemSelection = {
   cogsAmount: true,
   costBasisState: true,
+  createdAt: true,
   id: true,
   lineDiscount: true,
   lineGross: true,
@@ -260,6 +271,7 @@ const historyItemSelection = {
   productSkuSnapshot: true,
   productUnitSnapshot: true,
   quantity: true,
+  refundItems: { select: { refundQuantity: true } },
   unitCost: true,
   unitPrice: true,
 } satisfies Prisma.SaleItemSelect;
@@ -285,11 +297,18 @@ const historySaleSelection = {
   discountReason: true,
   discountType: true,
   id: true,
-  items: { orderBy: [{ productId: "asc" }], select: historyItemSelection },
+  items: {
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: historyItemSelection,
+  },
   organizationNameSnapshot: true,
   outputVatAmount: true,
   payment: { select: historyPaymentSelection },
   reference: true,
+  refunds: {
+    orderBy: [{ completedAt: "asc" }, { id: "asc" }],
+    select: refundSelection,
+  },
   salesVatRateSnapshot: true,
   salesVatStatusSnapshot: true,
   subtotalAmount: true,
@@ -298,7 +317,6 @@ const historySaleSelection = {
 } satisfies Prisma.SaleSelect;
 
 const historySummarySelection = {
-  _count: { select: { items: true } },
   actorDisplayNameSnapshot: true,
   completedAt: true,
   createdAt: true,
@@ -309,9 +327,16 @@ const historySummarySelection = {
   discountReason: true,
   discountType: true,
   id: true,
+  items: {
+    select: {
+      quantity: true,
+      refundItems: { select: { refundQuantity: true } },
+    },
+  },
   outputVatAmount: true,
   payment: { select: historyPaymentSelection },
   reference: true,
+  refunds: { select: { totalAmount: true } },
   salesVatRateSnapshot: true,
   salesVatStatusSnapshot: true,
   subtotalAmount: true,
@@ -384,6 +409,20 @@ function safeHistorySummary(
   ) {
     throw new Error("Sale has an unsupported historical snapshot.");
   }
+  const refundedAmount = sale.refunds.reduce(
+    (total, refund) => total.plus(refund.totalAmount),
+    new Prisma.Decimal(0),
+  );
+  const fullyRefunded =
+    sale.refunds.length > 0 &&
+    sale.items.every((item) =>
+      item.refundItems
+        .reduce(
+          (total, refund) => total.plus(refund.refundQuantity),
+          new Prisma.Decimal(0),
+        )
+        .equals(item.quantity),
+    );
   return {
     actorDisplayName: sale.actorDisplayNameSnapshot,
     createdAt: sale.createdAt.toISOString(),
@@ -391,10 +430,18 @@ function safeHistorySummary(
     discount: safeHistoryDiscount(sale),
     discountAmount: sale.discountAmount.toFixed(2),
     id: sale.id,
-    itemCount: "items" in sale ? sale.items.length : sale._count.items,
+    itemCount: sale.items.length,
     outputVatAmount: sale.outputVatAmount.toFixed(2),
     payment: safeHistoryPayment(sale),
     reference: sale.reference,
+    refundedAmount: refundedAmount.toFixed(2),
+    refundState:
+      sale.refunds.length === 0
+        ? "NONE"
+        : fullyRefunded
+          ? "FULLY_REFUNDED"
+          : "PARTIALLY_REFUNDED",
+    remainingAmount: sale.totalAmount.minus(refundedAmount).toFixed(2),
     salesVatRate: sale.salesVatRateSnapshot?.toString() ?? null,
     salesVatStatus: sale.salesVatStatusSnapshot,
     subtotalAmount: sale.subtotalAmount.toFixed(2),
@@ -429,10 +476,32 @@ function safeHistoryDetail(
       productName: item.productNameSnapshot,
       productSku: item.productSkuSnapshot,
       quantity: item.quantity.toFixed(4),
+      remainingRefundableQuantity: item.quantity
+        .minus(
+          item.refundItems.reduce(
+            (total, refund) => total.plus(refund.refundQuantity),
+            new Prisma.Decimal(0),
+          ),
+        )
+        .toFixed(4),
       unit: item.productUnitSnapshot,
       unitPrice: item.unitPrice.toFixed(4),
     })),
     organizationName: sale.organizationNameSnapshot,
+    refunds: sale.refunds.map((refund) => {
+      const safe = safeRefund(refund, includeCosts);
+      const order = new Map(
+        sale.items.map((item, index) => [item.id, index] as const),
+      );
+      return {
+        ...safe,
+        items: [...safe.items].sort(
+          (left, right) =>
+            (order.get(left.saleItemId) ?? Number.MAX_SAFE_INTEGER) -
+            (order.get(right.saleItemId) ?? Number.MAX_SAFE_INTEGER),
+        ),
+      };
+    }),
   };
 }
 
@@ -552,8 +621,17 @@ async function authorizedHistoryBranch(
     branchOrganizationId: branch.organizationId,
     organizationId: input.organizationId,
   });
-  if (!can(context, PERMISSIONS.SALES_HISTORY_VIEW, scope)) return null;
-  return { includeCosts: can(context, PERMISSIONS.SALES_COST_VIEW, scope) };
+  if (
+    !can(context, PERMISSIONS.SALES_HISTORY_VIEW, scope) ||
+    !can(context, PERMISSIONS.SALES_REFUND_VIEW, scope)
+  ) {
+    return null;
+  }
+  return {
+    includeCosts:
+      can(context, PERMISSIONS.SALES_COST_VIEW, scope) &&
+      can(context, PERMISSIONS.SALES_REFUND_COST_VIEW, scope),
+  };
 }
 
 function nextUpdatedAt(expectedUpdatedAt: Date, currentTime: Date): Date {

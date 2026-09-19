@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchAccessContext } from "@/branch-api-client";
 import {
+  createSaleRefund,
   getSalesHistoryDetail,
   listSalesHistory,
   SalesApiError,
@@ -43,6 +44,7 @@ vi.mock("@/sales-api-client", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/sales-api-client")>();
   return {
     ...original,
+    createSaleRefund: vi.fn(),
     getSalesHistoryDetail: vi.fn(),
     listSalesHistory: vi.fn(),
   };
@@ -65,6 +67,9 @@ const summary = {
     reference: null,
   },
   reference: "SALE-IMMUTABLE-001",
+  refundedAmount: "0.00",
+  refundState: "NONE" as const,
+  remainingAmount: "12.34",
   salesVatRate: null,
   salesVatStatus: "NOT_REGISTERED" as const,
   subtotalAmount: "12.34",
@@ -87,11 +92,13 @@ const detail: SalesHistoryDetail = {
       productName: "Historical coffee",
       productSku: "COFFEE-OLD",
       quantity: "1.0000",
+      remainingRefundableQuantity: "1.0000",
       unit: "EA",
       unitPrice: "12.3400",
     },
   ],
   organizationName: "Store",
+  refunds: [],
 };
 
 function renderSales() {
@@ -133,6 +140,39 @@ beforeEach(() => {
     meta: { nextCursor: "opaque-next" },
   });
   vi.mocked(getSalesHistoryDetail).mockResolvedValue(detail);
+  vi.mocked(createSaleRefund).mockResolvedValue({
+    actorDisplayName: "Owner",
+    branchId: BRANCH_ID,
+    completedAt: "2026-09-19T09:00:00.000Z",
+    currency: "THB",
+    discountAmount: "0.00",
+    grossAmount: "12.34",
+    id: "70000000-0000-4000-8000-000000000001",
+    items: [
+      {
+        id: "80000000-0000-4000-8000-000000000001",
+        productId: detail.items[0]!.productId,
+        refundQuantity: "1",
+        restockQuantity: "1",
+        reversedLineDiscount: "0.00",
+        reversedLineGross: "12.34",
+        reversedLineNet: "12.34",
+        reversedLineOutputVat: "0.00",
+        reversedLineTaxable: null,
+        saleItemId: detail.items[0]!.id,
+      },
+    ],
+    organizationId: ORGANIZATION_ID,
+    outputVatAmount: "0.00",
+    payment: { amount: "12.34", method: "CASH", reference: null },
+    reason: "Customer return",
+    reference: "REFUND-001",
+    saleId: SALE_ID,
+    salesVatRate: null,
+    salesVatStatus: "NOT_REGISTERED",
+    taxableAmount: null,
+    totalAmount: "12.34",
+  });
   vi.stubGlobal("print", vi.fn());
 });
 
@@ -259,6 +299,147 @@ describe("sales history UI", () => {
     expect(await screen.findByText(/Reference TRANSFER-001/)).toBeTruthy();
     expect(screen.getByLabelText("Printable receipt").textContent).toMatch(
       /Transfer reference: TRANSFER-001/,
+    );
+  });
+
+  it("lets authorized managers submit separate refund/restock quantities with a stable retry key", async () => {
+    role = "BRANCH_MANAGER";
+    mockAccess(role);
+    vi.mocked(createSaleRefund).mockRejectedValue(
+      new SalesApiError("refund_quantity_exceeded"),
+    );
+    renderSales();
+    await screen.findByText("SALE-IMMUTABLE-001");
+    fireEvent.click(screen.getByRole("button", { name: "View detail" }));
+    const form = await screen.findByRole("form", {
+      name: "Create sale refund",
+    });
+
+    fireEvent.submit(form);
+    expect(
+      await screen.findByText("Enter a refund quantity for at least one item."),
+    ).toBeTruthy();
+    expect(createSaleRefund).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Refund quantity"), {
+      target: { value: "1" },
+    });
+    fireEvent.change(screen.getByLabelText("Restock quantity"), {
+      target: { value: "0" },
+    });
+    fireEvent.submit(form);
+    expect(
+      await screen.findByText("Enter a reason for this refund."),
+    ).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Reason"), {
+      target: { value: "Customer changed mind" },
+    });
+    fireEvent.submit(form);
+    await waitFor(() => expect(createSaleRefund).toHaveBeenCalledTimes(1));
+    expect((await screen.findByRole("alert")).textContent).toMatch(
+      /exceeds what remains/i,
+    );
+    fireEvent.submit(form);
+    await waitFor(() => expect(createSaleRefund).toHaveBeenCalledTimes(2));
+
+    const first = vi.mocked(createSaleRefund).mock.calls[0]!;
+    const second = vi.mocked(createSaleRefund).mock.calls[1]!;
+    expect(first[2]).toBe(second[2]);
+    expect(first[3]).toEqual({
+      items: [
+        {
+          quantity: "1",
+          restockQuantity: "0",
+          saleItemId: detail.items[0]!.id,
+        },
+      ],
+      reason: "Customer changed mind",
+      transferReference: null,
+    });
+  });
+
+  it("requires a confirmed transfer reference before submitting a transfer refund", async () => {
+    vi.mocked(getSalesHistoryDetail).mockResolvedValue({
+      ...detail,
+      payment: {
+        amount: "12.34",
+        amountTendered: null,
+        changeAmount: null,
+        method: "TRANSFER",
+        reference: "SALE-TRANSFER",
+      },
+    });
+    renderSales();
+    await screen.findByText("SALE-IMMUTABLE-001");
+    fireEvent.click(screen.getByRole("button", { name: "View detail" }));
+    fireEvent.change(await screen.findByLabelText("Refund quantity"), {
+      target: { value: "1" },
+    });
+    fireEvent.change(screen.getByLabelText("Reason"), {
+      target: { value: "Transfer refund" },
+    });
+    fireEvent.submit(screen.getByRole("form", { name: "Create sale refund" }));
+    expect(
+      await screen.findByText("Enter the confirmed transfer reference."),
+    ).toBeTruthy();
+    expect(createSaleRefund).not.toHaveBeenCalled();
+  });
+
+  it("shows linked refund history to cashiers without exposing create or cost controls", async () => {
+    role = "CASHIER";
+    mockAccess(role);
+    vi.mocked(getSalesHistoryDetail).mockResolvedValue({
+      ...detail,
+      refundedAmount: "12.34",
+      refundState: "FULLY_REFUNDED",
+      remainingAmount: "0.00",
+      items: [{ ...detail.items[0]!, remainingRefundableQuantity: "0.0000" }],
+      refunds: [
+        {
+          actorDisplayName: "Manager",
+          branchId: BRANCH_ID,
+          completedAt: "2026-09-19T09:00:00.000Z",
+          currency: "THB",
+          discountAmount: "0.00",
+          grossAmount: "12.34",
+          id: "70000000-0000-4000-8000-000000000001",
+          items: [
+            {
+              id: "80000000-0000-4000-8000-000000000001",
+              productId: detail.items[0]!.productId,
+              refundQuantity: "1",
+              restockQuantity: "0",
+              reversedLineDiscount: "0.00",
+              reversedLineGross: "12.34",
+              reversedLineNet: "12.34",
+              reversedLineOutputVat: "0.00",
+              reversedLineTaxable: null,
+              saleItemId: detail.items[0]!.id,
+            },
+          ],
+          organizationId: ORGANIZATION_ID,
+          outputVatAmount: "0.00",
+          payment: { amount: "12.34", method: "CASH", reference: null },
+          reason: "Customer return",
+          reference: "REFUND-001",
+          saleId: SALE_ID,
+          salesVatRate: null,
+          salesVatStatus: "NOT_REGISTERED",
+          taxableAmount: null,
+          totalAmount: "12.34",
+        },
+      ],
+    });
+    renderSales();
+    await screen.findByText("SALE-IMMUTABLE-001");
+    fireEvent.click(screen.getByRole("button", { name: "View detail" }));
+    expect(await screen.findByText("REFUND-001")).toBeTruthy();
+    expect(screen.getByText(/refunded 1, restocked 0/i)).toBeTruthy();
+    expect(
+      screen.queryByRole("form", { name: "Create sale refund" }),
+    ).toBeNull();
+    expect(screen.getByLabelText("Printable receipt").textContent).not.toMatch(
+      /REFUND-001|refund|COGS|cost/i,
     );
   });
 

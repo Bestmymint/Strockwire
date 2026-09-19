@@ -80,6 +80,14 @@ const checkoutPaymentSchema = z.discriminatedUnion("method", [
     .transform((value) => ({ ...value, reference: value.reference ?? null })),
 ]);
 
+const refundLineSchema = z
+  .object({
+    quantity: z.string(),
+    restockQuantity: z.string(),
+    saleItemId: z.string().uuid(),
+  })
+  .strict();
+
 export const organizationSalesParamsSchema = z
   .object({ organizationId: z.string().uuid() })
   .strict();
@@ -143,6 +151,18 @@ export const checkoutRequestSchema = z
   })
   .strict()
   .transform((value) => ({ ...value, discount: value.discount ?? null }));
+
+export const refundRequestSchema = z
+  .object({
+    items: z.array(refundLineSchema).min(1),
+    reason: z.string(),
+    transferReference: z.string().nullable().optional(),
+  })
+  .strict()
+  .transform((value) => ({
+    ...value,
+    transferReference: value.transferReference ?? null,
+  }));
 
 export type PosProductSearchQuery = z.infer<typeof posProductSearchQuerySchema>;
 export type SalesHistoryQuery = z.infer<typeof salesHistoryQuerySchema>;
