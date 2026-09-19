@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | Accepted decision history |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-25 |
+| Last updated | 2026-09-19 |
 
 ## 1. Log rules
 
@@ -1514,6 +1514,299 @@ receipt, cart, and reversal systems.
   continue to govern reversal, analytics eligibility, and display/report timezone.
 - Sales/POS implementation remains absent until its separately authorized roadmap
   tasks are completed. The exact next task is P5-M1-T02 — Sale/payment schema.
+
+## ADR-028 — Use linked immutable refunds with optional same-branch restock; exclude VOID from V1
+
+- **Date:** 2026-09-19
+- **Status:** Accepted
+- **Type:** Sales refund, payment compensation, inventory return, and cost decision gate
+
+### Context
+
+`OQ-009` blocked any correction of an atomically completed Sale. `ADR-027` makes the
+original Sale, SaleItems, Payment, price/VAT/discount/cost snapshots, negative `SALE`
+inventory movements, and receipt immutable. `ADR-024` requires append-only stock
+movements under shared Branch/Product serialization, while `ADR-026` preserves
+`UNKNOWN` versus `KNOWN` moving-weighted-average cost. A reversal contract therefore
+must compensate those facts without editing them, must support fractional Product
+units and repeated partial operations, and must not depend on unresolved reporting
+timezone `OQ-016` or generic audit question `OQ-019`.
+
+### Alternatives considered
+
+- Add both VOID and REFUND, with VOID limited by same-day, settlement, or register-close
+  rules. No accepted settlement/register lifecycle exists, and a business-day cutoff
+  would depend on `OQ-016`; without one, VOID would only duplicate full REFUND.
+- Mutate the original Sale/Payment or delete the original `SALE` movements. This would
+  destroy the accepted immutable historical and idempotency contract.
+- Require every refunded unit to return to sellable stock. This would misrepresent
+  damaged, consumed, missing, or otherwise non-restockable merchandise.
+- Revalue returned stock at the current moving average. This would rewrite the economic
+  meaning of the historical SaleItem cost and fabricate cost for UNKNOWN sales.
+- Add cost layers or a generic returns/accounting/audit subsystem. Those are broader
+  than the current modular-monolith MVP need.
+
+### Decision
+
+Resolve `OQ-009` with the following V1 contract.
+
+#### Terminology, eligibility, and lifecycle
+
+- The only V1 operation is **REFUND**. VOID is unsupported and has no enum, endpoint,
+  permission, status, or persistence representation. Full-sale correction uses a full
+  REFUND. This avoids an artificial second name whose eligibility would require an
+  unaccepted settlement or business-day boundary.
+- A REFUND is an immutable linked compensating record. It never cancels, edits, or
+  deletes the original Sale. The original Sale has no mutable status. Read models may
+  derive `NONE`, `PARTIALLY_REFUNDED`, or `FULLY_REFUNDED` from linked refund items.
+- Full refund means cumulative refunded quantity equals original sold quantity for
+  every SaleItem. Partial refund selects one or more unique SaleItems and a positive
+  quantity. Multiple sequential refunds are allowed until every line reaches its
+  original quantity. A fully refunded Sale rejects further refund attempts.
+- There is no time or calendar cutoff, so `OQ-016` remains unresolved and irrelevant
+  to eligibility. The original Branch must be active. Current Product inactivity does
+  not block refund because the immutable SaleItem is the authority and inactive stock
+  may still be returned to its original Branch.
+- Refund quantity follows the original Product unit under `ADR-022`: `DECIMAL(18,4)`,
+  no excess scale, and integral values for `EA`, `PACK`, and `BOX`. Each requested
+  quantity is positive and cannot exceed `original quantity - cumulative refunded
+  quantity` under the authoritative transaction lock.
+- Each refund item also records `restockQuantity` in the same unit/scale, from zero
+  through that operation's refund quantity. It is chosen once when the refund is
+  created. V1 has no later restock-only operation for a previously refunded unit.
+
+#### Conceptual persistence model
+
+Future P5-M4-T02 persistence uses the minimal concepts below; names are accepted here
+without creating schema in this decision task.
+
+- `SaleRefund`: stable ID; Organization, original Branch, and original Sale links;
+  immutable `REFUND-<UUID>` Organization-unique reference; currency `THB`; actor user,
+  membership, and display-name snapshot; required reason; gross, discount, nullable
+  taxable, Output VAT, and total refund amounts; original VAT status/rate snapshots;
+  idempotency operation/hash/request hash; `completedAt` and `createdAt` UTC timestamps.
+- `SaleRefundItem`: refund header and original SaleItem links; refund and restock
+  quantities; reversed gross, discount, net, nullable taxable, and Output VAT amounts;
+  original cost-basis state and unit-cost snapshot; nullable COGS-reversal amount.
+  One original SaleItem may occur at most once in one refund operation.
+- `RefundPayment`: exactly one per SaleRefund; method copied from the original Payment;
+  amount equal to the SaleRefund total; nullable transfer reference; confirmed/created
+  UTC timestamps. It has no independent status.
+- A restocked SaleRefundItem has exactly one linked positive InventoryTransaction.
+  Non-restocked refund items have none. Relations and restrictive composite keys must
+  prove Organization, Branch, Sale, SaleItem, Product, refund item, and movement agree.
+- All three refund records are immutable, never hard-deleted, and retain enough actor,
+  reason, time, payment, item, and movement linkage for bounded operational audit.
+  Generic audit-log infrastructure remains `OQ-019` and is not required.
+
+The original Sale, SaleItem, Payment, `SALE` InventoryTransaction, price, VAT,
+discount, cost, COGS, reference, timestamps, and browser receipt remain unchanged.
+A refund cannot target another refund, and a refund cannot itself be edited, deleted,
+refunded, or voided in V1.
+
+#### Historical monetary, discount, and VAT authority
+
+- Clients submit no refund amount, price, discount, VAT rate, taxable amount, or COGS.
+  The server uses only immutable original Sale/SaleItem/Payment snapshots. Current
+  Product price and current Organization VAT configuration are irrelevant.
+- Money fields target `DECIMAL(38,2)`. Quantity remains `DECIMAL(18,4)`, original unit
+  price `DECIMAL(19,4)`, VAT rate `DECIMAL(9,6)`, original unit cost
+  `DECIMAL(19,6)`, and COGS reversal `DECIMAL(38,10)`. Use Prisma Decimal/PostgreSQL
+  NUMERIC; JavaScript `number` is never authority.
+- For one original line with quantity `Q`, and new cumulative refunded quantity `q`,
+  define a cumulative target for original line net `N` and discount `D`:
+
+  ```text
+  targetNet(q) = q == Q ? N : ROUND_HALF_UP(N * q / Q, 2)
+  targetDiscount(q) = q == Q ? D : ROUND_HALF_UP(D * q / Q, 2)
+  targetGross(q) = targetNet(q) + targetDiscount(q)
+  ```
+
+  The current refund item's component equals the new cumulative target minus the sum
+  already persisted by earlier refunds. This makes operation order deterministic and
+  lets the final quantity absorb every historical cent exactly.
+- For a REGISTERED original line with historical Output VAT `V`:
+
+  ```text
+  rawTargetVat(q) = q == Q ? V : ROUND_HALF_UP(V * q / Q, 2)
+  targetVat(q) = min(rawTargetVat(q), targetNet(q))
+  targetTaxable(q) = targetNet(q) - targetVat(q)
+  ```
+
+  The current refund uses the delta from prior persisted cumulative VAT/taxable
+  targets. At `q == Q`, it absorbs the exact historical remainder. For NOT_REGISTERED,
+  taxable remains null and Output VAT remains `0.00`.
+- Refund header components are exact sums of refund-item components and preserve
+  `gross - discount = total` plus, for REGISTERED, `taxable + Output VAT = total`.
+  An operation whose total is `0.00` is invalid; V1 does not create a zero-money
+  refund/payment. No legal credit-note, tax-refund, filing, or compliance claim is made.
+
+#### Payment compensation
+
+- Refund payment method must equal the original Payment method and is server-derived.
+  The actor cannot switch methods. There is exactly one confirmed RefundPayment whose
+  amount equals the server-derived refund total.
+- CASH means the authorized actor manually handed back the exact refund amount. It has
+  no tender, change, gateway, reference, or pending state.
+- TRANSFER means the actor manually confirmed an outgoing bank/QR-style transfer. A
+  trimmed nonblank reference of 1–100 characters is required. There is no provider
+  call, asynchronous state, slip/OCR, or automatic verification.
+- Split payment, CARD, store credit, gift card, exchange value, refund fee, and
+  restocking fee are excluded.
+
+#### Inventory, ledger, COGS, and current cost state
+
+- Financial refund quantity and physical restock quantity are deliberately separate.
+  Only `restockQuantity > 0` increases InventoryBalance. The source is
+  `SALE_REFUND_RETURN`, delta is positive restock quantity, actor is the refund actor,
+  and the movement links uniquely to the SaleRefundItem and thereby to the original
+  SaleItem/Sale. Original negative `SALE` movements are never changed.
+- Restock always targets the original Sale Branch. Cross-branch and cross-Organization
+  returns are invalid. Refund without restock is allowed. Restock without a new
+  positive refund quantity is not a V1 operation. Balance, ledger, and cost state move
+  together; direct balance mutation is prohibited.
+- Historical COGS reversal is tied to restocked quantity, not merely refunded quantity.
+  A non-restocked monetary refund keeps the original cost consumed and records zero
+  COGS reversal for a KNOWN-cost item.
+- For an original KNOWN line with original COGS `C`, original quantity `Q`, and new
+  cumulative restocked quantity `r`:
+
+  ```text
+  targetCogsReversal(r) =
+    r == Q ? C : ROUND_HALF_UP(C * r / Q, 10)
+  ```
+
+  The current item's COGS reversal is the target minus prior persisted COGS reversals;
+  it snapshots the original SaleItem unit cost. The final restocked quantity absorbs
+  the exact historical COGS remainder. For original UNKNOWN cost, cost basis remains
+  UNKNOWN and unit cost/COGS reversal remain null; zero is never fabricated.
+- For positive restock, current InventoryCostState changes deterministically:
+  - Current KNOWN plus original KNOWN: returned units enter at original SaleItem unit
+    cost. Compute `exactValue = currentQuantity * currentAverage + restockQuantity *
+    originalUnitCost`, round the new average `exactValue / newQuantity` HALF_UP to six
+    decimals, and persist `exactValue` HALF_UP to ten decimals, matching the established
+    receiving path. Subsequent operations continue to derive their old basis from
+    quantity times the retained average under `ADR-026`. From zero quantity, the new
+    average is the original unit cost.
+  - Current UNKNOWN with positive current quantity plus original KNOWN: remain UNKNOWN;
+    known returned cost cannot value pre-existing unknown units. If current quantity is
+    zero, initialize KNOWN from the original unit cost because every resulting unit has
+    a known basis.
+  - Original UNKNOWN plus any current state: resulting positive inventory is UNKNOWN
+    with null average/value. A KNOWN current state is conservatively downgraded rather
+    than assigning its average to unknown returned units.
+  - Current UNKNOWN plus original UNKNOWN remains UNKNOWN. No restock means no balance
+    or cost-state change.
+
+These transitions preserve uncertainty without cost layers or historical
+reconstruction. A later authoritative receipt may initialize an UNKNOWN state only
+under the existing `ADR-026` rule; it never backfills refund or Sale history.
+
+#### Authorization, attribution, and tenancy
+
+- Add deny-by-default capabilities `sales-refund.create`, `sales-refund.view`, and
+  `sales-refund-cost.view` during implementation. No `sales-void.*` capability exists.
+- `OWNER` and `ADMIN` may create/view refunds across active branches in their
+  Organization. An assigned `BRANCH_MANAGER` may create/view in an active assigned
+  Branch. Assigned `CASHIER` may view linked refund records with Sales history but may
+  not create them. `INVENTORY_STAFF` has no refund access.
+- Refund cost/unit-cost/COGS fields are visible only to `OWNER`, `ADMIN`, and assigned
+  `BRANCH_MANAGER`, matching existing Sales-cost visibility. Customer/original receipt
+  output never exposes them.
+- Refund create requires a trimmed, Unicode-preserving, nonblank reason of 1–200
+  characters. There is no approval chain, manager PIN, per-role amount threshold, or
+  delegated cashier approval. The service derives actor/Organization/Branch from the
+  verified session and persisted Sale; route/body IDs are candidate scope only.
+
+#### Idempotency, concurrency, and atomicity
+
+- Every create requires printable-ASCII `Idempotency-Key` of 1–200 characters. Persist
+  only its SHA-256-derived deterministic hash plus a canonical-request hash under the
+  Organization-scoped `SALE_REFUND` operation namespace.
+- Canonical intent contains trusted Organization, original Branch, actor, original
+  Sale ID, SaleItem-ID-sorted canonical refund/restock quantities, normalized reason,
+  derived original payment method, and normalized TRANSFER reference when applicable.
+  First success returns `201`; identical replay returns the same logical SaleRefund and
+  reference with `200`; same key with changed intent returns `409
+  IDEMPOTENCY_CONFLICT`. A rolled-back attempt leaves no successful claim.
+- Lock order is: Organization/refund-idempotency advisory lock; established trusted
+  authorization/Organization/Branch locks; original Sale row `FOR UPDATE`; then shared
+  Branch/Product advisory locks for positive restock in sorted Product-ID order; then
+  balance and cost-state rows. No refund path may acquire a Product lock before the
+  original Sale lock. The Sale row serializes cumulative eligibility for all refunds
+  of that Sale; sorted shared Product locks remain compatible with checkout/receiving.
+- One PostgreSQL transaction revalidates authorization and active Branch; resolves
+  idempotency; locks/loads original Sale, SaleItems, Payment, and prior refunds;
+  validates cumulative quantities; calculates historical money/VAT/discount and cost;
+  creates SaleRefund/items/one RefundPayment; takes restock locks; updates balances and
+  cost states; appends `SALE_REFUND_RETURN` rows; stores the idempotency result; and
+  commits. Any failure rolls back every participant.
+- Stable invalid outcomes include safe Sale not-found, inactive Branch, fully refunded,
+  quantity exceeded, invalid restock, zero refund amount, missing TRANSFER reference,
+  forbidden, validation error, and idempotency conflict. Concurrent attempts that
+  would over-refund serialize; at most the still-eligible operation succeeds.
+
+#### History, receipt, and document behavior
+
+- Sales History continues to show the immutable original reference and total, plus
+  derived `NONE`/`PARTIALLY_REFUNDED`/`FULLY_REFUNDED`, cumulative refunded amount, and
+  remaining amount. No mutable Sale status is stored, and V1 requires no new status
+  filter.
+- Sale detail includes immutable linked refund headers, item quantities/amounts,
+  restock disposition, payment method/reference, actor/time/reason, and role-permitted
+  cost fields. It may show derived remaining refundable quantities.
+- The existing browser receipt remains the original Sale/SaleItems/Payment projection
+  and never becomes a fictional netted Sale. Refund information appears separately in
+  Sale detail and outside the original receipt print region.
+- V1 has no standalone printable refund receipt, PDF, `/receipt` endpoint, or legal
+  credit-note/tax-document claim. A future document requires a separate decision.
+
+#### Explicit V1 non-goals
+
+VOID; exchange; store credit; gift card; CARD/gateway refund; split refund payment;
+pending/asynchronous provider state; refund or restocking fee; approval chain; manager
+PIN; cross-branch/cross-Organization return; restock-only follow-up; refund edit/delete;
+refund-of-refund; tax credit note; fiscal numbering; external accounting integration;
+generic `OQ-019` audit infrastructure; Customer/CRM; cost layers; and any change to
+`OQ-016` are excluded.
+
+### Worked boundary examples
+
+All values are exact decimal strings; examples use one line unless stated otherwise.
+
+| # | Scenario | Exact accepted result |
+| --- | --- | --- |
+| 1 | Full CASH refund | Original `2.0000` units, NOT_REGISTERED net/gross `120.25`, discount/VAT `0.00`, KNOWN unit cost `35.123456`, COGS `70.2469120000`; current stock `8.0000` at the same average. Refund/restock `2.0000` returns CASH `120.25`, appends `+2.0000`, reverses COGS `70.2469120000`, and yields quantity `10.0000`, average `35.123456`, value `351.2345600000`. |
+| 2 | Full TRANSFER refund | Original `1.0000`, REGISTERED net `500.00`, taxable `467.29`, VAT `32.71`, KNOWN cost `300.000000`; current quantity is zero with UNKNOWN state. Required reference `RF-20260919-001` confirms TRANSFER `500.00`; restock `1.0000` initializes KNOWN average `300.000000` and value `300.0000000000`. |
+| 3 | Partial item, no restock | Original `4.0000`, gross `400.00`, discount `40.00`, net `360.00`. Refund `1.0000`, restock `0.0000` produces gross `100.00`, discount `10.00`, net/CASH refund `90.00`; no ledger/balance/cost change and KNOWN COGS reversal is `0.0000000000`. |
+| 4 | Sequential partials reach exact total | Original `3.0000`, net `100.00`, discount `10.00`, gross `110.00`. Three `1.0000` refunds produce net `33.33`, `33.34`, `33.33`; discount `3.33`, `3.34`, `3.33`; gross `36.66`, `36.68`, `36.66`. Cumulative values are exactly `100.00`, `10.00`, and `110.00`; the Sale derives FULLY_REFUNDED. |
+| 5 | Fractional quantity | Original `0.3750 KG`, net `30.00`, KNOWN unit cost `45.123456`, COGS `16.9212960000`. Refund `0.1250`, restock `0.1000` returns `10.00`, appends `+0.1000`, and reverses COGS `4.5123456000`; quantity scale remains four. |
+| 6 | VAT-inclusive partial | Original quantity `2.0000`, REGISTERED net `107.00`, taxable `100.00`, VAT `7.00`. Refund `0.5000` targets net `26.75`, VAT `1.75`, taxable `25.00`; current VAT configuration is not read. |
+| 7 | Historical discount allocation | Original quantity `2.0000`, gross `428.00`, discount `42.80`, net `385.20`, VAT `25.20`, taxable `360.00`. Refund `1.0000` reverses gross `214.00`, discount `21.40`, net `192.60`, VAT `12.60`, taxable `180.00`. |
+| 8 | Returned known cost differs from current average | Current quantity `5.0000` at `50.000000`; restock `2.0000` from an original KNOWN SaleItem at `30.000000`. Exact input and persisted value are `310.0000000000`; new average is `44.285714`. Historical COGS reversal is `60.0000000000`. A later operation derives its old basis from quantity times that retained average, as `ADR-026` already requires. |
+| 9 | Original UNKNOWN cost | Original UNKNOWN item refunds/restocks `1.0000` into current `4.0000` KNOWN units at `25.000000`. Quantity becomes `5.0000`; cost state becomes UNKNOWN with null average/value, and refund unit cost/COGS reversal remain null. Zero is never fabricated. |
+| 10 | Concurrent over-refund | The Sale has one line with `1.0000` remaining; two different keys concurrently request `1.0000`. The Sale-row lock lets one commit; the second then sees the Sale fully refunded and returns `409 SALE_ALREADY_FULLY_REFUNDED`. Exactly one payment and at most one return movement exist. If another line remained but this selected line were exhausted, the error would be `409 REFUND_QUANTITY_EXCEEDED`. |
+| 11 | Identical retry | Repeating the same key, actor, Sale, sorted items/quantities, reason, and payment evidence returns `200` with the original `REFUND-<UUID>` and creates no duplicate payment, refund item, or ledger row. |
+| 12 | Changed intent with same key | Reusing the key with changed quantity, restock quantity, reason, Sale, actor, or TRANSFER reference returns `409 IDEMPOTENCY_CONFLICT` and performs no mutation. |
+
+### Why selected
+
+One REFUND concept covers full correction and customer return without inventing an
+unavailable settlement/day boundary for VOID. Separating financial quantity from
+restock quantity represents real non-restockable outcomes, while immutable links and
+historical allocation/cost authority preserve explainability. Conservative UNKNOWN
+transitions avoid fabricated inventory value, and existing lock/idempotency patterns
+keep the design compatible with checkout and receiving.
+
+### Consequences
+
+- `OQ-009` is resolved. `OQ-016` remains open and no refund rule depends on it.
+- P5-M4-T01 is a documentation gate only; it creates no schema, migration, permission,
+  service, endpoint, inventory/payment mutation, or UI.
+- P5-M4-T02 may implement only this bounded REFUND contract. VOID and every listed
+  non-goal require a later accepted decision and separately planned task.
+- Analytics receives immutable refund facts, but `OQ-011` still decides metric
+  eligibility and whether recognition uses Sale time or refund time.
 
 ## 2. Explicitly superseded planning directions
 

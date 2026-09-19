@@ -5,13 +5,13 @@ This file is the execution contract for human and AI developers working in the `
 | Field | Value |
 | --- | --- |
 | Documentation baseline | Architecture Freeze v1 |
-| Last updated | 2026-09-05 |
+| Last updated | 2026-09-19 |
 
 ## 1. Project overview
 
 StockWise is a responsive, cloud-based retail platform for SMEs. It covers organization-level product and supplier management; branch-level inventory, purchasing/receiving, POS, and sales; deterministic analytics and forecasting; and scheduled aggregate summaries through OpenRouter.
 
-The repository contains the repository/tooling foundation; identity, tenancy, authentication, onboarding, branch, invitation, and membership workflows; organization-scoped Catalog and Supplier persistence/API/UI; branch inventory balance/history/manual-adjustment persistence/API/UI; Purchase Order persistence/API/UI; P4-M3-T01 Receipt persistence plus atomic receiving service; the P4-M3-T02 authenticated Receiving API; the P4-M3-T03 Receiving UI; P5-M1 Sales persistence; P5-M2 atomic checkout, POS API, and responsive POS UI; and P5-M3-T01 Sales History list/detail API. P4-M3-T01 adds immutable Receipt/ReceiptItem snapshots, receipt-level idempotency, serialized `ORDERED` → `RECEIVED`, positive `PURCHASE_RECEIVE` ledger provenance, deterministic shared Branch/Product inventory locks, atomic balance and `UNKNOWN`/`KNOWN` moving-average cost-state updates, and bounded document-level Input VAT snapshots. P4-M3-T02 exposes only the retry-safe receive command over that service with strict cost/VAT transport, CSRF/session protection, persisted-PO branch authorization, and safe public Receipt/error responses. P4-M3-T03 adds the responsive, role-aware ORDERED-PO receiving form over that command and remains limited to receiving UI; no Receipt read endpoint exists. P5-M1-T01 is complete as a documentation-only gate under `ADR-027`. P5-M1-T02 adds bounded Organization Sales-VAT configuration, completed-by-existence Sale/SaleItem/one-Payment persistence, discount/VAT/cost snapshots, `SALE_CHECKOUT` idempotency, and negative `SALE` ledger provenance with tenant-safe restrictive constraints. It adds no Sale status, Cart, Customer, separate Sales Receipt, or refund/void model. The exact current task is P5-M3-T02 — Sales history and browser receipt UI. Branch pricing, analytics, AI insights, generic accounting/tax/audit systems, and production infrastructure remain unimplemented. Do not treat later planned directories, commands, schemas, endpoints, or features as existing code.
+The repository contains the repository/tooling foundation; identity, tenancy, authentication, onboarding, branch, invitation, and membership workflows; organization-scoped Catalog and Supplier persistence/API/UI; branch inventory balance/history/manual-adjustment persistence/API/UI; Purchase Order and Receiving persistence/API/UI; P5-M1 Sales persistence; P5-M2 atomic checkout, POS API, and responsive POS UI; and complete P5-M3 Sales History list/detail/browser-receipt API/UI. P5-M4-T01 is complete as the documentation-only `ADR-028` refund decision gate: V1 accepts linked immutable `SaleRefund` compensation with optional per-item same-branch restock and explicitly excludes VOID. No refund schema, migration, service, endpoint, inventory movement, payment record, permission, or UI is implemented yet. The exact current task is P5-M4-T02 — Implement reversal if in MVP. Branch pricing, analytics, AI insights, generic accounting/tax/audit systems, and production infrastructure remain unimplemented. Do not treat later planned directories, commands, schemas, endpoints, or features as existing code.
 
 ## 2. Read before changing anything
 
@@ -38,11 +38,11 @@ At minimum, enforce these gates:
 - Identity/onboarding/authorization decisions are accepted in `ADR-013`–`ADR-021`; implementation must follow their session, email, onboarding, invitation, registration-security, RBAC, branch-context, and membership-lifecycle boundaries.
 - Inventory mutations: `ADR-024`; quantity representation is accepted by `ADR-022`
 - POS/sales monetary behavior: `ADR-027` plus `ADR-016`, `ADR-022`, `ADR-024`, and `ADR-026`; `OQ-008` is resolved
-- Refund/void behavior: `OQ-009` in addition to the sales decisions
+- Refund behavior: `ADR-028` plus `ADR-016`, `ADR-022`, `ADR-024`, `ADR-026`, and `ADR-027`; `OQ-009` is resolved and VOID is excluded from V1
 - Purchasing/receiving behavior: `ADR-024`, `ADR-026`; quantity representation is accepted by `ADR-022`
 - Analytics and forecasting: `OQ-011`, `OQ-012`; plus any metric-specific dependency documented in `docs/ANALYTICS.md`
 
-The accepted MVP roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER`. Authorization is fixed, deny-by-default RBAC from `ADR-016` and `BUILD_SPEC.md` section 8: a user has one organization role per organization; `OWNER`/`ADMIN` have organization-wide branch access; the remaining roles need explicit branch assignments. The Express API, not the frontend, is the security boundary. At least one OWNER must remain; refund/void authority remains open in `OQ-009`.
+The accepted MVP roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER`. Authorization is fixed, deny-by-default RBAC from `ADR-016` and `BUILD_SPEC.md` section 8: a user has one organization role per organization; `OWNER`/`ADMIN` have organization-wide branch access; the remaining roles need explicit branch assignments. The Express API, not the frontend, is the security boundary. At least one OWNER must remain. `ADR-028` allows refund creation only for `OWNER`, `ADMIN`, and assigned `BRANCH_MANAGER`; authorized `CASHIER` may view refund records but cannot create them, and `INVENTORY_STAFF` has no refund access.
 
 Cloud/operations questions such as `OQ-015`, `OQ-017`–`OQ-020` remain phase-specific and do not block Repository Foundation or unrelated domain work.
 

@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | Behavioral Source of Truth; Architecture Freeze v1 with explicit blockers |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-25 |
+| Last updated | 2026-09-19 |
 
 ## 1. How to use this document
 
@@ -350,7 +350,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-SALE-001 — Complete POS checkout
 
-- **Status:** Planned and unblocked by `ADR-027`; cost snapshots follow `ADR-026`, quantity validation follows `ADR-022`, and no-negative stock follows `ADR-024`. No Sales implementation exists yet.
+- **Status:** Implemented by P5-M2; cost snapshots follow `ADR-026`, quantity validation follows `ADR-022`, and no-negative stock follows `ADR-024`.
 - **Actor:** Authorized owner, admin, branch manager, or cashier; inventory staff cannot sell.
 - **Preconditions:** Actor has checkout permission for an active branch; transient cart has at least one active same-organization Product; Organization sales VAT configuration is not `UNCONFIGURED`.
 - **Trigger:** Actor submits unique Product lines with quantities/expected prices, optional authorized whole-Sale discount, CASH or manually confirmed TRANSFER intent, and one idempotency key.
@@ -371,31 +371,39 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-SALE-002 — View sales history, sale details, and receipt
 
-- **Status:** Planned after sales foundation; receipt/reference and immutable monetary content follow `ADR-027`
+- **Status:** Implemented by P5-M3; receipt/reference and immutable monetary content follow `ADR-027`.
 - **Actor:** Cashier, manager, admin, or owner with relevant read permission
 - **Preconditions:** At least authenticated access; requested scope is allowed.
 - **Trigger:** Actor searches/browses sales or opens a sale/receipt.
 - **Main flow:** Validate filters and scope; query paginated branch sales; load one allowed sale with immutable line/payment snapshots; render a browser-printable receipt.
 - **Alternative flows:** `CASHIER` sees assigned-branch sales history as required for cashier operations; `OWNER`/`ADMIN` may query organization-wide history and `BRANCH_MANAGER` assigned-branch history.
 - **Error cases:** Invalid range/cursor; inaccessible sale; revoked branch; missing historical optional product; database failure. Inaccessible and nonexistent records use safe behavior.
-- **Business rules:** Historical names/prices/costs/VAT/discount/payment come from Sale snapshots, not current Product, Organization VAT, or actor/Branch names. Receipt is a projection of Sale/SaleItems/Payment, not a separate aggregate, and never exposes COGS. Internal history never exposes cost to a role without permission. The initial Sale has no status filter; any reversal projection waits for `OQ-009`.
+- **Business rules:** Historical names/prices/costs/VAT/discount/payment come from Sale snapshots, not current Product, Organization VAT, or actor/Branch names. Receipt is a projection of Sale/SaleItems/Payment, not a separate aggregate, and never exposes COGS. Internal history never exposes cost to a role without permission. P5-M3 has no reversal projection; P5-M4-T02 may add the derived refund summary and linked detail accepted by `ADR-028` without mutating the original Sale or receipt.
 - **Authorization:** Sales-read/receipt permission at resource branch; cost/margin fields need separate permission.
 - **Expected result:** Accurate, stable historical representation scoped to actor.
 - **Acceptance criteria:** Snapshot stability after catalog change; pagination/filter tests; cost-field authorization; cross-tenant and inaccessible-branch tests; printable responsive view.
 
-### UC-SALE-003 — Void or refund a sale
+### UC-SALE-003 — Refund a sale
 
-- **Status:** Blocked by `OQ-009` and `OQ-019`; original Sales monetary/cost snapshots follow `ADR-027`/`ADR-026`, and stock availability follows `ADR-024`
-- **Actor:** Role authorized by the future reversal policy
-- **Preconditions:** An eligible sale exists and the accepted time/status/payment rules permit the requested reversal.
-- **Trigger:** Actor submits void/refund intent, amount/items, and reason.
-- **Main flow:** Not accepted. It must eventually authorize, validate eligibility, create explicit linked reversal/refund records and projections, record payment reversal as applicable, create compensating inventory movements, and commit atomically without rewriting the original Sale.
-- **Alternative flows:** Full versus partial, pre-settlement void versus refund, non-restockable return, manager approval—each requires an explicit decision.
-- **Error cases:** Already reversed; beyond time limit; excessive quantity/amount; payment provider failure; stock disposition unknown; forbidden role; duplicate request; concurrent reversal.
-- **Business rules:** Never delete or edit the original completed sale/ledger rows to simulate a reversal.
-- **Authorization:** Exact role/approval matrix is unresolved.
-- **Expected result:** No implementation until rules are accepted; later, one traceable compensating lifecycle.
-- **Acceptance criteria:** Must be written after `OQ-009` closes and include money, payment, stock, history, audit, idempotency, and concurrency tests.
+- **Status:** Accepted by `ADR-028` and ready for P5-M4-T02; no runtime implementation exists. VOID is not a V1 operation. Original Sales follow `ADR-027`, cost follows `ADR-026`, and stock follows `ADR-024`.
+- **Actor:** `OWNER`, `ADMIN`, or an assigned `BRANCH_MANAGER`; CASHIER and INVENTORY_STAFF cannot create refunds.
+- **Preconditions:** The immutable original Sale belongs to the trusted Organization and an active authorized Branch, has one confirmed CASH or TRANSFER Payment, and at least one SaleItem has refundable quantity. There is no time cutoff. Current Product inactivity does not invalidate historical refund eligibility.
+- **Trigger:** Actor submits a required idempotency key, one or more unique original SaleItem IDs with positive refund quantity and a same-unit restock quantity from zero through the refund quantity, a required reason, and—when the original payment was TRANSFER—a manual refund-transfer reference.
+- **Main flow:**
+  1. Validate strict quantity, reason, idempotency, and transfer-reference input; authenticate and re-resolve Organization/Branch authorization.
+  2. In one transaction, serialize the Organization refund idempotency identity, revalidate the candidate active Branch scope, then lock/load the original Sale and require its persisted Organization/Branch to match that authorized scope.
+  3. Load immutable original SaleItem/Payment snapshots and prior refunds; calculate remaining refundable quantity and reject any cumulative excess.
+  4. Derive line net, discount, gross, VAT, taxable, and refund total from cumulative historical allocations with exact Decimal arithmetic; never consult current Product price or current VAT settings.
+  5. Derive refund cost only for restocked quantity from the original SaleItem cost snapshot; UNKNOWN stays null.
+  6. Acquire the shared Branch/Product inventory locks for positive restock quantities in sorted Product-ID order and lock balances/cost states.
+  7. Create immutable `SaleRefund`, `SaleRefundItem`, and one confirmed `RefundPayment`; append one positive `SALE_REFUND_RETURN` movement per restocked item and update balance/cost state.
+  8. Persist the idempotency result and commit all effects; return the linked refund. Any failure rolls back everything.
+- **Alternative flows:** Full refund is the cumulative state where every SaleItem reaches its sold quantity. Partial and fractional-quantity refunds may occur sequentially. A refund item may return all, some, or none of its refunded quantity to sellable inventory; V1 does not support a later restock-only operation for an already refunded quantity. An identical idempotent retry returns the existing refund.
+- **Error cases:** Empty/duplicate items; zero, negative, excess-scale, non-integral integer-unit, or over-remaining quantity; restock above refund quantity; zero total refund; inaccessible/cross-tenant Sale; route Branch mismatch; inactive Branch; fully refunded Sale; forbidden role; missing/invalid TRANSFER refund reference; idempotency conflict; concurrent over-refund; database failure.
+- **Business rules:** Original Sale, SaleItems, Payment, `SALE` movements, price/VAT/discount/cost snapshots, COGS, and original browser receipt are immutable. Refund records are immutable and cannot be edited/deleted/refunded. Monetary reversal uses refunded quantity; COGS and inventory effects use restocked quantity. No VOID, approval chain, same-day rule, gateway, legal credit note, or generic `OQ-019` audit system is introduced. The refund header's actor, membership, display snapshot, reason, UTC timestamp, reference, and item/payment/ledger links provide bounded operational auditability.
+- **Authorization:** Refund create is `OWNER`, `ADMIN`, or assigned `BRANCH_MANAGER` in the original active Branch. Refund view matches Sales-history scope (`OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`, assigned `CASHIER`). Refund cost view matches Sales-cost scope (`OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`). INVENTORY_STAFF has no refund permission.
+- **Expected result:** Exactly one immutable, linked, internally reconciled refund with one confirmed payment and optional same-branch stock/cost compensation, or no mutation.
+- **Acceptance criteria:** Full/partial/fractional and sequential-refund money reconciliation; matching payment; optional restock; KNOWN/UNKNOWN cost transitions; authorization/tenant/branch isolation; original-history immutability; idempotency; concurrency; atomic rollback; list/detail presentation; and E2E tests pass.
 
 ## 6. Analytics and forecasting
 

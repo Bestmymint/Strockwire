@@ -2,9 +2,9 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1; accepted logical architecture; minimal web/API shells implemented |
+| Status | Architecture Freeze v1; implementation verified through P5-M3; refund architecture accepted |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-25 |
+| Last updated | 2026-09-19 |
 
 ## 1. Scope and authority
 
@@ -219,9 +219,9 @@ trusted state from PostgreSQL and call this policy before mutation or exposure.
   actively assigned branch scope; organization scope and zero or inactive
   assignments deny access.
 - The vocabulary includes the accepted catalog, supplier, inventory,
-  purchasing/receiving, checkout, sales-history, analytics, forecast/reorder,
-  AI-summary, and governance capabilities. It excludes refund/void authority
-  until `OQ-009` is resolved. `ADMIN` can manage only non-owner memberships;
+  purchasing/receiving, checkout, sales-history, refund, analytics, forecast/reorder,
+  AI-summary, and governance capabilities. `ADR-028` adds refund create/view/cost-view
+  authority and deliberately adds no VOID capability. `ADMIN` can manage only non-owner memberships;
   OWNER membership, ownership transfer, and destructive ownership actions are
   OWNER-only. Membership mutations serialize on the organization row and
   preserve the last-active-OWNER invariant.
@@ -415,7 +415,53 @@ UNKNOWN cost remains UNKNOWN with null average/value and null SaleItem unit cost
 whether remaining quantity is positive or zero; later receipt initialization never
 backfills history. Any failure rolls back every checkout effect.
 
-### 6.5 Deterministic analytics
+### 6.5 Sale refund
+
+```mermaid
+sequenceDiagram
+    actor Manager
+    participant Web
+    participant API as Express API
+    participant Sales
+    participant Inventory
+    participant DB as PostgreSQL
+
+    Manager->>Web: Submit item refund/restock quantities, reason, payment evidence
+    Web->>API: POST Sale refund with Idempotency-Key
+    API->>API: Authenticate and validate strict intent
+    API->>Sales: Invoke refund for candidate Sale scope
+    Sales->>DB: Begin transaction; lock refund idempotency
+    Sales->>DB: Revalidate access; lock original Sale
+    Sales->>DB: Load original snapshots and prior refunds
+    Sales->>Sales: Enforce cumulative quantity and derive money/VAT/cost
+    Sales->>DB: Create refund/items and one matching-method payment
+    Sales->>Inventory: Restock only positive restock quantities
+    Inventory->>DB: Lock sorted products; append return ledger; update balance/cost
+    Sales->>DB: Persist replay result and commit all changes
+    Sales-->>API: Immutable linked REFUND
+    API-->>Web: Return same result on identical retry
+```
+
+`ADR-028` adds one linked REFUND concept and no VOID concept. The original
+Sale/SaleItems/Payment, negative `SALE` movements, receipt, and historical snapshots
+remain immutable. Each refund item has a positive financial quantity and a separately
+recorded restock quantity from zero through that amount. Only restock creates a
+positive `SALE_REFUND_RETURN` movement in the original active Branch.
+
+Refund money, discount, VAT, taxable value, and COGS derive from cumulative original
+SaleItem snapshots; current Product price/VAT configuration/current average never
+rewrites history. Returned KNOWN-cost units enter at original unit cost. Mixed UNKNOWN
+cost conservatively remains/becomes UNKNOWN except a known-cost return into zero
+UNKNOWN quantity may initialize KNOWN. One matching-method manual RefundPayment and
+all optional stock/cost effects share the transaction.
+
+Refund concurrency uses Organization idempotency first, then the original Sale row to
+serialize cumulative eligibility, then the existing shared Branch/Product locks in
+sorted Product-ID order for restock. The API revalidates tenant/branch/role authority
+against the persisted Sale. There is no time cutoff, approval chain, gateway, or
+dependency on `OQ-016`/`OQ-019`.
+
+### 6.6 Deterministic analytics
 
 1. The actor requests a period, branch, or allowed organization aggregate.
 2. The API resolves authorization and canonical period boundaries.
@@ -426,7 +472,7 @@ backfills history. Any failure rolls back every checkout effect.
 
 `docs/ANALYTICS.md` exclusively owns formulas and period semantics.
 
-### 6.6 Scheduled AI insight
+### 6.7 Scheduled AI insight
 
 ```mermaid
 sequenceDiagram
@@ -523,9 +569,9 @@ Avoid a generic repository abstraction that erases query semantics, tenant scope
 - Checkout and inventory deduction
 - Receiving and inventory addition
 - Adjustments and balance changes
-- Refund/void reversal once defined
+- Refund/payment/restock compensation under `ADR-028`
 - Uniqueness and membership constraints
-- Idempotent creation of a sale, receipt, snapshot, and scheduled report
+- Idempotent creation of a sale, refund, receipt, snapshot, and scheduled report
 - Document-first Sale monetary allocation and one-payment/receipt consistency
 
 ### Derived/read models
@@ -630,7 +676,6 @@ Scale in measured stages:
 
 This document does not answer the following canonical questions from `BUILD_SPEC.md`:
 
-- `OQ-009` refund/void rules
 - `OQ-012` forecasting V1
 - `OQ-015` exact production hosting
 - `OQ-016` timezone
@@ -641,12 +686,11 @@ This document does not answer the following canonical questions from `BUILD_SPEC
 Implementation touching one of these areas must stop at its accepted boundary until the referenced question is resolved and all affected documents are updated.
 
 Sales payment, Output VAT, discount, receipt, monetary, checkout, and UNKNOWN-cost
-behavior are accepted by `ADR-027`, which resolves `OQ-008`. P5-M1-T02 implements the
-bounded Organization Sales-VAT, completed-by-existence Sale/SaleItem/one-Payment,
-discount/VAT/cost/idempotency, and Sale/inventory-provenance persistence foundation.
-It adds no Sale status or Sales runtime. P5-M2-T01 next owns the checkout service,
-P5-M2-T02 the target VAT-profile/POS HTTP contracts, P5-M2-T03 the VAT/POS UI, and
-P5-M3 the history/receipt read experience. `OQ-009` remains unresolved for reversal.
+behavior are accepted by `ADR-027`, which resolves `OQ-008`. P5-M1 and P5-M2 implement
+Sales persistence, checkout, HTTP, and POS UI; P5-M3 implements history/detail/browser
+receipt. `ADR-028` resolves `OQ-009` with linked REFUND compensation, optional
+same-branch restock, historical allocation/cost authority, and no VOID operation.
+P5-M4-T01 is documentation-only; P5-M4-T02 owns future refund runtime implementation.
 
 Purchasing/receiving costing and receipt lifecycle are accepted by `ADR-026`.
 P4-M3-T01 implements Receipt persistence, the atomic receiving service, and the

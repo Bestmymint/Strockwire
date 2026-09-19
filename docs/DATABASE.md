@@ -2,11 +2,11 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1 logical data contract; persistence implemented through P5-M1-T02 |
+| Status | Architecture Freeze v1 logical data contract through P5-M4-T01; persistence implemented through P5-M3 |
 | Database | PostgreSQL |
 | ORM/migrations | Prisma |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-09-05 |
+| Last updated | 2026-09-19 |
 
 ## 1. Scope and authority
 
@@ -174,6 +174,11 @@ erDiagram
     SALE ||--|{ SALE_ITEM : contains
     PRODUCT ||--o{ SALE_ITEM : snapshots
     SALE ||--|| PAYMENT : paid_by
+    SALE ||--o{ SALE_REFUND : compensated_by
+    SALE_REFUND ||--|{ SALE_REFUND_ITEM : contains
+    SALE_ITEM ||--o{ SALE_REFUND_ITEM : compensated_by
+    SALE_REFUND ||--|| REFUND_PAYMENT : repaid_by
+    SALE_REFUND_ITEM ||--o| INVENTORY_TRANSACTION : may_restore
 
     ORGANIZATION ||--o{ ANALYTICS_SNAPSHOT : owns
     BRANCH ||--o{ ANALYTICS_SNAPSHOT : may_scope
@@ -627,7 +632,8 @@ Required logical attributes:
 - Signed, non-zero quantity delta as `DECIMAL(18,4)` using the Product's accepted
   immutable base unit. Positive increases and negative decreases stock. API output
   removes meaningless trailing fractional zeros.
-- Bounded source: `MANUAL_ADJUSTMENT` or positive `PURCHASE_RECEIVE`
+- Bounded source: signed `MANUAL_ADJUSTMENT`, positive `PURCHASE_RECEIVE`, negative
+  `SALE`, or positive `SALE_REFUND_RETURN`
 - Acting human user plus membership/context sufficient for durable attribution, or
   an explicit trusted system/source identity for future system-created movements
 - Adjustment reason/note where applicable
@@ -638,10 +644,12 @@ Required logical attributes:
 Accepted movement concepts:
 
 - Purchase receipt: positive `PURCHASE_RECEIVE`, linked uniquely to one immutable receipt item
-- Sale: negative
+- Sale: negative `SALE`, linked uniquely to one immutable SaleItem
 - Manual adjustment: signed; reason is `STOCK_COUNT`, `DAMAGE`, `LOSS`, `FOUND`,
   `CORRECTION`, or `OTHER`
-- Refund/void compensation: only after `OQ-009`
+- Refund return: positive `SALE_REFUND_RETURN`, linked uniquely to one immutable
+  SaleRefundItem with positive restock quantity; financial-only refund items create no
+  inventory movement
 - Transfer out/in: deferred from MVP by `ADR-025`; no transfer ledger source exists
 
 Constraints and indexes:
@@ -816,6 +824,18 @@ projection implemented by P4-M3-T01 in `inventory_cost_states`.
   remains `UNKNOWN` and both `averageUnitCost` and `inventoryValue` remain null; the
   SaleItem snapshots UNKNOWN with null unit cost/COGS. A later authoritative receipt
   from zero may initialize current stock prospectively and never backfills that Sale.
+- Under `ADR-028`, a KNOWN-cost refund return enters at the immutable original
+  SaleItem unit cost. KNOWN current stock recalculates its six-place moving average
+  from current quantity/current average plus returned quantity/original unit cost,
+  and persists that exact weighted value sum at ten places, matching receiving. A
+  KNOWN return into zero UNKNOWN quantity may initialize KNOWN. Subsequent operations
+  continue to derive old basis from quantity times the retained average under
+  `ADR-026` rather than treating stored value as an independently accumulated authority.
+- An UNKNOWN-cost return never receives a fabricated value. It keeps UNKNOWN current
+  stock UNKNOWN and conservatively changes KNOWN current stock to UNKNOWN with null
+  average/value because the resulting aggregate contains unvalued units. A KNOWN-cost
+  return into positive UNKNOWN stock also remains UNKNOWN. No restock changes no cost
+  state.
 - For `KNOWN` basis, `averageUnitCost` is authoritative. Manual adjustments retain it
   and materialize inventory value as resulting quantity times that average, rounded
   `ROUND_HALF_UP` only at the `DECIMAL(38,10)` storage boundary. Subsequent receipts
@@ -875,11 +895,11 @@ Lifecycle:
 
 - No persisted Draft Sale or Cart exists. Existence of a Sale row means its checkout
   completed atomically.
-- The initial Sale has no `SaleStatus` enum or status field. `OQ-009` decides any
-  future reversal status/projection semantics.
+- Sale has no mutable `SaleStatus` enum or status field. `ADR-028` permits only derived
+  `NONE`, `PARTIALLY_REFUNDED`, or `FULLY_REFUNDED` read projection from linked refunds.
 - Sale monetary, VAT, payment, item, cost, actor, reference, idempotency, and inventory
-  facts are not hard-deleted or rewritten; future correction uses linked compensating
-  records after `OQ-009` is accepted.
+  facts are not hard-deleted or rewritten; `ADR-028` correction uses linked immutable
+  SaleRefund compensation.
 
 #### `SaleItem`
 
@@ -936,6 +956,86 @@ Constraints:
 - TRANSFER requires null tender/change and may have a bounded reference.
 - Sensitive payment credentials/card data are never stored directly.
 - CARD, split/multiple, gateway/provider, pending, and offline payment are not modeled.
+
+#### `SaleRefund`
+
+Purpose: immutable branch-scoped financial compensation linked to one original Sale,
+accepted by `ADR-028`. It is the only V1 reversal concept; no VOID model exists.
+
+Required logical attributes:
+
+- Organization, original Branch, and original Sale identifiers
+- Stable ID and Organization-unique immutable `REFUND-<UUID>` reference targeting
+  `VARCHAR(43)`
+- Actor user/membership provenance and immutable actor display-name snapshot
+- Currency `THB`; `grossAmount`, `discountAmount`, `outputVatAmount`, and
+  `totalAmount DECIMAL(38,2)` plus nullable `taxableAmount DECIMAL(38,2)`
+- Original sales-VAT status/rate snapshots used only to describe the historical
+  allocation authority
+- Required trimmed nonblank reason of 1–200 characters
+- `SALE_REFUND` idempotency key hash and canonical-request hash
+- Immutable `completedAt` and `createdAt` UTC timestamps
+
+Constraints and indexes:
+
+- Refund Organization/Branch must equal the original Sale scope through restrictive
+  composite keys. Cross-branch and cross-Organization refunds are impossible.
+- Reference is unique by `(organization_id, reference)`. Idempotency hash is unique by
+  `(organization_id, operation_type, idempotency_key_hash)` for `SALE_REFUND`.
+- Currency is `THB`; total is positive; `gross_amount - discount_amount =
+  total_amount`; REGISTERED requires `taxable_amount + output_vat_amount =
+  total_amount`; NOT_REGISTERED requires null taxable and zero Output VAT.
+- Index original Sale plus chronological `(completed_at,id)` traversal. Do not add or
+  mutate a status column on Sale.
+
+#### `SaleRefundItem`
+
+Purpose: immutable item-level monetary compensation and optional sellable-stock return
+linked to one original SaleItem.
+
+Required logical attributes:
+
+- SaleRefund and original SaleItem identifiers with Organization/Branch/Product scope
+- Positive `refundQuantity DECIMAL(18,4)` and non-negative
+  `restockQuantity DECIMAL(18,4)` in the original immutable Product unit
+- `reversedLineGross`, `reversedLineDiscount`, `reversedLineNet`, nullable
+  `reversedLineTaxable`, and `reversedLineOutputVat`, each `DECIMAL(38,2)`
+- Original cost-basis state and nullable original `unitCost DECIMAL(19,6)` snapshot
+- Nullable `cogsReversalAmount DECIMAL(38,10)` based only on cumulative restocked
+  quantity
+- Optional unique positive `SALE_REFUND_RETURN` InventoryTransaction linkage
+
+Constraints:
+
+- One original SaleItem occurs at most once per SaleRefund. Refund item, original item,
+  original Sale, Product, Branch, and Organization must agree through restrictive keys.
+- `0 < refund_quantity`, `0 <= restock_quantity <= refund_quantity`, and quantity
+  integrality follows the original Product unit.
+- Line money is non-negative and preserves gross minus discount equals net plus the
+  historical VAT/nullability shape. Header sums equal refund-item sums.
+- Under the original Sale row lock, cumulative refund quantity and cumulative restock
+  quantity for each original SaleItem never exceed original sold quantity.
+- KNOWN original cost requires the original unit-cost snapshot and a non-null COGS
+  reversal (zero when no stock is returned). UNKNOWN requires both null.
+- Positive restock requires exactly one linked movement whose delta equals restock
+  quantity; zero restock requires no movement.
+
+#### `RefundPayment`
+
+Purpose: one confirmed manual repayment for one SaleRefund.
+
+Required logical attributes and constraints:
+
+- Exactly one SaleRefund link; Organization/Branch and amount agree through restrictive
+  keys; `amount DECIMAL(38,2)` equals SaleRefund total.
+- Method equals the original Payment method. CASH has no tender/change/reference.
+  TRANSFER requires one trimmed nonblank reference of 1–100 characters.
+- Confirmed/created UTC timestamps. Existence means manually confirmed; no mutable
+  status, split, CARD, gateway, pending, slip, or OCR state exists.
+
+SaleRefund, SaleRefundItem, and RefundPayment are immutable and cannot be hard-deleted,
+edited, refunded, or voided. They provide bounded operational attribution without a
+generic audit-log subsystem.
 
 No separate Sales Receipt table exists. Customer receipt data is a projection of the
 immutable Sale, SaleItems, and Payment. No Customer/CRM relation or checkout customer
@@ -1144,11 +1244,38 @@ and active-resource facts stable until commit, while existing membership and Bra
 lifecycle writers coordinate through the Organization row. Balance and ledger
 writes remain inside that same transaction.
 
-### 6.4 Refund/void and deferred transfer
+### 6.4 Sale refund and deferred transfer
 
-No refund/void transaction contract is accepted yet; it remains blocked by `OQ-009`.
+`ADR-028` accepts REFUND and excludes VOID. One refund transaction must:
+
+1. Validate the printable idempotency key, quantities, required reason, and conditional
+   TRANSFER reference; authenticate the actor.
+2. Acquire the Organization/`SALE_REFUND` idempotency lock, re-resolve trusted access,
+   lock the original Sale row, and require its persisted Branch to be active and in
+   authorized scope.
+3. Load immutable SaleItems/original Payment and prior refund aggregates; reject empty,
+   duplicate, fully refunded, zero/negative/excess-scale/non-integral, or cumulative
+   over-refund intent.
+4. Calculate cumulative-target refund net/discount/gross/VAT/taxable deltas from the
+   original line snapshots; reject a zero-total operation. Never re-read Product price
+   or current Organization VAT configuration.
+5. Calculate KNOWN COGS reversal from cumulative restocked quantity and the original
+   SaleItem cost; preserve null UNKNOWN cost.
+6. Create immutable SaleRefund, SaleRefundItems, and exactly one matching-method
+   RefundPayment.
+7. For positive restock only, acquire existing shared Branch/Product locks in sorted
+   Product-ID order, lock balances/cost states, append positive `SALE_REFUND_RETURN`
+   movements, and apply the `ADR-028` moving-average/UNKNOWN transitions.
+8. Persist the idempotency result and commit all refund/payment/ledger/balance/cost
+   effects, or roll back every effect.
+
+The original Sale, Payment, SaleItems, and `SALE` movements are never updated. Identical
+retry returns the first logical refund; changed intent conflicts. The original Sale row
+serializes cumulative refund/restock eligibility, and refund paths never take a Product
+lock before that Sale lock.
+
 Stock transfer is **DEFERRED FROM MVP** by `ADR-025`; no transfer transaction contract,
-record, or ledger source is defined. Do not infer either design from example movement names.
+record, or ledger source is defined. Do not infer it from example movement names.
 
 ## 7. Concurrency strategy requirements
 
@@ -1160,6 +1287,10 @@ The implementation may choose row locking, conditional/versioned updates, atomic
 - Duplicate idempotency keys return/recover one logical result.
 - Concurrent receiving cannot exceed accepted quantities or double-count stock.
 - Lock order is deterministic across multiple cart lines to reduce deadlock risk.
+- Concurrent refunds of one Sale serialize on that Sale and cannot over-refund, restore
+  stock twice, or create duplicate payment/ledger compensation.
+- Refund restock uses the same sorted Branch/Product lock namespace as checkout and
+  receiving; no refund path acquires Product before original Sale.
 - A deadlock/serialization failure is handled with a bounded safe retry only where the whole operation is idempotent.
 
 ## 8. Money, quantity, and rounding
@@ -1243,6 +1374,10 @@ At minimum, database-backed tests must cover:
 - Concurrent checkout and balance consistency
 - Atomic receiving success and rollback at each failure point
 - Concurrent/duplicate receiving
+- Full, partial, fractional, sequential, concurrent, and idempotent refund behavior
+- Refund money/VAT/discount final-remainder reconciliation and zero-total rejection
+- Refund optional-restock ledger/balance consistency and KNOWN/UNKNOWN cost transitions
+- Refund permission, tenant/branch isolation, immutable-original-history, and atomic rollback
 - Adjustment traceability
 - Ledger-to-balance reconciliation
 - Historical snapshot immutability after product changes
@@ -1256,7 +1391,8 @@ The canonical definitions live in `BUILD_SPEC.md`:
 - `OQ-008` is resolved by `ADR-027` for payment, Output VAT, discount, tender/change,
   Sale-backed receipt/reference, sales Decimal allocation, atomicity, and UNKNOWN
   cost. P4 Input VAT snapshots remain governed separately by `ADR-026`.
-- `OQ-009` reversal rules affect lifecycle/linkage.
+- `OQ-009` is resolved by `ADR-028`: linked REFUND records, optional same-branch
+  restock, historical allocation/cost authority, and no VOID operation.
 - `ADR-026` fixes future receipt/sale cost data and later valuation on a Branch/Product moving weighted-average basis; Product remains without an organization-wide cost/valuation field.
 - `OQ-011` completed-sale and metric definitions affect indexes/snapshots.
 - `OQ-012` forecast definition affects forecast storage.

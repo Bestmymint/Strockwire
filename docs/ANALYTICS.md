@@ -6,7 +6,7 @@
 | Compute stack | PostgreSQL SQL + TypeScript |
 | AI boundary | OpenRouter summarizes supplied aggregates only |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-25 |
+| Last updated | 2026-09-19 |
 
 ## 1. Scope and authority
 
@@ -30,7 +30,9 @@ When an Open Question is answered, update the definition, status, examples, API 
 2. OpenRouter never calculates metrics, queries the database, forecasts demand, decides stock, or changes operational records.
 3. Aggregate only data belonging to the requested organization and authorized branches.
 4. Every response/snapshot identifies its scope, canonical period, reporting timezone, metric-definition version, and data completeness.
-5. Use accepted completed/recognized sale states only. That set is blocked by `OQ-009` and `OQ-011`.
+5. Use only recognition/period treatment accepted by `OQ-011`. `ADR-028` supplies
+   immutable refund facts and derived Sale refund state but does not choose metric
+   eligibility or whether a period recognizes Sale time or refund time.
 6. Monetary calculations retain decimal precision; JSON monetary values use canonical decimal strings.
 7. Missing, zero, insufficient, stale, and partial data states are explicit. Do not turn them into zero unless zero is the correct semantic value.
 8. Historical outputs retain the metric and forecast version used to produce them.
@@ -44,8 +46,10 @@ When an Open Question is answered, update the definition, status, examples, API 
 | Branch | One operational branch within the organization | Accepted |
 | Product | Organization-level catalog item | Accepted |
 | Category | Organization-level product category | Accepted |
-| Sale | One accepted sale transaction at one branch | Accepted structurally; included statuses blocked |
-| Sale item | Historical product/price/cost/quantity snapshot within a sale | Accepted structurally; included statuses blocked |
+| Sale | One immutable accepted sale transaction at one branch | Accepted structurally; metric eligibility blocked by `OQ-011` |
+| Sale item | Historical product/price/cost/quantity snapshot within a sale | Accepted structurally; metric treatment blocked by `OQ-011` |
+| Sale refund | One immutable linked REFUND operation at the original Sale Branch | Accepted structurally by `ADR-028`; period recognition blocked by `OQ-011` |
+| Sale refund item | Historical monetary refund quantity plus optional restock/cost compensation | Accepted structurally by `ADR-028`; metric treatment blocked by `OQ-011` |
 | Calendar period | Daily, weekly, monthly, or yearly reporting interval | Accepted set; exact boundaries blocked |
 
 Default organization analytics aggregate the actor's authorized branch set, not automatically every branch in the tenant. The response must disclose the included branch identifiers/count without exposing inaccessible branches.
@@ -79,22 +83,32 @@ For a requested scope `S` and period `P`:
 
 - `EligibleSales(S,P)`: sales in scope and time window whose accepted state is included.
 - `EligibleSaleItems(S,P)`: items belonging to `EligibleSales` with accepted reversal treatment.
+- `EligibleRefundItems(S,P)`: immutable SaleRefundItems included under the future
+  `OQ-011` recognition/period rule; `ADR-028` does not choose Sale-time versus
+  refund-time recognition.
 - `Q_i`: accepted signed or net quantity of sale item `i`.
 - `UnitPrice_i`: historical unit-price snapshot.
 - `LineGross_i`: non-negative persisted line-gross allocation before the whole-Sale discount; line sums equal Sale subtotal under `ADR-027`.
 - `LineDiscount_i`: non-negative persisted whole-Sale discount allocation, no greater than line gross; line sums equal Sale discount.
-- `LineNet_i`: persisted `LineGross_i - LineDiscount_i`; non-negative line sums equal Sale total. Recognition/eligibility remains `OQ-011`/`OQ-009`.
+- `LineNet_i`: persisted `LineGross_i - LineDiscount_i`; non-negative line sums equal Sale total. Recognition/eligibility remains `OQ-011`.
 - `LineOutputVat_i`: registered-Sale Output VAT allocated from the discounted VAT-inclusive document total; line sums equal Sale Output VAT. It is `0.00` for NOT_REGISTERED Sales.
 - `LineTaxable_i`: registered-Sale `LineNet_i - LineOutputVat_i`; line sums equal Sale taxable amount. It is null, not Sale net, for NOT_REGISTERED Sales.
 - `CostBasisState_i`: immutable `KNOWN` or `UNKNOWN` checkout snapshot.
 - `UnitCost_i`: nullable historical Branch/Product moving-weighted-average unit-cost snapshot under `ADR-026`/`ADR-027`; null for UNKNOWN basis.
 - `LineCogs_i`: nullable persisted `ROUND_HALF_UP(quantity * UnitCost_i, 10)` snapshot; null for UNKNOWN basis and never coerced to zero or backfilled.
+- `RefundQuantity_j`, `RefundLineGross_j`, `RefundLineDiscount_j`,
+  `RefundLineNet_j`, nullable `RefundLineTaxable_j`, and `RefundLineOutputVat_j`:
+  immutable cumulative-target compensation derived from original SaleItem snapshots.
+- `RestockQuantity_j` and `RefundCogs_j`: optional physical return quantity and nullable
+  historical COGS reversal; they are distinct from financial refund quantity and null
+  for UNKNOWN cost under `ADR-028`.
 - `OnHand(b,p,t)`: branch `b` balance of product `p` at cutoff `t`.
 - `Incoming(b,p,H)`: confirmed inbound quantity expected in horizon `H`, once purchase lifecycle is accepted.
 
-`ADR-027` fixes the persisted gross, discount, net, Output VAT, taxable, and cost
-snapshot facts. `OQ-009`/`OQ-011` still determine reversal treatment, eligible Sales,
-and metric meaning; these facts alone do not make a metric Accepted.
+`ADR-027` fixes original Sale gross, discount, net, Output VAT, taxable, and cost
+snapshots. `ADR-028` fixes immutable refund and optional-restock compensation facts.
+`OQ-011` still decides eligibility, recognition period, netting, and metric meaning;
+these facts alone do not make a metric Accepted.
 
 ## 7. Sales metrics catalog
 
@@ -108,7 +122,7 @@ GrossSales(S,P) = sum(LineGross_i for i in EligibleSaleItems(S,P))
 
 - Unit: currency decimal
 - Grain: branch/organization, optionally category/product
-- Status: **Blocked** by `OQ-009` and `OQ-011`
+- Status: **Blocked** by `OQ-011`
 - `ADR-027` fixes VAT-inclusive registered prices, whole-Sale discount allocation, and
   document-first rounding. Must still decide eligible/reversal treatment and whether
   this metric is presented VAT-inclusive or alongside its accepted VAT breakout.
@@ -124,7 +138,7 @@ NetSales(S,P) = sum(LineNet_i for i in EligibleSaleItems(S,P))
 ```
 
 - Unit: currency decimal
-- Status: **Blocked** by `OQ-009` and `OQ-011`
+- Status: **Blocked** by `OQ-011`
 - `LineNet` is the persisted post-discount VAT-inclusive line total under `ADR-027`.
   `OQ-011` must still decide recognized-sale/reversal treatment and whether an
   analytics metric uses VAT-inclusive net or registered taxable value; do not subtract
@@ -137,7 +151,7 @@ UnitsSold(S,P) = sum(Q_i for i in EligibleSaleItems(S,P))
 ```
 
 - Unit: product quantity
-- Status: **Blocked** by `OQ-009`, `OQ-011`; quantity unit/precision is accepted by `ADR-022`
+- Status: **Blocked** by `OQ-011`; quantity unit/precision is accepted by `ADR-022`
 - Aggregating unlike units across all products may be displayed only with a clear label; it is not a physical inventory quantity.
 
 ### M-004 Transaction count
@@ -147,7 +161,7 @@ TransactionCount(S,P) = count(distinct saleId in EligibleSales(S,P))
 ```
 
 - Unit: transactions
-- Status: **Blocked** by included sale/reversal states in `OQ-009`, `OQ-011`
+- Status: **Blocked** by included sale/refund recognition in `OQ-011`
 
 ### M-005 Average order value (AOV)
 
@@ -217,7 +231,7 @@ GrossMarginPercent = GrossMargin / NetSales * 100
 ```
 
 - Zero net sales: percentage `null`.
-- Status: **Blocked** by `OQ-009` and `OQ-011`, and by the later sales/cost implementation that persists historical unit-cost snapshots.
+- Status: **Blocked** by `OQ-011`.
 - `ADR-026` fixes the moving-weighted-average method and `ADR-027` fixes the immutable
   SaleItem snapshot. If any included line has UNKNOWN basis, aggregate COGS and gross
   margin are unavailable/incomplete rather than a partial numeric result; never
@@ -368,7 +382,7 @@ Forecasting is part of StockWise's deterministic analytics layer, but its V1 alg
 - Baseline algorithm, such as naive last-period or moving average
 - Candidate algorithm, if different from baseline
 - Seasonality and calendar features
-- Treatment of stockouts, refunds/voids, price changes, promotions, missing days, and new products
+- Treatment of stockouts, refunds, price changes, promotions, missing days, and new products; V1 has no VOID operation
 - Minimum sample/history requirements and cold-start output
 - Retraining/recalculation cadence
 - Forecast version and reproducibility metadata
@@ -550,7 +564,6 @@ Expected results must be hand-verifiable and stored with the test. SQL and TypeS
 
 Canonical Open Questions are in `BUILD_SPEC.md`:
 
-- `OQ-009` refund/void treatment
 - `OQ-011` exact metric definitions, thresholds, comparison windows, and eligible states
 - `OQ-012` Forecasting V1
 - `OQ-016` reporting timezone and period boundaries

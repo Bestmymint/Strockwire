@@ -2,11 +2,11 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1 contract; identity/access, branch/member management, and Catalog API implemented |
+| Status | Architecture Freeze v1 contract; implementation verified through P5-M3; refund API accepted for P5-M4-T02 |
 | Base path | `/api/v1` |
 | Style | JSON REST |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-08-25 |
+| Last updated | 2026-09-19 |
 
 ## 1. Scope and authority
 
@@ -861,12 +861,13 @@ inventory transaction, stock movement, cost update, or VAT record.
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `GET /organizations/{organizationId}/sales-vat-profile` | `OWNER`, `ADMIN` | None | Authoritative Organization sales VAT profile | Safe not-found/forbidden | Target contract; P5-M2-T02 |
-| `PATCH /organizations/{organizationId}/sales-vat-profile` | `OWNER`, `ADMIN` | Exact `expectedUpdatedAt`; status and conditional rate | Updated sales VAT profile | Invalid state/rate, stale version, safe not-found/forbidden | Target contract; P5-M2-T02 |
-| `GET /organizations/{organizationId}/branches/{branchId}/pos/products` | Branch checkout | Query/barcode/cursor | Sellable product summaries with current server price/availability indicator | Invalid query, forbidden branch | Planned; P5-M2-T02 |
-| `POST /organizations/{organizationId}/branches/{branchId}/sales` | `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`, assigned `CASHIER` | Required `Idempotency-Key`; unique cart lines, optional authorized discount, CASH/TRANSFER intent | `201` completed Sale-backed receipt; exact replay `200` | VAT config, price, stock, payment, discount, idempotency, concurrency | Target contract; P5-M2-T02 after P5-M1-T02/P5-M2-T01; `ADR-027` |
-| `GET /organizations/{organizationId}/branches/{branchId}/sales` | `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`, assigned `CASHIER` | `cursor`, `limit`, absolute `createdAtFrom`/`createdAtTo`, `actorUserId`; no initial status filter | Historical Sale summaries | Invalid query/range/cursor, safe forbidden | Implemented; P5-M3-T01; later status/projection filters require `OQ-009` |
-| `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}` | Branch sales read | None | Immutable Sale, line, permitted payment, and role-permitted cost snapshots | Safe not-found/forbidden | Implemented; P5-M3-T01 |
+| `GET /organizations/{organizationId}/sales-vat-profile` | `OWNER`, `ADMIN` | None | Authoritative Organization sales VAT profile | Safe not-found/forbidden | Implemented; P5-M2-T02 |
+| `PATCH /organizations/{organizationId}/sales-vat-profile` | `OWNER`, `ADMIN` | Exact `expectedUpdatedAt`; status and conditional rate | Updated sales VAT profile | Invalid state/rate, stale version, safe not-found/forbidden | Implemented; P5-M2-T02 |
+| `GET /organizations/{organizationId}/branches/{branchId}/pos/products` | Branch checkout | Query/barcode/cursor | Sellable product summaries with current server price/availability indicator | Invalid query, forbidden branch | Implemented; P5-M2-T02 |
+| `POST /organizations/{organizationId}/branches/{branchId}/sales` | `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`, assigned `CASHIER` | Required `Idempotency-Key`; unique cart lines, optional authorized discount, CASH/TRANSFER intent | `201` completed Sale-backed receipt; exact replay `200` | VAT config, price, stock, payment, discount, idempotency, concurrency | Implemented; P5-M2-T02; `ADR-027` |
+| `GET /organizations/{organizationId}/branches/{branchId}/sales` | `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER`, assigned `CASHIER` | `cursor`, `limit`, absolute `createdAtFrom`/`createdAtTo`, `actorUserId`; no V1 refund-status filter | Historical Sale summaries; P5-M4 target adds derived refund state/amounts | Invalid query/range/cursor, safe forbidden | Implemented by P5-M3-T01; refund projection targeted by P5-M4-T02 |
+| `GET /organizations/{organizationId}/branches/{branchId}/sales/{saleId}` | Branch sales read | None | Immutable Sale/line/payment/cost snapshots; P5-M4 target adds linked refunds and remaining quantities | Safe not-found/forbidden | Implemented by P5-M3-T01; refund projection targeted by P5-M4-T02 |
+| `POST /organizations/{organizationId}/branches/{branchId}/sales/{saleId}/refunds` | `OWNER`, `ADMIN`, assigned `BRANCH_MANAGER` | Required `Idempotency-Key`; unique SaleItem quantities/restock quantities; required reason; conditional TRANSFER reference | `201` immutable linked SaleRefund; identical replay `200` | Historical allocation, cumulative quantity, payment, restock/cost, idempotency, concurrency | Planned for P5-M4-T02; `ADR-028`; no VOID endpoint |
 
 Sales-history listing is ordered by `createdAt DESC, id DESC`. Its opaque, versioned
 cursor is bound to the Organization, Branch, `createdAtFrom`, `createdAtTo`, and
@@ -1050,9 +1051,84 @@ Rules:
   view later.
 - OpenRouter is never called in checkout.
 
-No void/refund endpoints are defined until `OQ-009` closes. Do not infer a Sale status
-or mutation from this contract. Later reversal must use accepted linked compensating
-records/projections and must never delete or rewrite the original Sale facts.
+### Refund target contract
+
+`ADR-028` resolves `OQ-009` with REFUND only. No `/void`, Sale mutation, standalone
+refund-receipt, or refund-of-refund endpoint exists. P5-M4-T02 may implement the
+accepted create command and extend existing history/detail projections; the contract
+below does not claim that runtime implementation exists yet.
+
+The create body is strict and has this conceptual shape:
+
+```json
+{
+  "items": [
+    {
+      "saleItemId": "uuid",
+      "quantity": "1",
+      "restockQuantity": "1"
+    }
+  ],
+  "reason": "Customer returned unopened item",
+  "transferReference": null
+}
+```
+
+Rules:
+
+- `items` is nonempty with unique original SaleItem IDs. `quantity` is positive and
+  `restockQuantity` is non-negative and no greater than `quantity`; both follow the
+  original Product unit and four-place quantity boundary. The server rejects excess
+  scale, non-integral integer units, and cumulative quantity above the original line.
+- The route Organization/Branch/Sale are candidate scope only. The service authorizes
+  against the original Sale's persisted Organization and active Branch. Current Product
+  inactivity does not block a historical refund. Cross-branch returns are invalid.
+- `reason` is trimmed, Unicode-preserving, nonblank, and 1–200 characters. There is no
+  time cutoff or approval input. `OWNER`, `ADMIN`, and assigned `BRANCH_MANAGER` may
+  create; CASHIER and INVENTORY_STAFF may not.
+- Payment method is not client-selected; it must equal the original Payment method.
+  CASH requires `transferReference: null`. TRANSFER requires a trimmed nonblank
+  1–100-character manual confirmation reference. Refund amount is server-derived;
+  clients cannot send price, total, discount, VAT, taxable, cost, or COGS values.
+- Refund money uses the cumulative-target exact-decimal algorithm in `ADR-028` over
+  original SaleItem net/discount/VAT snapshots. The operation total must be positive.
+  Final line quantity absorbs remaining cents so cumulative values equal the original.
+- Only positive `restockQuantity` appends a positive `SALE_REFUND_RETURN` movement and
+  changes balance/cost state. Historical COGS uses original SaleItem cost and restocked
+  quantity; UNKNOWN stays null. Original Sale/Payment/items/`SALE` movements remain
+  immutable.
+- `Idempotency-Key` is mandatory printable ASCII of 1–200 characters. Under the
+  Organization-scoped `SALE_REFUND` namespace, same key plus canonical trusted
+  Organization/Branch/actor, Sale, sorted item quantities, reason, derived payment
+  method, and transfer reference returns the original logical refund with `200`.
+  First success returns `201`; changed intent returns `409 IDEMPOTENCY_CONFLICT`.
+- The command serializes the original Sale before cumulative validation, then acquires
+  shared Branch/Product locks for restocked Products in sorted Product-ID order. Refund,
+  items, one payment, optional ledger/balance/cost updates, and idempotency result are
+  one transaction.
+
+The safe response contains immutable refund `id`, `reference`, `organizationId`,
+`branchId`, `saleId`, reason, actor display snapshot, `completedAt`, currency, exact
+gross/discount/taxable/VAT/total strings, matching-method payment evidence, and items
+with original SaleItem/Product identity, refund/restock quantities, and monetary
+components. Cost basis/unit cost/COGS reversal appear only to OWNER, ADMIN, and assigned
+BRANCH_MANAGER. Internal hashes, membership IDs, lock material, and database metadata
+are never exposed.
+
+Stable command failures include `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN`, safe
+`404 SALE_NOT_FOUND`, `409 BRANCH_INACTIVE`, `409 SALE_ALREADY_FULLY_REFUNDED`, `409
+REFUND_QUANTITY_EXCEEDED`, `409 IDEMPOTENCY_CONFLICT`, and `400 VALIDATION_ERROR` for
+invalid quantity/restock/reason/reference or a zero-total request. Unexpected storage
+failures use generic `500 INTERNAL_ERROR` without SQL/Prisma details.
+
+P5-M4-T02 history projection adds derived refund state (`NONE`,
+`PARTIALLY_REFUNDED`, `FULLY_REFUNDED`), cumulative refunded amount, and remaining
+amount while retaining the original Sale total. Detail adds linked refunds and
+per-line remaining quantities. Linked refunds order by `(completedAt ASC, id ASC)`;
+their items follow original SaleItem `(createdAt ASC, id ASC)` order. The browser
+receipt remains the original immutable Sale projection; refund activity is displayed
+separately outside its print region. V1 adds no refund-status list filter and no
+printable refund document.
 
 ## 12. Analytics endpoints
 
@@ -1165,7 +1241,8 @@ Canonical definitions live in `BUILD_SPEC.md`:
   audit logging remains `OQ-019`
 - Purchasing/receiving: `ADR-026`; quantity representation is `ADR-022`, stock policy is `ADR-024`
 - Checkout/receipt/payment: `ADR-027` plus `ADR-016`, `ADR-022`, `ADR-024`, and `ADR-026`; `OQ-008` is resolved
-- Void/refund: `OQ-009`
+- Refund: `ADR-028` plus the applicable Sales/inventory/cost decisions; `OQ-009` is
+  resolved and VOID is excluded from V1
 - Analytics/forecast: `OQ-011`, `OQ-012`, `OQ-016`
 - AI scheduling/provider: `OQ-017`, `OQ-018`
 - Hosting, S3, operational exposure: `OQ-015`, `OQ-020`
