@@ -209,7 +209,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
-| [ ] **P6-M2-T01 — Base sales metrics** | Compute accepted totals/count/AOV/growth | SQL/TypeScript definitions and version metadata | P6-M1 | Exact fixture agreement; decimal/null semantics | Unit + DB integration + zero/partial tests |
+| [x] **P6-M2-T01 — Base sales metrics** | Compute accepted totals/count/AOV/growth | Implemented set-based PostgreSQL/TypeScript Sales, discount, VAT, refund, count, AOV, growth, and cost/profit definitions with `analytics-v1` metadata | P6-M1 | Exact fixture agreement; decimal/null semantics | Unit + DB integration + zero/partial/scope/cutoff/timezone tests completed 2026-09-20 |
 | [ ] **P6-M2-T02 — Category and branch analytics** | Compare authorized dimensions | Category performance, branch comparison, rankings only if accepted | T01 | Same period/definition; included branch scope disclosed | Multi-branch/category/history-change/security tests |
 | [ ] **P6-M2-T03 — Sales analytics API/UI** | Deliver accessible views | Planned endpoints, TanStack Query, Recharts plus text/table states | T01–T02 | No formula duplicated in UI; responsive accessible display | API/UI/E2E/accessibility/empty/stale tests |
 
@@ -328,10 +328,10 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 ## 2. Next Codex task
 
 Phase 1, Phase 2, Milestone 3.1, Milestone 3.2, the deferred-transfer decision gate,
-Phase 4 purchasing/receiving work, Phase 5, and Milestone 6.1 are complete. `ADR-029`
-resolves `OQ-011` and `OQ-016`; P6-M1-T02 implements their reusable reporting-time,
-period, scope, source-cutoff, and completeness foundation. The exact current task is
-**P6-M2-T01 — Base sales metrics**.
+Phase 4 purchasing/receiving work, Phase 5, Milestone 6.1, and P6-M2-T01 are complete.
+`ADR-029` resolves `OQ-011` and `OQ-016`; the current Analytics foundation implements
+reporting time, period, scope, source cutoff, completeness, and base Sales metrics. The
+exact current task is **P6-M2-T02 — Category and branch analytics**.
 
 Current-state constraints that the next task must preserve:
 
@@ -350,8 +350,8 @@ Current-state constraints that the next task must preserve:
   `OQ-019` remains open beyond refund-owned immutable attribution/provenance; and
   `OQ-020` remains open beyond its narrow application-level limiter exceptions.
 - `OQ-013` is resolved by `ADR-025` as **DEFERRED FROM MVP**. Stock transfer remains broader/full future scope, but no transfer schema, API, UI, permission, lifecycle, ledger-source, or idempotency contract is implemented or frozen.
-- `apps/api` contains the Express app/server bootstrap, safe transport/errors, Prisma client, all accepted authentication endpoints, first onboarding, `GET /me/access-context`, branch lifecycle endpoints, invitation/member workflows, Catalog, Inventory, Supplier, Purchase Order, Receiving, Sales, and the internal Analytics period/scope foundation. Sales includes bounded Organization VAT configuration, completed Sale/SaleItem/Payment snapshots and constraints, `SALE_CHECKOUT` hashes, tenant-safe negative `SALE` ledger provenance, atomic checkout, POS reads/checkout transport, branch-scoped history/detail reads with field-level cost permission, and immutable linked SaleRefund/SaleRefundItem/RefundPayment compensation with optional positive `SALE_REFUND_RETURN` stock/cost effects. Existing protected writes continue to derive the verified actor, re-evaluate centralized policy and tenant scope, and serialize their accepted invariants.
-- The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, and the bounded refund workflow are implemented. Analytics metric repositories/endpoints/UI, AI, AWS resources, deployment, and release automation remain unimplemented.
+- `apps/api` contains the Express app/server bootstrap, safe transport/errors, Prisma client, all accepted authentication endpoints, first onboarding, `GET /me/access-context`, branch lifecycle endpoints, invitation/member workflows, Catalog, Inventory, Supplier, Purchase Order, Receiving, Sales, and the internal Analytics period/scope/base-Sales-metric foundation. Base Sales analytics uses one set-based PostgreSQL statement and exact Decimal derivation for accepted totals, counts, AOV, growth, VAT, and cost/profit coverage without an HTTP endpoint. Sales includes bounded Organization VAT configuration, completed Sale/SaleItem/Payment snapshots and constraints, `SALE_CHECKOUT` hashes, tenant-safe negative `SALE` ledger provenance, atomic checkout, POS reads/checkout transport, branch-scoped history/detail reads with field-level cost permission, and immutable linked SaleRefund/SaleRefundItem/RefundPayment compensation with optional positive `SALE_REFUND_RETURN` stock/cost effects. Existing protected writes continue to derive the verified actor, re-evaluate centralized policy and tenant scope, and serialize their accepted invariants.
+- The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, and the bounded refund workflow are implemented. Category/Branch Analytics repositories and all Analytics endpoints/UI, AI, AWS resources, deployment, and release automation remain unimplemented.
 - Git metadata is present, but P1-M1-T05 did not create a commit or perform any remote action.
 
 ### Handoff prompt
@@ -359,13 +359,12 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P6-M2-T01 — Base sales metrics
+Task: P6-M2-T02 — Category and branch analytics
 
-Implement only the accepted deterministic Sales totals, counts, AOV, growth, exact
-decimal/null semantics, source-cutoff filtering, and definition metadata from
-`ADR-029`/`docs/ANALYTICS.md`, reusing the P6-M1 period/scope foundation. Do not start
-category/Branch rankings, Analytics API/UI, inventory analytics, forecasting, AI, or
-infrastructure in this task.
+Implement only accepted current-category performance and authorized Branch comparison
+over the P6-M2-T01 base metrics, with deterministic ordering/ranking only where
+`ADR-029`/`docs/ANALYTICS.md` explicitly permits it. Do not start Analytics API/UI,
+inventory analytics, forecasting, AI, or infrastructure in this task.
 
 Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not commit without separate authorization.
 ```

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AnalyticsPeriodError,
   captureAnalyticsSourceCutoff,
+  createAnalyticsComparisonBucket,
   createAnalyticsPeriodContext,
   localDateToUtcBoundary,
   validateIanaTimeZone,
@@ -359,6 +360,31 @@ describe("analytics period engine", () => {
     expectPeriodError(
       () => captureAnalyticsSourceCutoff(() => new Date(Number.NaN)),
       "INVALID_SOURCE_CUTOFF",
+    );
+  });
+
+  it("derives the immediately preceding canonical comparison bucket", () => {
+    const context = period({
+      from: "2026-03-08",
+      granularity: "day",
+      reportingTimezone: "America/New_York",
+      sourceCutoff: new Date("2026-03-09T04:00:00.000Z"),
+      to: "2026-03-09",
+    });
+
+    const comparison = createAnalyticsComparisonBucket(context);
+
+    expect(comparison).toMatchObject({
+      dataStatus: "complete",
+      label: "2026-03-07",
+      localEndExclusive: "2026-03-08",
+      localStartInclusive: "2026-03-07",
+    });
+    expect(comparison.bucketStartInclusive.toISOString()).toBe(
+      "2026-03-07T05:00:00.000Z",
+    );
+    expect(comparison.bucketEndExclusive.toISOString()).toBe(
+      "2026-03-08T05:00:00.000Z",
     );
   });
 

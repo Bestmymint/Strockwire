@@ -170,6 +170,22 @@ function nextDate(
   }
 }
 
+function previousDate(
+  date: Temporal.PlainDate,
+  granularity: AnalyticsGranularity,
+): Temporal.PlainDate {
+  switch (granularity) {
+    case "day":
+      return date.subtract({ days: 1 });
+    case "week":
+      return date.subtract({ weeks: 1 });
+    case "month":
+      return date.subtract({ months: 1 });
+    case "year":
+      return date.subtract({ years: 1 });
+  }
+}
+
 function bucketLabel(
   date: Temporal.PlainDate,
   granularity: AnalyticsGranularity,
@@ -269,5 +285,29 @@ export function createAnalyticsPeriodContext(input: {
     reportingTimezone,
     sourceCutoff,
     to: toDate.toString(),
+  });
+}
+
+export function createAnalyticsComparisonBucket(
+  period: AnalyticsPeriodContext,
+): AnalyticsPeriodBucket {
+  const localEnd = parseLocalDate(period.from);
+  const localStart = previousDate(localEnd, period.granularity);
+  const bucketStartInclusive = localDateToUtcBoundary(
+    localStart.toString(),
+    period.reportingTimezone,
+  );
+  const bucketEndExclusive = localDateToUtcBoundary(
+    localEnd.toString(),
+    period.reportingTimezone,
+  );
+
+  return Object.freeze({
+    bucketEndExclusive,
+    bucketStartInclusive,
+    dataStatus: dataStatus(bucketEndExclusive, period.sourceCutoff),
+    label: bucketLabel(localStart, period.granularity),
+    localEndExclusive: localEnd.toString(),
+    localStartInclusive: localStart.toString(),
   });
 }
