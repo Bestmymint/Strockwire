@@ -165,4 +165,39 @@ describe("analytics dimension cursor", () => {
       assertAnalyticsDimensionCursor(codec.decode(cursor, "branch"), expanded),
     ).not.toThrow();
   });
+
+  it("binds inventory pagination to a separate Branch/Product contract and tuple", () => {
+    const original = context();
+    const cursor = codec.encode({
+      context: original,
+      dimension: "inventory",
+      lastId: null,
+      lastBranchId: branchA,
+      lastProductId: branchB,
+    });
+    const decoded = codec.decode(cursor, "inventory");
+    expect(decoded.lastBranchId).toBe(branchA);
+    expect(decoded.lastProductId).toBe(branchB);
+    expect(() =>
+      assertAnalyticsDimensionCursor(decoded, original),
+    ).not.toThrow();
+    expect(() => codec.decode(cursor, "branch")).toThrowError(/cursor/i);
+    const [payload] = cursor.split(".");
+    const body = JSON.parse(
+      Buffer.from(payload!, "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("canViewCost");
+    expect(() =>
+      codec.decode(
+        signedPayload({ ...body, dimensionContract: "inventory-v2" }),
+        "inventory",
+      ),
+    ).toThrowError(/cursor/i);
+    expect(() =>
+      codec.decode(
+        signedPayload({ ...body, lastProductId: undefined }),
+        "inventory",
+      ),
+    ).toThrowError(/cursor/i);
+  });
 });

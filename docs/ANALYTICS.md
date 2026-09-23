@@ -85,11 +85,13 @@ timezone snapshot is added. A persisted analytics/AI snapshot retains its origin
 timezone and UTC boundaries and is never silently reinterpreted. A timezone change
 invalidates reusable current-definition snapshots for recomputation.
 
-Current operational APIs assign authoritative event timestamps at transaction commit
-and do not accept backdated client timestamps. If a future import/repair makes a late
-fact visible, the fact belongs to the bucket containing its authoritative event time;
-a later on-demand query may therefore change that historical bucket. `sourceCutoff`
-distinguishes those query runs, while an already persisted snapshot remains immutable.
+Current operational APIs assign authoritative event timestamps within their write
+transactions, before commit, and do not accept backdated client timestamps. A delayed
+commit can therefore make a fact whose event time is at or before an earlier
+`sourceCutoff` visible to a later read snapshot. The fact belongs to the bucket
+containing its authoritative event time. `sourceCutoff` is an event-time bound,
+not a commit-visibility or multi-page snapshot boundary. An already persisted
+snapshot remains immutable.
 
 All periods use half-open intervals:
 
