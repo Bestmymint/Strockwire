@@ -225,9 +225,9 @@ accessible table rather than relying on chart coordinates.
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
-| [ ] **P6-M3-T01 — Movement and coverage metrics** | Compute accepted velocity/coverage | ADS, coverage, fast/slow classifications as accepted | P6-M1, inventory/sales | Explicit zero/insufficient states | Fixed data, zero demand, negative-stock reconciliation anomaly, branch tests |
+| [ ] **P6-M3-T01 — Movement and coverage metrics** | Compute accepted factual inventory analytics internally | Paginated Branch/Product movement series; requested-period ADS; 28-complete-day coverage velocity and coverage; current on-hand/value snapshots and Branch availability summaries under `docs/ANALYTICS.md`. No fast/slow classification is currently accepted. | P6-M1, inventory/sales | Explicit zero/insufficient/integrity states, unit-safe quantities, and separate event/current-snapshot capture metadata | Fixed data, zero demand, 28-day eligibility, cutoff/pagination, negative-stock reconciliation anomaly, branch and cost-authorization tests |
 | [ ] **P6-M3-T02 — Stock risk analytics** | Compute deterministic low/stockout/overstock risk | Only classifications later accepted by `OQ-012` or a separate threshold decision; no LLM | T01 plus resolved threshold/forecast dependency | Explainable inputs/status; no arbitrary thresholds | Threshold/boundary/insufficient fixtures |
-| [ ] **P6-M3-T03 — Inventory analytics API/UI** | Deliver risk/movement views | Planned endpoints/charts/tables/filters | T01–T02 | Accessible, scoped, versioned outputs | API/UI/E2E/security/empty tests |
+| [ ] **P6-M3-T03 — Inventory analytics API/UI** | Expose accepted inventory analytics | HTTP/UI exposure of T01 factual results and only risk classifications accepted for T02; no API/UI work in T01 | T01–T02 | Accessible, scoped, versioned outputs | API/UI/E2E/security/empty tests |
 
 ### Milestone 6.4 — Forecast and replenishment
 

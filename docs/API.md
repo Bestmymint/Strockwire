@@ -1146,8 +1146,8 @@ branchId=<allowed branch when branch scope>
 from=YYYY-MM-DD                 # Organization-local, inclusive
 to=YYYY-MM-DD                   # Organization-local, exclusive
 granularity=day|week|month|year
-cursor=<opaque>                 # Category/Branch dimension pages only
-limit=1..100                    # Category/Branch dimension pages only; default 25
+cursor=<opaque>                 # Implemented Category/Branch pages; planned inventory dimension pages
+limit=1..100                    # Dimension pages; default 25
 ```
 
 `from`, `to`, and `granularity` are required; the API has no implicit period. Dates are
@@ -1166,14 +1166,16 @@ accepted internal row contracts without ranking or Top-N behavior.
 Common success metadata includes `metricDefinitionVersion: "analytics-v1"`, scope,
 included authorized Branch IDs/count, requested local dates/granularity, exact UTC
 `periodStartInclusive`/`periodEndExclusive`, `reportingTimezone`, `generatedAt`,
-`sourceCutoff`, and `dataStatus`. Monetary/quantity/percentage fields are decimal
-strings; null metrics carry a stable reason. Cost outputs also carry cost coverage.
+`sourceCutoff`, and `dataStatus`. Planned inventory responses additionally distinguish
+page-current `currentSnapshotCapturedAt` from their cursor-bound event `sourceCutoff`.
+Monetary/quantity/percentage fields are decimal strings; null metrics carry a stable
+reason. Cost outputs also carry cost coverage.
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
 | `GET /organizations/{organizationId}/analytics/sales` | `BUSINESS_ANALYTICS_VIEW`; cost fields also `SALES_COST_VIEW` | Required `scope=organization` or `scope=branch&branchId={id}` plus `from`, `to`, `granularity` | Canonical bucket series with accepted Sales/discount/VAT/refund/count/AOV/growth/profit metrics | Invalid period/inaccessible scope | Implemented P6-M2-T03 |
 | `GET /organizations/{organizationId}/analytics/categories` | `BUSINESS_ANALYTICS_VIEW` | Same required scope/period plus optional `cursor`, `limit` | Current Category/Uncategorized dimension page with only identity, current name/status, Gross Sales, Discount Amount, Sales After Discount, Refund Amount, Net Sales, Category Share per canonical bucket | Invalid period/cursor/inaccessible scope | Implemented P6-M2-T03 |
-| `GET /organizations/{organizationId}/analytics/inventory` | `INVENTORY_ANALYTICS_VIEW`; value/cost fields also `SALES_COST_VIEW` | Scope + accepted range/granularity + optional dimensions/current cutoff | Current availability/value and accepted source-separated movement/velocity/coverage | Insufficient/zero/reconciliation anomaly/deferred classification | Planned P6-M3; forecast/risk/reorder fields remain blocked `OQ-012` |
+| `GET /organizations/{organizationId}/analytics/inventory` | `INVENTORY_ANALYTICS_VIEW`; value/cost fields also `SALES_COST_VIEW` | Scope + required range/granularity; planned opaque dimension `cursor`/`limit`, no client cutoff | Planned exposure of T01 paginated Branch/Product movement series and page-current snapshots plus Branch availability/value summaries | Insufficient/zero/integrity anomaly; no risk label without later accepted definition | Planned P6-M3-T03; T01 is internal only, forecast/risk/reorder remain blocked `OQ-012` |
 | `GET /organizations/{organizationId}/analytics/branches` | `BUSINESS_ANALYTICS_VIEW`; cost fields also `SALES_COST_VIEW` | Same required scope/period plus optional `cursor`, `limit` | Every authorized Branch, including zero-activity Branches, with current name/status and accepted P6-M2-T01 metrics per canonical bucket; no ranking | Unauthorized Branch/invalid period/cursor | Implemented P6-M2-T03 |
 | `GET /organizations/{organizationId}/analytics/forecast` | Forecast read | Scope + product/category + horizon | Versioned forecast + data status | Unsupported horizon/insufficient data | Blocked `OQ-012` |
 | `GET /organizations/{organizationId}/analytics/reorder-recommendations` | Reorder read | Scope + horizon/filter | Inputs + deterministic recommendations | Missing lead time/forecast/cost/unit | Blocked `OQ-012`; Analytics V1 inputs follow `ADR-029`, future cost/incoming-order semantics follow `ADR-026`, and quantity representation follows `ADR-022` |
@@ -1191,6 +1193,15 @@ Analytics error/null semantics:
 - Dimension cursors freeze the authorized execution inputs and source cutoff across
   pages. Current Category membership and labels remain live and may reclassify
   historical facts between pages; pagination is not a catalog snapshot.
+- Planned inventory pagination selects Branch/Product dimensions ordered by
+  `(branchId ASC, productId ASC)`, default 25 and maximum 100; each selected row
+  carries every requested canonical movement bucket. Its signed internal cursor
+  binds version/dimension, Organization, reauthorized Branch set, canonical period,
+  timezone/UTC bounds, order, and original event `sourceCutoff`. Each continuation
+  page reads current on-hand/value/availability under its own
+  `currentSnapshotCapturedAt`; it must not present those mutable values as a
+  historical snapshot at the original cutoff. The exact HTTP representation is
+  assigned to P6-M3-T03, not T01. No client-supplied current cutoff is accepted.
 - Invalid selectors and period boundaries return `400 VALIDATION_ERROR`; malformed,
   tampered, or mismatched cursors return `400 INVALID_CURSOR`; denied scopes return
   `403 FORBIDDEN`; invalid persisted reporting timezone returns generic

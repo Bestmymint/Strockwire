@@ -470,9 +470,12 @@ against the persisted Sale. There is no time cutoff, approval chain, gateway, ge
    `INVENTORY_ANALYTICS_VIEW`; cost outputs additionally require `SALES_COST_VIEW`.
 3. The period engine loads the Organization IANA timezone and converts aligned local
    day/Monday-week/month/year boundaries to half-open UTC instants with DST rules.
-4. One captured `sourceCutoff` and transactionally consistent read snapshot select
-   immutable Sales/refunds/receipts/ledger facts in their own event periods plus
-   current balance/cost state where the metric explicitly requires current state.
+4. One captured event `sourceCutoff` and transactionally consistent read snapshot
+   select immutable Sales/refunds/receipts/ledger facts in their own event periods.
+   P6-M3-T01 reads mutable current balance/cost state in the same inventory-page
+   snapshot and separately labels it `currentSnapshotCapturedAt`; continuation pages
+   retain the original event cutoff but capture a new current-state marker. They do
+   not reconstruct historical quantity or valuation from current projection rows.
 5. SQL performs exact set aggregation; TypeScript applies only accepted Decimal/null/
    coverage formulas and gap-fills canonical buckets.
 6. The response includes `analytics-v1`, exact UTC/local period metadata, timezone,
@@ -482,7 +485,10 @@ against the persisted Sale. There is no time cutoff, approval chain, gateway, ge
 `ADR-029` resolves `OQ-011`/`OQ-016`, and `docs/ANALYTICS.md` exclusively owns formulas
 and period semantics. Analytics V1 reads normalized operational tables directly; no
 warehouse, OLAP service, stream, materialized view, scheduled rollup, or summary table
-is introduced before measured need. Scheduled AI snapshots remain a later concern.
+is introduced before measured need. P6-M3-T01 uses set-based ledger/balance/cost
+queries and reconciles the current projection against all ledger deltas visible in
+that same read snapshot; it does not compare current balance to an earlier
+event-cutoff subset. Scheduled AI snapshots remain a later concern.
 
 ### 6.7 Scheduled AI insight
 

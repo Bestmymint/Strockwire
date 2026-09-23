@@ -298,8 +298,10 @@ ADS(b,p,P) = absolute quantity of SALE ledger depletion / complete CalendarDays(
 - Status: **Accepted**
 - Include zero-depletion calendar days. Do not use store-open schedules. Partial periods
   return null with `INCOMPLETE_PERIOD`.
-- Stock coverage uses the immediately preceding 28 complete reporting days. Refund
-  returns are reported separately and do not erase observed sale depletion.
+- This requested-period ADS uses only complete days in its requested canonical period;
+  it is distinct from the fixed 28-day coverage velocity in M-101. Stock coverage uses
+  the immediately preceding 28 complete reporting days. Refund returns are reported
+  separately and do not erase observed sale depletion.
 
 ### M-009 Net sales growth
 
@@ -481,8 +483,21 @@ SalesVelocity(b,p) = SALE ledger depletion in prior 28 complete local days / 28
 ```
 
 - Status: **Accepted**.
-- Return null with `INSUFFICIENT_DATA` when 28 complete days are unavailable. There is
-  no minimum transaction count and no store-open-day denominator.
+- At `sourceCutoff`, find the start of its current Organization-local day. The window
+  is the 28 complete local calendar days ending at that boundary, `[D - 28 days, D)`;
+  map both local midnights through the Organization IANA timezone. The current local
+  day never contributes, including across 23-hour and 25-hour DST days.
+- The Branch/Product history eligibility marker is its earliest visible
+  `InventoryTransaction.occurredAt`, for that exact pair, at or before the event
+  `sourceCutoff`. History is sufficient only when that marker is on or before the
+  window start. No movement, or a first movement after the window start, returns null
+  with `INSUFFICIENT_DATA`. Product or Branch creation and first SALE do not establish
+  Branch/Product eligibility.
+- Once eligible, sum absolute negative `SALE` deltas in the window and divide by 28
+  complete local days. Days without SALE depletion count as zero; no minimum SALE count
+  or store-open-day denominator applies. An eligible zero numerator yields exact zero,
+  not insufficient history. Receipts, refund returns, and adjustments do not change
+  observed SALE depletion. The unit is the Product base unit per local day.
 
 ### M-102 Stock coverage days
 
@@ -492,16 +507,20 @@ StockCoverageDays(b,p,t) = OnHand(b,p,t) / SalesVelocity(b,p)
 
 Required states:
 
-- Positive ADS: numeric days.
-- ADS `0` and on-hand `> 0`: `null` with `NO_RECENT_DEMAND` rather than a fake large number.
-- ADS `0` and on-hand `= 0`: `null` with `NO_STOCK_AND_NO_DEMAND`.
+- Positive M-101 coverage velocity: numeric days.
+- M-101 velocity `0` and on-hand `> 0`: `null` with `NO_RECENT_DEMAND` rather than a fake large number.
+- M-101 velocity `0` and on-hand `= 0`: `null` with `NO_STOCK_AND_NO_DEMAND`.
 - Negative on-hand is not an accepted operational state under `ADR-024`; a negative
   value found during reconciliation is an integrity anomaly, not a normal metric input.
-- Insufficient/partial history: `null` with `INSUFFICIENT_DATA`.
+- Insufficient 28-day history: `null` with `INSUFFICIENT_DATA`.
 
 - Status: **Accepted**; quantity representation is `ADR-022` and no-negative stock is
-  `ADR-024`. Round HALF_UP to two decimal days. Current on-hand uses the captured
-  `sourceCutoff`; this is not a forecast or service-level promise.
+  `ADR-024`. Round HALF_UP to two decimal days. The numerator is current on-hand from
+  the page's consistent projection read at `currentSnapshotCapturedAt`; the denominator
+  is M-101 at the cursor-bound event `sourceCutoff`. A later page can therefore have
+  a newer numerator. Negative or ledger-divergent on-hand returns null with
+  `INVENTORY_INTEGRITY_ERROR`, never a coverage number. This is not a forecast or
+  service-level promise.
 
 ### M-103 Fast-moving / slow-moving classification
 
@@ -596,25 +615,30 @@ Round up to purchasing unit/case size after the raw quantity is computed.
 ### M-108 Current on-hand and movement summary
 
 - Status: **Accepted**.
-- Current on-hand is `InventoryBalance.quantity` per Branch/Product at the captured
-  source cutoff; an absent lazy balance row is `0.0000`. Organization/category views
-  return Product/per-unit breakdowns, never a mixed-unit scalar.
+- Current on-hand is `InventoryBalance.quantity` per Branch/Product in the current
+  projection read identified by `currentSnapshotCapturedAt`; an absent lazy balance
+  row is `0.0000`. It is not an arbitrary historical quantity at `sourceCutoff`.
+  Organization/category views return Product/per-unit breakdowns, never a mixed-unit
+  scalar.
 - Period movement facts come from immutable InventoryTransaction rows at `occurredAt`:
   `purchaseReceivedQuantity` from positive `PURCHASE_RECEIVE`,
   `saleDepletionQuantity` from absolute negative `SALE`,
-  `refundReturnQuantity` from positive `SALE_REFUND_RETURN`, and separate positive and
-  absolute-negative `MANUAL_ADJUSTMENT` quantities. Do not net sources into an opaque
-  movement number.
+  `refundReturnQuantity` from positive `SALE_REFUND_RETURN`,
+  `positiveAdjustmentQuantity` from positive `MANUAL_ADJUSTMENT`, and
+  `negativeAdjustmentQuantity` from absolute negative `MANUAL_ADJUSTMENT`. Do not net
+  sources into an opaque accepted movement number.
 - A receiving summary may also count PurchaseReceipts by `receivedAt`; that document
   count is separate from item/ledger quantities.
 
 ### M-109 Current inventory value
 
-- Status: **Accepted** for the current source cutoff only; V1 does not claim historical
-  point-in-time valuation from current cost-state rows.
+- Status: **Accepted** for the current projection read only; V1 does not claim
+  historical point-in-time valuation at an earlier event `sourceCutoff` from mutable
+  current cost-state rows.
 - Per Branch/Product, persisted KNOWN `InventoryCostState.inventoryValue` is authority.
   Do not recompute value as quantity times the six-decimal displayed average because
-  `ADR-026` retains ten-decimal exact value separately.
+  `ADR-026` retains ten-decimal exact value separately. An absent cost-state row is
+  UNKNOWN, not a zero-cost known state.
 - Positive on-hand with UNKNOWN cost makes total `inventoryValue` null. Return
   `knownInventoryValue`, `knownCostProductCount`, `unknownCostProductCount`, and
   unknown quantity by base unit. Zero on-hand with UNKNOWN cost does not make current
@@ -626,17 +650,112 @@ Round up to purchasing unit/case size after the raw quantity is computed.
 ### M-110 Inventory availability facts
 
 - Status: **Accepted** for `activeProductCount`, `inStockProductCount` (`onHand > 0`),
-  and `outOfStockProductCount` (`onHand = 0`) at one Branch/source cutoff.
+  and `outOfStockProductCount` (`onHand = 0`) over all active Organization Products at
+  one Branch/current projection read. An absent lazy balance is zero. Inactive
+  Products are excluded from these counts, including those with historical movements
+  or a current projection row.
 - "Low stock", "stockout risk", "overstock risk", safety stock, and reorder labels
   remain deferred/blocked as stated above. A factual zero balance must not be relabeled
   as forecast risk.
+
+### P6-M3-T01 internal inventory result contract
+
+P6-M3-T01 computes factual results internally; P6-M3-T03 owns HTTP/UI exposure. One
+result has a paginated Branch/Product dimension page and a separate current Branch
+summary for every authorized Branch. Each dimension is keyed by `(Branch.id,
+Product.id)`, includes the Product's immutable base unit and current name/status, and
+contains every requested canonical bucket in ascending order, including zero-movement
+buckets. Product metadata is current, not a historical snapshot. A dimension is
+eligible if it has a movement in the requested period, has a current balance/cost
+projection row, or is an active Organization Product needed for M-110 at that Branch.
+Consequently an active Product with no balance row appears with zero on-hand, while
+an inactive Product appears only when movement or current state makes it relevant.
+
+Each movement bucket contains only M-108's `purchaseReceivedQuantity`,
+`saleDepletionQuantity`, `refundReturnQuantity`, `positiveAdjustmentQuantity`, and
+`negativeAdjustmentQuantity`, all in that Product's base unit. The dimension also
+contains **separate** nullable requested-period M-008 ADS and M-101 28-day
+`coverageSalesVelocity`, named `requestedPeriodAds` and
+`coverageSalesVelocity` respectively, plus page-current `onHandQuantity` and
+M-102 `coverageDays` with an explicit null reason. Only when `canViewCost` does it
+include M-109 `inventoryValue` and known-value/cost-coverage fields. A positive
+UNKNOWN quantity makes `inventoryValue` null with `INCOMPLETE_COST_COVERAGE`;
+zero-on-hand UNKNOWN contributes `0.0000000000`. Requested-period ADS sums
+SALE depletion over the requested canonical period and divides by its complete local
+calendar days; if any requested part is partial, return null/`INCOMPLETE_PERIOD`.
+It is not substituted for the fixed 28-day coverage velocity. Quantity calculations
+use exact Decimal, retain four-place Product-unit precision, and never add unlike
+units into a Branch/Organization scalar. Coverage days round HALF_UP to two places.
+
+The separate current Branch summary covers every authorized Branch, even one with
+no selected Product dimensions on a page. It contains exactly M-110's active,
+in-stock, and out-of-stock Product counts over all active Organization Products,
+not just the current page. When cost is authorized, it also contains M-109's current
+total `inventoryValue` (null/`INCOMPLETE_COST_COVERAGE` if any positive UNKNOWN stock),
+`knownInventoryValue`, known/unknown cost Product counts, and unknown quantity
+broken down by base unit across the Branch's current stock, including inactive
+Products that still hold stock. Cost coverage counts and unknown quantity cover
+positive-on-hand Products; zero-on-hand UNKNOWN contributes exact zero to value and
+does not make it incomplete. Monetary values use the persisted ten-decimal
+`InventoryCostState.inventoryValue`; never derive them by multiplying a rounded
+average. No count implies a low-stock or risk classification.
+
+Branch/Product dimensions sort by `Branch.id ASC, Product.id ASC` and use internal
+opaque keyset pagination, default limit 25 and maximum 100. Pagination selects
+dimensions, never buckets; each selected dimension carries its full bucket series
+and one current snapshot. The signed cursor binds its cursor/version and inventory
+dimension identity, `analytics-v1`, Organization, sorted reauthorized Branch set,
+local `from`/`to`, granularity, reporting timezone and UTC bounds, the sort tuple,
+and the original event `sourceCutoff`. Invalid or mismatched cursors fail; scope is
+reauthorized before continuation. Cursor continuation preserves event predicates
+and their original cutoff, not a persisted fact snapshot: a later committed fact
+with an earlier authoritative `occurredAt` can still change a later page. It does
+not freeze current Product metadata, dimension eligibility, or mutable balance/cost
+state. Each page reports its own `currentSnapshotCapturedAt`.
+
+For an inventory page, establish one transactionally consistent PostgreSQL read
+snapshot and capture server-generated event `sourceCutoff` (first page) and
+`currentSnapshotCapturedAt` as part of that execution. Apply `occurredAt <=
+sourceCutoff` and half-open UTC bucket bounds to movement and velocity facts. Read
+balances, cost states, Product metadata, availability summaries, and reconciliation
+facts in the same read snapshot. On continuation, retain the signed original
+`sourceCutoff` for event facts and capture a new `currentSnapshotCapturedAt` for
+current projections. Both timestamps identify different semantics: the latter is
+a page-current read marker, not a claim that mutable projections can be reconstructed
+as historical state at the former. No client supplies either timestamp. The
+current state can change between pages, including the M-102 numerator and Branch
+summary; the 28-day denominator remains anchored to the original event cutoff.
+
+Within the page's read snapshot, compare each current Branch/Product balance (or
+implicit zero) to the signed sum of all visible ledger deltas for that pair. This
+current-state reconciliation does not filter that sum to the event `sourceCutoff`;
+the projection may include a visible movement whose `occurredAt` is later. A
+negative balance or mismatch makes affected coverage null with
+`INVENTORY_INTEGRITY_ERROR`, and the raw inconsistency remains test-visible.
+Impossible KNOWN/UNKNOWN cost-state shapes make affected value unavailable with
+the same reason, never a fabricated zero. Source-separated movement quantities
+must reconcile to the underlying signed ledger; each positive receipt movement,
+negative Sale movement, and positive refund-return movement must match its unique
+same-scope source item and quantity. A financial-only zero-restock refund has no
+return movement. Positive/negative manual adjustments remain separate. These
+invariants are checked without mixing Product units; no transfer source exists.
+
+The query uses `InventoryTransaction`, `Product`, `InventoryBalance`,
+`InventoryCostState`, and the existing authorized Branch resolver with set-based
+PostgreSQL aggregation. It adds no per-Product/Branch/bucket query, index, migration,
+warehouse, materialized view, or rollup by default. `OQ-012` remains open for
+fast/slow, low-stock, risk, forecast, and reorder definitions; it does not block
+these accepted factual metrics.
 
 ## 9. Query authority, authorization, and performance
 
 Analytics V1 reads authoritative normalized operational tables directly. It adds no
 warehouse, OLAP service, event stream, materialized view, scheduled rollup, or new
-summary table. A query captures one UTC `sourceCutoff` and must read a transactionally
-consistent snapshot so Sale/refund headers and items cannot straddle different cutoffs.
+summary table. Event facts use one UTC `sourceCutoff` and a transactionally consistent
+read snapshot so headers and items cannot straddle different cutoffs. The P6-M3-T01
+inventory current-state read has an additional page-specific
+`currentSnapshotCapturedAt` under the contract above; the original event cutoff is
+preserved across cursor pages without claiming historical balance or valuation.
 Reusable persisted snapshots are permitted only in later scheduled-report work or
 after measured query evidence; they never replace operational truth.
 
@@ -785,6 +904,7 @@ periodEndExclusive
 reportingTimezone
 generatedAt
 sourceCutoff
+currentSnapshotCapturedAt (inventory current-state pages only)
 dataStatus: complete | partial | insufficient | stale
 metric values with explicit null reason where applicable
 ```

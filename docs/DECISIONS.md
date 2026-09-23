@@ -1905,6 +1905,23 @@ UNKNOWN cost into zero, and must not let browser/server locale define business d
   inventory value. Persisted ten-decimal `InventoryCostState.inventoryValue`, not
   multiplication by the rounded average, is valuation authority. Positive UNKNOWN
   stock makes total value null with known-value/coverage metadata.
+- P6-M3-T01 uses the earliest same-Branch/Product ledger `occurredAt` as the 28-day
+  history eligibility marker. It must be on or before the start of the 28 complete
+  Organization-local days immediately before the day containing the event cutoff.
+  A pair without such history is insufficient; eligible days without SALE depletion
+  are zero-demand days. Requested-period ADS remains distinct from this lookback.
+- Inventory movement series and current projections have separate temporal meanings.
+  The original `sourceCutoff` limits event-time movement and velocity facts across
+  cursor pages. Each page reads balance, cost, coverage numerator, and availability
+  in one consistent database snapshot and reports `currentSnapshotCapturedAt` for
+  those mutable facts. First-page markers are captured within the same execution;
+  later pages retain the event cutoff but may show newer current state. Neither
+  marker is client supplied. Current projections do not provide arbitrary historical
+  quantity or valuation at an old cursor cutoff. A negative or ledger-divergent
+  balance suppresses coverage with `INVENTORY_INTEGRITY_ERROR`; impossible cost-state
+  shape suppresses affected value with that reason. Reconciliation compares the
+  current projection with all ledger deltas visible in the same snapshot, not only
+  deltas passing the earlier event cutoff.
 - Fast/slow, low-stock, stockout-risk, overstock-risk, safety-stock, and reorder labels
   are explicitly deferred/blocked pending `OQ-012` or a separate threshold decision.
   Factual zero on-hand is not a forecast-risk label.
@@ -1922,8 +1939,10 @@ UNKNOWN cost into zero, and must not let browser/server locale define business d
   decimals; quantity four; COGS/inventory value/Gross Profit ten; AOV and percentages
   round HALF_UP to two after exact aggregation. PostgreSQL NUMERIC/Prisma Decimal and
   decimal-string JSON remain authoritative; JavaScript `number` is not.
-- Analytics reads normalized operational tables at one captured `sourceCutoff` in a
-  transactionally consistent snapshot. V1 introduces no warehouse, OLAP service,
+- Analytics reads normalized operational tables with one event `sourceCutoff` and a
+  transactionally consistent snapshot per execution. Inventory current projections
+  additionally disclose their page-specific capture marker as specified above. V1
+  introduces no warehouse, OLAP service,
   materialized view, stream, scheduled rollup, or summary table. Detail/ranking rows
   paginate stably; indexes are added only by later implementation after query-plan
   evidence.
