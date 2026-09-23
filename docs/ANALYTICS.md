@@ -333,6 +333,67 @@ CategoryShare(c,S,P) = CategorySalesAfterDiscount(c,S,P) / SalesAfterDiscount(S,
   Refund amounts have a separate category breakdown and do not alter this positive-Sale
   share. Category history may reclassify after catalog category changes.
 
+#### P6-M2-T02 Category performance row contract
+
+P6-M2-T02 returns one cursor-paged Category series per current Category with eligible
+SaleItem or SaleRefundItem activity in the requested range. Each series contains one
+row for every canonical requested bucket, including zero-filled additive facts for a
+bucket in which that selected Category has no activity. It has no whole-range row; a
+request spanning multiple buckets is represented by those same canonical buckets.
+
+Each row contains only the following accepted Category fields:
+
+- `categoryKind: CATEGORY|UNCATEGORIZED`, `categoryId: UUID|null`, current display
+  name, and current `ACTIVE|INACTIVE` status for `CATEGORY` (`null` for
+  `UNCATEGORIZED`);
+- Gross Sales, Discount Amount, Sales After Discount, Refund Amount, and Net Sales;
+  and
+- Category Share, calculated from exact amounts before final rounding.
+
+The stable uncategorized identity is the typed pair
+`(categoryKind=UNCATEGORIZED, categoryId=null)`, never a synthetic persisted row or a
+string that could collide with a Category UUID. Its display label is
+`UNCATEGORIZED`. It participates in every Category money reconciliation and in both
+the numerator and denominator of Category Share. Real Categories order by Category ID
+ascending and `UNCATEGORIZED` sorts after every real Category; this is deterministic
+presentation order, not a ranking. No Top-N, configurable Category sort, or Category
+ranking is accepted.
+
+For bucket `P` and the same authorized Branch scope `S` as the response:
+
+```text
+CategoryShare(c,S,P) = CategorySalesAfterDiscount(c,S,P)
+                       / SalesAfterDiscount(S,P) * 100
+```
+
+The denominator includes every eligible SaleItem in that bucket/scope, including
+`UNCATEGORIZED`, and excludes refunds. It is `null` with `NO_SALES` only when the
+denominator is exactly zero. A negative denominator cannot occur because persisted
+SaleItem `lineNet` is non-negative; refund-event net sales do not participate. Shares
+are informational and individual values round `ROUND_HALF_UP` to two decimal places,
+so displayed values need not sum to exactly `100.00`.
+
+Category Sale Count, Refund Count, Refunded Sale Count, AOV, VAT/taxable breakouts,
+COGS/cost coverage/profit/margin, growth, and quantity outputs are **Deferred** from
+P6-M2-T02. In particular, a distinct-Sale Category count would be non-additive when a
+Sale contains lines from multiple Categories, and a scalar Category quantity would be
+invalid across mixed Product units. These facts must not be inferred from the Category
+row contract merely because P6-M2-T01 can calculate related base metrics.
+
+Category attribution is intentionally current-state V1 behavior: at query time,
+`SaleItem.productId` and `SaleRefundItem.productId` resolve to the current
+`Product.categoryId`. A Product reassignment reclassifies historical Sale and Refund
+facts; `categoryId=null` reclassifies them to `UNCATEGORIZED`; a Category rename
+changes the current display name; and an inactive, still-referenced Category remains
+eligible. SaleItem and SaleRefundItem have no Category-at-event snapshot, and no
+schema change is required for this accepted V1 behavior. Refund facts are recognized
+at `SaleRefund.completedAt`; their financial Category Refund Amount is the immutable
+`reversedLineNet`, irrespective of `restockQuantity`.
+
+Category additive reconciliation includes `UNCATEGORIZED`: sums per bucket/scope of
+Gross Sales, Discount Amount, Sales After Discount, Refund Amount, and Net Sales must
+equal the corresponding P6-M2-T01 base values. No eligible line fact may disappear.
+
 ### M-011 Branch performance
 
 Branch performance is not a score. It is a same-period table of accepted metrics such
@@ -342,6 +403,32 @@ as Net Sales, Sale Count, AOV, per-unit quantities, and Growth for authorized Br
 - All Branches use their Organization timezone. Do not include or rank inaccessible
   Branches. Ranking is allowed only by a named accepted metric with deterministic ID
   tie-break; no composite score exists.
+
+#### P6-M2-T02 Branch comparison row contract
+
+P6-M2-T02 returns one cursor-paged Branch series for every Branch in the already
+authorized scope, including zero-filled additive facts for every canonical requested
+bucket. It has no whole-range row. Stable identity is `Branch.id`; the label is the
+current Branch name and each row exposes current `ACTIVE|INACTIVE` state. This does
+not imply a historical Branch-name snapshot. `OWNER`/`ADMIN` may receive inactive
+Branch rows; `BRANCH_MANAGER` cannot receive inactive or unassigned Branch rows.
+
+Each Branch bucket row contains the complete P6-M2-T01 Sales metric set: Gross Sales,
+Discount Amount, Sales After Discount, Output VAT, registered Taxable Sales, Refund
+Amount, Refunded Discount, Refunded Output VAT, refunded registered Taxable amount,
+Net Output VAT, Net Sales, Sale Count, Refund Count, Refunded Sale Count, AOV, and
+Net Sales Growth. It contains the P6-M2-T01 COGS/profit fields and their coverage
+diagnostics only when the authorized scope has `SALES_COST_VIEW`; otherwise those
+fields are omitted, exactly as in P6-M2-T01. Quantity outputs are Deferred: no scalar
+Branch quantity is valid across mixed Product units, and product/unit breakdowns are
+outside this task.
+
+P6-M2-T02 does not implement ranking. Branch rows are deterministic comparison rows
+ordered by `Branch.id` ascending, not a score or performance ranking. Configurable
+ranking, a ranking metric/direction, Top-N, null ordering, and ranking-specific cursors
+are Deferred until a later accepted contract names them. Branch additive metrics must
+reconcile per bucket/scope to P6-M2-T01; AOV, Growth, margins, and percentages are
+derived metrics and do not sum.
 
 ### M-012 COGS, gross profit, and gross margin percentage
 
@@ -572,6 +659,27 @@ rows use stable cursor pagination and a deterministic ID tie-break. Implementati
 validate existing plans and add only evidence-backed indexes in its own task; likely
 access paths are Organization/Branch plus Sale/Refund completion time and inventory
 movement occurrence time. This decision task adds no index.
+
+For P6-M2-T02, Category and Branch series are dimension-detail rows and pagination is
+part of the internal service contract, not deferred to HTTP exposure. The default page
+size is 25 and the maximum is 100. A cursor is opaque and binds the metric definition,
+dimension kind, Organization ID, sorted authorized Branch-ID set, `from`, `to`,
+granularity, ordering, and source cutoff. Its stable sort tuple is respectively
+`(categoryKind, categoryId)` with `UNCATEGORIZED` last, or `(branchId)`; each selected
+dimension series contains all requested canonical buckets. A malformed, mismatched, or
+unsupported cursor is `INVALID_CURSOR`. A later access-scope change is reauthorized
+before cursor use and returns the normal safe forbidden outcome rather than exposing a
+previously included Branch. The cursor fixes neither mutable current Category
+attribution nor current display labels; direct analytics remains an on-demand view at
+its captured cutoff.
+
+P6-M2-T02 uses separate internal Category and Branch repository/service/value
+boundaries over the existing analytics context/scope/period engine and P6-M2-T01
+Decimal value semantics. Each read uses set-based PostgreSQL aggregation, with no
+query per Category or Branch. PostgreSQL returns aggregated dimension/bucket values;
+raw SaleItem or SaleRefundItem operational facts are never loaded into Node. Each read
+captures a transactionally consistent MVCC snapshot where practical. It adds no HTTP
+route, UI, schema, rollup, warehouse, or second cost authorization matrix.
 
 ## 10. Trend and seasonal analysis
 

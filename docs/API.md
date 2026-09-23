@@ -1146,7 +1146,7 @@ from=YYYY-MM-DD                 # Organization-local, inclusive
 to=YYYY-MM-DD                   # Organization-local, exclusive
 granularity=day|week|month|year
 cursor=<opaque>                 # detail/ranking rows only
-limit=<bounded>                 # detail/ranking rows only
+limit=1..100                     # detail/ranking rows only; default 25
 ```
 
 `from`, `to`, and `granularity` are required; the API has no implicit period. Dates are
@@ -1156,6 +1156,11 @@ are validation errors. Week boundaries are Monday local `00:00`. The server conv
 local boundaries to half-open UTC instants with IANA/DST rules and returns both forms.
 Summary/timeseries buckets are ascending, gap-filled, and not paginated. Dimension
 detail/ranking rows use stable opaque cursors and deterministic ID tie-breaks.
+P6-M2-T02 Category/Branch dimension pages bind the cursor to metric version,
+dimension, Organization, authorized Branch set, canonical range/granularity, ordering,
+and source cutoff; the selected dimension series carries every requested canonical
+bucket. P6-M2-T02 itself adds no HTTP endpoint. P6-M2-T03 must expose only these
+already accepted internal row contracts and must not add ranking or Top-N behavior.
 
 Common success metadata includes `metricDefinitionVersion: "analytics-v1"`, scope,
 included authorized Branch IDs/count, requested local dates/granularity, exact UTC
@@ -1165,9 +1170,9 @@ strings; null metrics carry a stable reason. Cost outputs also carry cost covera
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `GET /organizations/{organizationId}/analytics/sales` | `BUSINESS_ANALYTICS_VIEW`; cost fields also `SALES_COST_VIEW` | Scope + accepted range/granularity + optional dimensions | Accepted Sales/discount/VAT/refund/count/AOV/growth/profit metrics | Invalid/non-comparable/insufficient/inaccessible | Planned P6-M2; contract accepted by `ADR-029` |
+| `GET /organizations/{organizationId}/analytics/sales` | `BUSINESS_ANALYTICS_VIEW`; cost fields also `SALES_COST_VIEW` | Scope + accepted range/granularity + optional dimensions | Accepted Sales/discount/VAT/refund/count/AOV/growth/profit metrics | Invalid/non-comparable/insufficient/inaccessible | Planned P6-M2-T03; metric contracts accepted by `ADR-029` and P6-M2-T01/T02 |
 | `GET /organizations/{organizationId}/analytics/inventory` | `INVENTORY_ANALYTICS_VIEW`; value/cost fields also `SALES_COST_VIEW` | Scope + accepted range/granularity + optional dimensions/current cutoff | Current availability/value and accepted source-separated movement/velocity/coverage | Insufficient/zero/reconciliation anomaly/deferred classification | Planned P6-M3; forecast/risk/reorder fields remain blocked `OQ-012` |
-| `GET /organizations/{organizationId}/analytics/branches` | `BUSINESS_ANALYTICS_VIEW` | Accepted period + authorized Branch set/filter | Same-definition comparable Branch metrics | Unauthorized Branch/non-comparable period | Planned P6-M2; contract accepted by `ADR-029` |
+| `GET /organizations/{organizationId}/analytics/branches` | `BUSINESS_ANALYTICS_VIEW`; cost fields also `SALES_COST_VIEW` | Accepted period + authorized Branch set/filter + P6-M2-T02 cursor/limit | Current-name/status Branch series with accepted P6-M2-T01 Sales metrics per canonical bucket; no ranking | Unauthorized Branch/non-comparable period/invalid cursor | Planned P6-M2-T03; row contract frozen by P6-M2-T02 |
 | `GET /organizations/{organizationId}/analytics/forecast` | Forecast read | Scope + product/category + horizon | Versioned forecast + data status | Unsupported horizon/insufficient data | Blocked `OQ-012` |
 | `GET /organizations/{organizationId}/analytics/reorder-recommendations` | Reorder read | Scope + horizon/filter | Inputs + deterministic recommendations | Missing lead time/forecast/cost/unit | Blocked `OQ-012`; Analytics V1 inputs follow `ADR-029`, future cost/incoming-order semantics follow `ADR-026`, and quantity representation follows `ADR-022` |
 

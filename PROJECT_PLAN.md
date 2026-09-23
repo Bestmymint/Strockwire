@@ -210,7 +210,7 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
 | [x] **P6-M2-T01 — Base sales metrics** | Compute accepted totals/count/AOV/growth | Implemented set-based PostgreSQL/TypeScript Sales, discount, VAT, refund, count, AOV, growth, and cost/profit definitions with `analytics-v1` metadata | P6-M1 | Exact fixture agreement; decimal/null semantics | Unit + DB integration + zero/partial/scope/cutoff/timezone tests completed 2026-09-20 |
-| [ ] **P6-M2-T02 — Category and branch analytics** | Compare authorized dimensions | Category performance, branch comparison, rankings only if accepted | T01 | Same period/definition; included branch scope disclosed | Multi-branch/category/history-change/security tests |
+| [ ] **P6-M2-T02 — Category and branch analytics** | Compare authorized dimensions | Internal cursor-paged current-category money/share series and complete P6-M2-T01 Branch comparison series; no ranking/Top-N | T01 | Same period/definition; included branch scope disclosed; Category/Branch reconciliation | Multi-branch/category/history-change/security/reconciliation/pagination tests |
 | [ ] **P6-M2-T03 — Sales analytics API/UI** | Deliver accessible views | Planned endpoints, TanStack Query, Recharts plus text/table states | T01–T02 | No formula duplicated in UI; responsive accessible display | API/UI/E2E/accessibility/empty/stale tests |
 
 ### Milestone 6.3 — Inventory analytics
@@ -361,10 +361,11 @@ Read AGENTS.md and all Source of Truth documents, then inspect the current repos
 
 Task: P6-M2-T02 — Category and branch analytics
 
-Implement only accepted current-category performance and authorized Branch comparison
-over the P6-M2-T01 base metrics, with deterministic ordering/ranking only where
-`ADR-029`/`docs/ANALYTICS.md` explicitly permits it. Do not start Analytics API/UI,
-inventory analytics, forecasting, AI, or infrastructure in this task.
+Implement only the frozen P6-M2-T02 internal Category and Branch series contracts in
+`docs/ANALYTICS.md`: current-category line-money/share performance and complete
+P6-M2-T01 Branch comparison series, both cursor-paged by stable dimension identity.
+Do not add ranking/Top-N, Analytics API/UI, inventory analytics, forecasting, AI, or
+infrastructure in this task.
 
 Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not commit without separate authorization.
 ```
