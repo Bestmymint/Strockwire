@@ -211,7 +211,15 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 | --- | --- | --- | --- | --- | --- |
 | [x] **P6-M2-T01 — Base sales metrics** | Compute accepted totals/count/AOV/growth | Implemented set-based PostgreSQL/TypeScript Sales, discount, VAT, refund, count, AOV, growth, and cost/profit definitions with `analytics-v1` metadata | P6-M1 | Exact fixture agreement; decimal/null semantics | Unit + DB integration + zero/partial/scope/cutoff/timezone tests completed 2026-09-20 |
 | [x] **P6-M2-T02 — Category and branch analytics** | Compare authorized dimensions | Implemented internal cursor-paged current-category money/share series and complete P6-M2-T01 Branch comparison series; no ranking/Top-N | T01 | Same period/definition; included branch scope disclosed; Category/Branch reconciliation | Multi-branch/category/history-change/security/reconciliation/pagination tests completed |
-| [ ] **P6-M2-T03 — Sales analytics API/UI** | Deliver accessible views | Sales, Category, and Branch HTTP/API exposure is implemented; TanStack Query, Recharts, and accessible text/table UI remain | T01–T02 | No formula duplicated in UI; responsive accessible display | API integration/security/empty tests completed; UI/E2E/accessibility/stale tests remain |
+| [x] **P6-M2-T03 — Sales analytics API/UI** | Deliver accessible views | Implemented Sales, Category, and Branch HTTP/API exposure plus TanStack Query, Recharts, and accessible text/table UI | T01–T02 | No formula duplicated in UI; responsive accessible display | API integration/security/empty, UI/cursor/error, Chromium E2E/accessibility/tablet, and full-suite tests completed 2026-09-23 |
+
+P6-M2-T03 dependency note: `recharts@3.6.0` is the accepted chart baseline for the
+client-only Net Sales trend; a native SVG chart would duplicate responsive axis,
+tooltip, and keyboard behavior. It is MIT licensed, pinned in the lockfile, and
+adds 20 resolved packages. The 2026-09-23 production dependency audit reports no
+Recharts advisory; its 11 reported advisories concern existing Next.js/Sharp and
+other unrelated transitive dependencies. Exact financial values remain in the
+accessible table rather than relying on chart coordinates.
 
 ### Milestone 6.3 — Inventory analytics
 
@@ -328,22 +336,21 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 ## 2. Next Codex task
 
 Phase 1, Phase 2, Milestone 3.1, Milestone 3.2, the deferred-transfer decision gate,
-Phase 4 purchasing/receiving work, Phase 5, Milestone 6.1, P6-M2-T01, and P6-M2-T02
+Phase 4 purchasing/receiving work, Phase 5, Milestone 6.1, and Milestone 6.2
 are complete. `ADR-029` resolves `OQ-011` and `OQ-016`; the current Analytics
 foundation implements reporting time, period, scope, source cutoff, completeness,
-base Sales metrics, and Category/Branch dimensions. The HTTP/API portion of
-**P6-M2-T03 — Sales analytics API/UI** is complete; its UI portion is the next
-remaining work in this plan. P6-M3-T01 is the next distinct numbered task.
+base Sales metrics, Category/Branch dimensions, and Sales/Category/Branch HTTP and UI.
+**P6-M3-T01 — Movement and coverage metrics** is the next remaining task.
 
 Current-state constraints that the next task must preserve:
 
 - `OQ-001` is resolved by `ADR-011`: Node.js 24 LTS, pnpm 11.19.0, and native `apps/*`/`packages/*` workspaces.
 - The root contains pinned TypeScript, ESLint, Prettier, Vitest, Playwright Chromium, axe, and Next-specific lint tooling with verified `build`, `dev:api`, `dev:web`, `start:api`, `start:web`, `format`, `format:check`, `lint`, `test`, `test:e2e`, and `typecheck` scripts.
-- Vitest discovers root and workspace `*.test.ts`/`*.test.tsx` files, excludes `tests/e2e` files, and applies committed migrations to the guarded test database. Coverage includes authorization policy; authentication/credential lifecycle; onboarding and branch/member access; catalog; inventory; suppliers; purchase orders; receiving; atomic checkout; Sales API/history/refunds; and Analytics period/scope/metrics/dimensions/HTTP. `pnpm test:e2e` runs 16 isolated Chromium scenarios against the same-origin Next.js rewrite, Express, and guarded disposable PostgreSQL target.
+- Vitest discovers root and workspace `*.test.ts`/`*.test.tsx` files, excludes `tests/e2e` files, and applies committed migrations to the guarded test database. Coverage includes authorization policy; authentication/credential lifecycle; onboarding and branch/member access; catalog; inventory; suppliers; purchase orders; receiving; atomic checkout; Sales API/history/refunds; and Analytics period/scope/metrics/dimensions/HTTP/UI. `pnpm test:e2e` runs 19 isolated Chromium scenarios against the same-origin Next.js rewrite, Express, and guarded disposable PostgreSQL target.
 - The root `.env.example` documents the active web/API loopback contract, redacted Docker-only `STOCKWISE_POSTGRES_*` placeholders, API-only `DATABASE_URL`, required runtime mode, session idle/absolute/touch values, and the required stable API-only Analytics cursor HMAC key. `apps/web` and `apps/api` retain separate strict Zod environment schemas; the API validates `DATABASE_URL` as a PostgreSQL URL and the web schema does not accept it.
 - Web/API configuration ownership, client/server exposure boundaries, local/test rules, and later-task deferrals are documented in `AGENTS.md`.
 - `.github/workflows/ci.yml` reproduces the frozen install, format-check, lint, typecheck, test, and build gates for pushes and pull requests with read-only repository permission and immutable action pins.
-- `apps/web` contains the Next.js App Router root shell, Tailwind/shadcn baseline, TanStack Query provider, strict environment boundary, same-origin health and `/api/v1` rewrites, authentication/onboarding, URL-owned `/app` context, Catalog, Inventory, branch/member, Supplier, Purchase Order/Receiving, POS, and `/app/sales` Sales History/detail/browser-receipt/refund UI. It has no Next.js business Route Handlers, persisted selection authority, dashboard, VOID UI, or branch-price behavior. The browser receipt uses the existing Sale detail response and remains original-Sale-only; no separate receipt or refund-document endpoint exists.
+- `apps/web` contains the Next.js App Router root shell, Tailwind/shadcn baseline, TanStack Query provider, strict environment boundary, same-origin health and `/api/v1` rewrites, authentication/onboarding, URL-owned `/app` context, Catalog, Inventory, branch/member, Supplier, Purchase Order/Receiving, POS, `/app/sales` Sales History/detail/browser-receipt/refund UI, and `/app/analytics` Sales/Category/Branch views. It has no Next.js business Route Handlers, persisted selection authority, VOID UI, or branch-price behavior. The browser receipt uses the existing Sale detail response and remains original-Sale-only; no separate receipt or refund-document endpoint exists.
 - `OQ-002` is resolved by `ADR-012`: App Router under `src/app`, Server Components by default, justified Client Components only, deferred Route Groups, and Express-owned business REST APIs.
 - `OQ-003`–`OQ-011`, `OQ-016`, `OQ-021`, and `OQ-022` are resolved by
   `ADR-013`–`ADR-029`. `ADR-029` fixes Organization reporting timezone, canonical
@@ -353,7 +360,7 @@ Current-state constraints that the next task must preserve:
   `OQ-020` remains open beyond its narrow application-level limiter exceptions.
 - `OQ-013` is resolved by `ADR-025` as **DEFERRED FROM MVP**. Stock transfer remains broader/full future scope, but no transfer schema, API, UI, permission, lifecycle, ledger-source, or idempotency contract is implemented or frozen.
 - `apps/api` contains the Express app/server bootstrap, safe transport/errors, Prisma client, all accepted authentication endpoints, first onboarding, `GET /me/access-context`, branch lifecycle endpoints, invitation/member workflows, Catalog, Inventory, Supplier, Purchase Order, Receiving, Sales, and the Analytics period/scope/base-Sales/Category/Branch repositories and services with authenticated Sales, Category, and Branch HTTP endpoints. Metrics use set-based PostgreSQL statements and exact Decimal derivation. Sales includes bounded Organization VAT configuration, completed Sale/SaleItem/Payment snapshots and constraints, `SALE_CHECKOUT` hashes, tenant-safe negative `SALE` ledger provenance, atomic checkout, POS reads/checkout transport, branch-scoped history/detail reads with field-level cost permission, and immutable linked SaleRefund/SaleRefundItem/RefundPayment compensation with optional positive `SALE_REFUND_RETURN` stock/cost effects. Existing protected writes continue to derive the verified actor, re-evaluate centralized policy and tenant scope, and serialize their accepted invariants.
-- The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, the bounded refund workflow, and Sales/Category/Branch Analytics HTTP exposure are implemented. Analytics UI, AI, AWS resources, deployment, and release automation remain unimplemented.
+- The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, the bounded refund workflow, and Sales/Category/Branch Analytics HTTP/UI exposure are implemented. Inventory analytics, AI, AWS resources, deployment, and release automation remain unimplemented.
 - Git metadata is present, but P1-M1-T05 did not create a commit or perform any remote action.
 
 ### Handoff prompt
@@ -361,13 +368,12 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: Remaining UI portion of P6-M2-T03 — Sales analytics API/UI
+Task: P6-M3-T01 — Movement and coverage metrics
 
-Use the implemented Sales, Category, and Branch Analytics HTTP endpoints to deliver
-the accessible responsive views planned for P6-M2-T03. Keep numerical formulas,
-period/scope/cursor authority, and cost visibility in the existing API services.
-Do not add ranking/Top-N, inventory analytics, forecasting, AI, or infrastructure
-in this task.
+Implement only the accepted inventory movement/coverage definitions in
+`docs/ANALYTICS.md` and the P6-M3-T01 plan row. Preserve the Analytics V1 period,
+scope, source-cutoff, and null/Decimal contracts. Do not begin risk/forecast,
+AI, or infrastructure work.
 
 Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not commit without separate authorization.
 ```

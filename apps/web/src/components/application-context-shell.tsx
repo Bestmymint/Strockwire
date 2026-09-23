@@ -201,6 +201,16 @@ export function ApplicationContextShell() {
             Point of sale
           </Link>
         ) : null}
+        {activeOrganization.role === "OWNER" ||
+        activeOrganization.role === "ADMIN" ||
+        activeOrganization.role === "BRANCH_MANAGER" ? (
+          <Link
+            className="inline-flex min-h-11 items-center rounded-md bg-foreground px-4 text-sm font-medium text-background"
+            href={`/app/analytics?organizationId=${activeOrganization.id}&branchId=${resolved.branch?.id ?? ""}`}
+          >
+            Analytics
+          </Link>
+        ) : null}
         {activeOrganization.role !== "INVENTORY_STAFF" ? (
           <Link
             className="inline-flex min-h-11 items-center rounded-md bg-foreground px-4 text-sm font-medium text-background"

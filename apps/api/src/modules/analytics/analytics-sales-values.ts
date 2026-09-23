@@ -199,7 +199,7 @@ function buildCostMetrics(input: {
   }
 
   const grossProfit = input.netSales.minus(knownNetCogs);
-  const grossMarginPercent = input.netSales.isPositive()
+  const grossMarginPercent = input.netSales.greaterThan(0)
     ? {
         reason: null,
         value: grossProfit

@@ -127,6 +127,20 @@ describe("analytics sales metric values", () => {
     });
   });
 
+  it("reports a null margin for a zero-sales bucket instead of NaN", () => {
+    const [bucket] = metricFixture({
+      rows: [
+        zeroAnalyticsSalesAggregateRow(-1),
+        zeroAnalyticsSalesAggregateRow(0),
+      ],
+    });
+    expect(bucket?.netSalesAmount).toBe("0.00");
+    expect(bucket?.cost?.grossMarginPercent).toEqual({
+      reason: "NON_POSITIVE_NET_SALES",
+      value: null,
+    });
+  });
+
   it("does not fabricate cost when a required historical cost fact is unknown", () => {
     const current = {
       ...zeroAnalyticsSalesAggregateRow(0),
