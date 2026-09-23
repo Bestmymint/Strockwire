@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { apiEnvironmentSchema, loadApiEnvironment } from "./environment.ts";
+import {
+  apiEnvironmentSchema,
+  databaseUrlSchema,
+  loadApiEnvironment,
+} from "./environment.ts";
+
+const analyticsKey = Buffer.alloc(32, 7).toString("base64url");
 
 describe("API environment boundary", () => {
   it("loads the required local API and database configuration", () => {
@@ -9,6 +15,7 @@ describe("API environment boundary", () => {
         DATABASE_URL:
           "postgresql://local-user:local-password@127.0.0.1:5432/local-database",
         STOCKWISE_API_PORT: "3001",
+        STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY: analyticsKey,
         STOCKWISE_PUBLIC_WEB_ORIGIN: "http://localhost:3000/",
         STOCKWISE_RUNTIME_ENV: "development",
       }),
@@ -17,6 +24,7 @@ describe("API environment boundary", () => {
         "postgresql://local-user:local-password@127.0.0.1:5432/local-database",
       STOCKWISE_RUNTIME_ENV: "development",
       STOCKWISE_API_PORT: 3001,
+      STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY: analyticsKey,
       STOCKWISE_PUBLIC_WEB_ORIGIN: "http://localhost:3000",
       STOCKWISE_SESSION_ABSOLUTE_TIMEOUT_MINUTES: 10_080,
       STOCKWISE_SESSION_IDLE_TIMEOUT_MINUTES: 1_440,
@@ -30,6 +38,7 @@ describe("API environment boundary", () => {
         DATABASE_URL:
           "postgresql://local-user:local-password@127.0.0.1:5432/local-database",
         STOCKWISE_API_PORT: "3001",
+        STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY: analyticsKey,
         STOCKWISE_EMAIL_FROM: "StockWise <verified@example.com>",
         STOCKWISE_PUBLIC_WEB_ORIGIN: "https://stockwise.example.com",
         STOCKWISE_RUNTIME_ENV: "production",
@@ -40,6 +49,7 @@ describe("API environment boundary", () => {
       }),
     ).toMatchObject({
       STOCKWISE_RUNTIME_ENV: "production",
+      STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY: analyticsKey,
       RESEND_API_KEY: "server-only-resend-key",
       STOCKWISE_EMAIL_FROM: "StockWise <verified@example.com>",
       STOCKWISE_PUBLIC_WEB_ORIGIN: "https://stockwise.example.com",
@@ -90,6 +100,48 @@ describe("API environment boundary", () => {
         STOCKWISE_PUBLIC_WEB_ORIGIN: "https://stockwise.example.com",
         STOCKWISE_RUNTIME_ENV: "production",
       }),
+    ).toThrow();
+  });
+
+  it("requires one canonical stable analytics key in every runtime mode", () => {
+    const base = {
+      DATABASE_URL:
+        "postgresql://local-user:local-password@127.0.0.1:5432/local-database",
+      STOCKWISE_API_PORT: "3001",
+      STOCKWISE_PUBLIC_WEB_ORIGIN: "http://localhost:3000",
+      STOCKWISE_RUNTIME_ENV: "test",
+    };
+    expect(() => loadApiEnvironment(base)).toThrow();
+    for (const key of [
+      "short",
+      Buffer.alloc(31, 1).toString("base64url"),
+      `${analyticsKey}=`,
+    ]) {
+      expect(() =>
+        loadApiEnvironment({
+          ...base,
+          STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY: key,
+        }),
+      ).toThrow();
+    }
+    expect(
+      loadApiEnvironment({
+        ...base,
+        STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY: analyticsKey,
+      }).STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY,
+    ).toBe(analyticsKey);
+  });
+
+  it("validates database-only connectivity without requiring analytics configuration", () => {
+    expect(
+      databaseUrlSchema.parse(
+        "postgresql://local-user@127.0.0.1:5432/local-database",
+      ),
+    ).toBe("postgresql://local-user@127.0.0.1:5432/local-database");
+    expect(() =>
+      databaseUrlSchema.parse(
+        "mysql://local-user@127.0.0.1:3306/local-database",
+      ),
     ).toThrow();
   });
 });

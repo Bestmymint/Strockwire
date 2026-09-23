@@ -703,7 +703,8 @@ metrics, explicit threshold deferrals, exact decimal/null semantics, and direct
 normalized-table query authority. P6-M1-T01 creates no runtime/schema/API/UI behavior;
 P6-M1-T02 implements the internal reporting-time/period/scope foundation. P6-M2-T01
 adds the internal set-based base Sales metric repository/service without an endpoint;
-P6-M2-T02 category and Branch dimensions are next.
+P6-M2-T02 adds internal Category and Branch dimensions; P6-M2-T03 exposes Sales,
+Category, and Branch Analytics through HTTP. The Analytics UI remains planned.
 
 Sales payment, Output VAT, discount, receipt, monetary, checkout, and UNKNOWN-cost
 behavior are accepted by `ADR-027`, which resolves `OQ-008`. P5-M1 and P5-M2 implement

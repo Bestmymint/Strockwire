@@ -89,6 +89,15 @@ export function createPrismaAnalyticsScopeRepository(
         return { kind: "forbidden" };
       }
 
+      const resolution = resolveAnalyticsBranchSet({
+        analyticsKind: input.analyticsKind,
+        branches: membership.organization.branches,
+        candidate: input.candidate,
+        context,
+      });
+
+      if (resolution.kind !== "allowed") return resolution;
+
       let reportingTimezone: string;
       try {
         reportingTimezone = validateIanaTimeZone(
@@ -98,16 +107,7 @@ export function createPrismaAnalyticsScopeRepository(
         return { kind: "invalid_reporting_timezone" };
       }
 
-      const resolution = resolveAnalyticsBranchSet({
-        analyticsKind: input.analyticsKind,
-        branches: membership.organization.branches,
-        candidate: input.candidate,
-        context,
-      });
-
-      return resolution.kind === "allowed"
-        ? { kind: "success", reportingTimezone, scope: resolution.scope }
-        : resolution;
+      return { kind: "success", reportingTimezone, scope: resolution.scope };
     },
   };
 }

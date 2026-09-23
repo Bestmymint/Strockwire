@@ -1,14 +1,28 @@
 import { z } from "zod";
 
+export const databaseUrlSchema = z
+  .string()
+  .url()
+  .refine((value) => new URL(value).protocol === "postgresql:", {
+    message: "must be a postgresql:// connection URL",
+  });
+
+const analyticsCursorKeySchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]+$/, "must be canonical base64url")
+  .refine(
+    (value) => {
+      const bytes = Buffer.from(value, "base64url");
+      return bytes.length >= 32 && bytes.toString("base64url") === value;
+    },
+    { message: "must encode at least 32 bytes" },
+  );
+
 export const apiEnvironmentSchema = z
   .object({
-    DATABASE_URL: z
-      .string()
-      .url()
-      .refine((value) => new URL(value).protocol === "postgresql:", {
-        message: "must be a postgresql:// connection URL",
-      }),
+    DATABASE_URL: databaseUrlSchema,
     RESEND_API_KEY: z.string().min(1).optional(),
+    STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY: analyticsCursorKeySchema,
     STOCKWISE_RUNTIME_ENV: z.enum(["development", "test", "production"]),
     STOCKWISE_API_PORT: z.coerce.number().int().min(1).max(65_535),
     STOCKWISE_EMAIL_FROM: z.string().min(1).max(320).optional(),
@@ -86,6 +100,8 @@ export function loadApiEnvironment(
   return apiEnvironmentSchema.parse({
     DATABASE_URL: environment.DATABASE_URL,
     RESEND_API_KEY: environment.RESEND_API_KEY,
+    STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY:
+      environment.STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY,
     STOCKWISE_RUNTIME_ENV: environment.STOCKWISE_RUNTIME_ENV,
     STOCKWISE_API_PORT: environment.STOCKWISE_API_PORT,
     STOCKWISE_EMAIL_FROM: environment.STOCKWISE_EMAIL_FROM,

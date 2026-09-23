@@ -1133,9 +1133,10 @@ printable refund document.
 
 ## 12. Analytics endpoints
 
-`ADR-029` accepts Analytics V1 metric and reporting-time semantics. The endpoints remain
-unimplemented and are delivered only by their planned Phase 6 tasks. Every response
-returns the metadata required by `docs/ANALYTICS.md` and only metrics marked Accepted.
+`ADR-029` accepts Analytics V1 metric and reporting-time semantics. The Sales,
+Category, and Branch endpoints are implemented by P6-M2-T03; later Phase 6 endpoints
+remain planned. Every response returns the metadata required by `docs/ANALYTICS.md`
+and only metrics marked Accepted.
 
 Common query concepts:
 
@@ -1145,8 +1146,8 @@ branchId=<allowed branch when branch scope>
 from=YYYY-MM-DD                 # Organization-local, inclusive
 to=YYYY-MM-DD                   # Organization-local, exclusive
 granularity=day|week|month|year
-cursor=<opaque>                 # detail/ranking rows only
-limit=1..100                     # detail/ranking rows only; default 25
+cursor=<opaque>                 # Category/Branch dimension pages only
+limit=1..100                    # Category/Branch dimension pages only; default 25
 ```
 
 `from`, `to`, and `granularity` are required; the API has no implicit period. Dates are
@@ -1154,13 +1155,13 @@ interpreted only in the Organization IANA reporting timezone. Date-times/offsets
 unaligned week/month/year boundaries, `from >= to`, and spans beyond 366 local dates
 are validation errors. Week boundaries are Monday local `00:00`. The server converts
 local boundaries to half-open UTC instants with IANA/DST rules and returns both forms.
-Summary/timeseries buckets are ascending, gap-filled, and not paginated. Dimension
-detail/ranking rows use stable opaque cursors and deterministic ID tie-breaks.
+Summary/timeseries buckets are ascending, gap-filled, and not paginated. Category and
+Branch dimension rows use stable opaque cursors and deterministic ID ordering.
 P6-M2-T02 Category/Branch dimension pages bind the cursor to metric version,
 dimension, Organization, authorized Branch set, canonical range/granularity, ordering,
 and source cutoff; the selected dimension series carries every requested canonical
-bucket. P6-M2-T02 itself adds no HTTP endpoint. P6-M2-T03 must expose only these
-already accepted internal row contracts and must not add ranking or Top-N behavior.
+bucket. P6-M2-T02 itself adds no HTTP endpoint. P6-M2-T03 exposes these
+accepted internal row contracts without ranking or Top-N behavior.
 
 Common success metadata includes `metricDefinitionVersion: "analytics-v1"`, scope,
 included authorized Branch IDs/count, requested local dates/granularity, exact UTC
@@ -1170,13 +1171,30 @@ strings; null metrics carry a stable reason. Cost outputs also carry cost covera
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `GET /organizations/{organizationId}/analytics/sales` | `BUSINESS_ANALYTICS_VIEW`; cost fields also `SALES_COST_VIEW` | Scope + accepted range/granularity + optional dimensions | Accepted Sales/discount/VAT/refund/count/AOV/growth/profit metrics | Invalid/non-comparable/insufficient/inaccessible | Planned P6-M2-T03; metric contracts accepted by `ADR-029` and P6-M2-T01/T02 |
+| `GET /organizations/{organizationId}/analytics/sales` | `BUSINESS_ANALYTICS_VIEW`; cost fields also `SALES_COST_VIEW` | Required `scope=organization` or `scope=branch&branchId={id}` plus `from`, `to`, `granularity` | Canonical bucket series with accepted Sales/discount/VAT/refund/count/AOV/growth/profit metrics | Invalid period/inaccessible scope | Implemented P6-M2-T03 |
+| `GET /organizations/{organizationId}/analytics/categories` | `BUSINESS_ANALYTICS_VIEW` | Same required scope/period plus optional `cursor`, `limit` | Current Category/Uncategorized dimension page with only identity, current name/status, Gross Sales, Discount Amount, Sales After Discount, Refund Amount, Net Sales, Category Share per canonical bucket | Invalid period/cursor/inaccessible scope | Implemented P6-M2-T03 |
 | `GET /organizations/{organizationId}/analytics/inventory` | `INVENTORY_ANALYTICS_VIEW`; value/cost fields also `SALES_COST_VIEW` | Scope + accepted range/granularity + optional dimensions/current cutoff | Current availability/value and accepted source-separated movement/velocity/coverage | Insufficient/zero/reconciliation anomaly/deferred classification | Planned P6-M3; forecast/risk/reorder fields remain blocked `OQ-012` |
-| `GET /organizations/{organizationId}/analytics/branches` | `BUSINESS_ANALYTICS_VIEW`; cost fields also `SALES_COST_VIEW` | Accepted period + authorized Branch set/filter + P6-M2-T02 cursor/limit | Current-name/status Branch series with accepted P6-M2-T01 Sales metrics per canonical bucket; no ranking | Unauthorized Branch/non-comparable period/invalid cursor | Planned P6-M2-T03; row contract frozen by P6-M2-T02 |
+| `GET /organizations/{organizationId}/analytics/branches` | `BUSINESS_ANALYTICS_VIEW`; cost fields also `SALES_COST_VIEW` | Same required scope/period plus optional `cursor`, `limit` | Every authorized Branch, including zero-activity Branches, with current name/status and accepted P6-M2-T01 metrics per canonical bucket; no ranking | Unauthorized Branch/invalid period/cursor | Implemented P6-M2-T03 |
 | `GET /organizations/{organizationId}/analytics/forecast` | Forecast read | Scope + product/category + horizon | Versioned forecast + data status | Unsupported horizon/insufficient data | Blocked `OQ-012` |
 | `GET /organizations/{organizationId}/analytics/reorder-recommendations` | Reorder read | Scope + horizon/filter | Inputs + deterministic recommendations | Missing lead time/forecast/cost/unit | Blocked `OQ-012`; Analytics V1 inputs follow `ADR-029`, future cost/incoming-order semantics follow `ADR-026`, and quantity representation follows `ADR-022` |
 
 Analytics error/null semantics:
+
+- Sales returns `data.buckets`; Category returns `data.categories`; Branch returns
+  `data.branches`. Dimension responses add `meta.nextCursor` (`null` at the end).
+  All three return `meta` with `metricDefinitionVersion`, `scopeType`,
+  `organizationId`, `includedBranchIds`, `includedBranchCount`, `granularity`,
+  `localFromInclusive`, `localToExclusive`, `periodStartInclusive`,
+  `periodEndExclusive`, `reportingTimezone`, `generatedAt`, `sourceCutoff`,
+  `dataStatus`, and `requestId`. UTC instants are ISO strings; exact money,
+  cost, and percentage values are decimal strings. Null metrics retain their reasons.
+- Dimension cursors freeze the authorized execution inputs and source cutoff across
+  pages. Current Category membership and labels remain live and may reclassify
+  historical facts between pages; pagination is not a catalog snapshot.
+- Invalid selectors and period boundaries return `400 VALIDATION_ERROR`; malformed,
+  tampered, or mismatched cursors return `400 INVALID_CURSOR`; denied scopes return
+  `403 FORBIDDEN`; invalid persisted reporting timezone returns generic
+  `500 ANALYTICS_CONFIGURATION_ERROR` without the persisted value.
 
 - No eligible facts may be a successful response with zero counts and explicit null reasons, not necessarily `404`.
 - Insufficient history is not a server error.

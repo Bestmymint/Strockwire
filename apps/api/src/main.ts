@@ -2,6 +2,16 @@ import { Router } from "express";
 
 import { createApp } from "./app.ts";
 import { loadApiEnvironment } from "./environment.ts";
+import { createPrismaAnalyticsBranchRepository } from "./modules/analytics/analytics-branch-repository.ts";
+import { createAnalyticsBranchService } from "./modules/analytics/analytics-branch-service.ts";
+import { createPrismaAnalyticsCategoryRepository } from "./modules/analytics/analytics-category-repository.ts";
+import { createAnalyticsCategoryService } from "./modules/analytics/analytics-category-service.ts";
+import { createAnalyticsContextEngine } from "./modules/analytics/analytics-context.ts";
+import { createAnalyticsDimensionCursorCodec } from "./modules/analytics/analytics-dimension-cursor.ts";
+import { createAnalyticsRouter } from "./modules/analytics/analytics-router.ts";
+import { createPrismaAnalyticsSalesRepository } from "./modules/analytics/analytics-sales-repository.ts";
+import { createAnalyticsSalesService } from "./modules/analytics/analytics-sales-service.ts";
+import { createPrismaAnalyticsScopeRepository } from "./modules/analytics/analytics-scope-repository.ts";
 import { createApiLogger } from "./logger.ts";
 import { createPrismaCatalogRepository } from "./modules/catalog/catalog-repository.ts";
 import { createCatalogRouter } from "./modules/catalog/catalog-router.ts";
@@ -133,6 +143,32 @@ async function main(): Promise<void> {
   const refundService = createRefundService({
     repository: createPrismaRefundRepository(prisma),
   });
+  const analyticsCursorCodec = createAnalyticsDimensionCursorCodec(
+    Buffer.from(environment.STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY, "base64url"),
+  );
+  const analyticsContextEngine = createAnalyticsContextEngine({
+    scopeRepository: createPrismaAnalyticsScopeRepository(prisma),
+  });
+  const analyticsSalesService = createAnalyticsSalesService({
+    contextEngine: analyticsContextEngine,
+    repository: createPrismaAnalyticsSalesRepository(prisma),
+  });
+  const analyticsCategoryService = createAnalyticsCategoryService({
+    contextEngine: analyticsContextEngine,
+    cursorCodec: analyticsCursorCodec,
+    repository: createPrismaAnalyticsCategoryRepository(
+      prisma,
+      analyticsCursorCodec,
+    ),
+  });
+  const analyticsBranchService = createAnalyticsBranchService({
+    contextEngine: analyticsContextEngine,
+    cursorCodec: analyticsCursorCodec,
+    repository: createPrismaAnalyticsBranchRepository(
+      prisma,
+      analyticsCursorCodec,
+    ),
+  });
   const apiRouter = Router();
   apiRouter.use(
     createRegistrationRouter({
@@ -220,6 +256,14 @@ async function main(): Promise<void> {
       publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
       refundService,
       salesApiService,
+    }),
+  );
+  apiRouter.use(
+    createAnalyticsRouter({
+      authenticationMiddleware,
+      branchService: analyticsBranchService,
+      categoryService: analyticsCategoryService,
+      salesService: analyticsSalesService,
     }),
   );
 

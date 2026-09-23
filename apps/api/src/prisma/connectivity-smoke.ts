@@ -1,9 +1,9 @@
-import { loadApiEnvironment } from "../environment.ts";
+import { databaseUrlSchema } from "../environment.ts";
 import { createPrismaClient } from "./client.ts";
 
 async function main(): Promise<void> {
-  const environment = loadApiEnvironment();
-  const prisma = createPrismaClient(environment);
+  const databaseUrl = databaseUrlSchema.parse(process.env.DATABASE_URL);
+  const prisma = createPrismaClient({ DATABASE_URL: databaseUrl });
 
   try {
     const result = await prisma.$queryRaw<
