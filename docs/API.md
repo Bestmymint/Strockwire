@@ -1175,10 +1175,10 @@ reason. Cost outputs also carry cost coverage.
 | --- | --- | --- | --- | --- | --- |
 | `GET /organizations/{organizationId}/analytics/sales` | `BUSINESS_ANALYTICS_VIEW`; cost fields also `SALES_COST_VIEW` | Required `scope=organization` or `scope=branch&branchId={id}` plus `from`, `to`, `granularity` | Canonical bucket series with accepted Sales/discount/VAT/refund/count/AOV/growth/profit metrics | Invalid period/inaccessible scope | Implemented P6-M2-T03 |
 | `GET /organizations/{organizationId}/analytics/categories` | `BUSINESS_ANALYTICS_VIEW` | Same required scope/period plus optional `cursor`, `limit` | Current Category/Uncategorized dimension page with only identity, current name/status, Gross Sales, Discount Amount, Sales After Discount, Refund Amount, Net Sales, Category Share per canonical bucket | Invalid period/cursor/inaccessible scope | Implemented P6-M2-T03 |
-| `GET /organizations/{organizationId}/analytics/inventory` | `INVENTORY_ANALYTICS_VIEW`; value/cost fields also `SALES_COST_VIEW` | Scope + required range/granularity; optional opaque dimension `cursor`/`limit`, no client cutoff | T01 paginated Branch/Product movement series, page-current snapshots, Branch availability/value summaries, and each dimension's `stockClassification` object (`classification`, `reason`, `thresholdVersion`) from T02 | Null classification preserves an accepted unavailable reason; no `STOCKOUT_RISK`, ranking, or Top-N | Implemented P6-M3-T03; T01 and T02 remain internal sources; forecast/stockout risk/reorder remain blocked `OQ-012` |
+| `GET /organizations/{organizationId}/analytics/inventory` | `INVENTORY_ANALYTICS_VIEW`; value/cost fields also `SALES_COST_VIEW` | Scope + required range/granularity; optional opaque dimension `cursor`/`limit`, no client cutoff | T01 paginated Branch/Product movement series, page-current snapshots, Branch availability/value summaries, and each dimension's `stockClassification` object (`classification`, `reason`, `thresholdVersion`) from T02 | Null classification preserves an accepted unavailable reason; no `STOCKOUT_RISK`, ranking, or Top-N | Implemented P6-M3-T03; T01 and T02 remain internal sources; forecast is separately defined by `ADR-031` but not exposed here; stockout risk/reorder remain blocked pending separate policy |
 | `GET /organizations/{organizationId}/analytics/branches` | `BUSINESS_ANALYTICS_VIEW`; cost fields also `SALES_COST_VIEW` | Same required scope/period plus optional `cursor`, `limit` | Every authorized Branch, including zero-activity Branches, with current name/status and accepted P6-M2-T01 metrics per canonical bucket; no ranking | Unauthorized Branch/invalid period/cursor | Implemented P6-M2-T03 |
-| `GET /organizations/{organizationId}/analytics/forecast` | Forecast read | Scope + product/category + horizon | Versioned forecast + data status | Unsupported horizon/insufficient data | Blocked `OQ-012` |
-| `GET /organizations/{organizationId}/analytics/reorder-recommendations` | Reorder read | Scope + horizon/filter | Inputs + deterministic recommendations | Missing lead time/forecast/cost/unit | Blocked `OQ-012`; Analytics V1 inputs follow `ADR-029`, future cost/incoming-order semantics follow `ADR-026`, and quantity representation follows `ADR-022` |
+| `GET /organizations/{organizationId}/analytics/forecast` | Existing `FORECAST_REORDER_VIEW` at authorized Branch scope; quantity only | P6-M4-T04 must define exact request/pagination; internal T02 supports Branch/Product and fixed seven-day horizon only | Internal `ADR-031` versioned daily forecast, total, and unavailable reason; no category or mixed-unit aggregate | Transport validation/error contract remains T04-owned | Planned P6-M4-T04; `OQ-012` resolved for internal forecast, no route implemented |
+| `GET /organizations/{organizationId}/analytics/reorder-recommendations` | Reorder read | P6-M4-T03/T04 must define exact inputs/transport | Inputs + deterministic recommendations after separate acceptance | Lead time/safety stock/incoming/order rounding unresolved | Blocked pending separate replenishment policy; `ADR-031` alone does not authorize it |
 
 Analytics error/null semantics:
 
@@ -1325,8 +1325,8 @@ Canonical definitions live in `BUILD_SPEC.md`:
 - Refund: `ADR-028` plus the applicable Sales/inventory/cost decisions; `OQ-009` is
   resolved and VOID is excluded from V1
 - Analytics periods/base metrics: `ADR-029` (`OQ-011`, `OQ-016` resolved);
-  fixed coverage stock classification: `ADR-030`; forecasting, stockout risk,
-  and reorder: `OQ-012`
+  fixed coverage stock classification: `ADR-030`; internal Forecasting V1:
+  `ADR-031` (`OQ-012` resolved); stockout risk and reorder need separate decisions
 - AI scheduling/provider: `OQ-017`, `OQ-018`
 - Hosting, S3, operational exposure: `OQ-015`, `OQ-020`
 - Catalog normalization and lifecycle: `ADR-022`; supplier implementation remains sequenced for P4

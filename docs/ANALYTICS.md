@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1 Source of Truth; `OQ-011` and `OQ-016` resolved by `ADR-029` |
+| Status | Architecture Freeze v1 Source of Truth; `OQ-011`/`OQ-016` resolved by `ADR-029`, `OQ-012` resolved for Forecasting V1 by `ADR-031` |
 | Compute stack | PostgreSQL SQL + TypeScript |
 | AI boundary | OpenRouter summarizes supplied aggregates only |
 | Baseline | Architecture Freeze v1 |
@@ -14,9 +14,9 @@ This is the only authoritative document for analytics terminology, formulas, per
 
 `ADR-029` resolves the Analytics V1 metric and reporting-time contract in `OQ-011`
 and `OQ-016`. `ADR-030` accepts fixed V1 coverage-based stock classification.
-Forecasting, stockout risk, reorder, other deferred classifications, job timing,
-and provider behavior remain separately governed by `OQ-012`, `OQ-017`, and
-`OQ-018` as applicable.
+`ADR-031` resolves `OQ-012` for Forecasting V1 only. Stockout risk, safety stock,
+lead-time/reorder policy, and other deferred classifications require their own later
+accepted decisions; job timing and provider behavior remain `OQ-017` and `OQ-018`.
 
 ## 2. Definition status
 
@@ -171,7 +171,8 @@ For a requested scope `S` and period `P`:
   refund quantity; a known-cost non-restocked refund has exact zero COGS reversal,
   while a positive UNKNOWN-cost restock has unknown reversal.
 - `OnHand(b,p,t)`: branch `b` balance of product `p` at cutoff `t`.
-- `Incoming(b,p,H)`: confirmed inbound quantity expected in horizon `H`, once purchase lifecycle is accepted.
+- `Incoming(b,p,H)`: proposed inbound quantity within horizon `H`; eligibility and
+  expected-arrival authority remain undecided for replenishment.
 
 `ADR-027` fixes original Sale gross, discount, net, Output VAT, taxable, and cost
 snapshots. `ADR-028` fixes immutable refund and optional-restock compensation facts.
@@ -529,7 +530,7 @@ Required states:
 ### M-103 Fast-moving / slow-moving classification
 
 Fast/slow classification is explicitly **Deferred** until a later decision supplies a
-business threshold or `OQ-012` forecasting context.
+business threshold or an explicitly accepted forecasting context.
 
 Candidate inputs:
 
@@ -554,7 +555,7 @@ Branch, or Product; it requires no persisted threshold/configuration field.
 
 - Status: **Accepted** by `ADR-030` for P6-M3-T02, subject to the common
   classification/null contract below. A future reorder-point or forecast/lead-time
-  low-stock policy remains unaccepted under `OQ-012` or a separate decision.
+  low-stock policy requires a separate decision.
 - Factual `outOfStockProductCount` remains the count of active
   Organization Products with current Branch on-hand exactly `0.0000`; an absent lazy
   balance row is zero. Inactive Products are excluded. Zero current stock with valid
@@ -566,16 +567,21 @@ Proposed deterministic shape for horizon `H`:
 
 ```text
 ProjectedAvailable = OnHand + IncomingConfirmed(H)
-ProjectedDemand = ForecastDemand(H)
+ProjectedDemand = separately accepted demand estimate for H
 ProjectedEnding = ProjectedAvailable - ProjectedDemand
 StockoutRisk = ProjectedEnding < SafetyStock
 ```
 
-Optional estimated stockout date comes from cumulative daily forecast crossing available quantity.
+An optional estimated stockout date would require a separately accepted policy
+for cumulative forecast, incoming stock, and safety stock.
 
-- Status: **Blocked** by `OQ-012` and outside P6-M3-T02. It requires a future-demand
-  policy; current on-hand equal to zero is only a factual state. No-negative stock
-  follows `ADR-024`.
+- Status: **Blocked** pending a separate stockout-risk and safety-stock decision,
+  outside P6-M3-T02 and `ADR-031`. Forecasting V1 supplies only observed-sale
+  quantity estimates; current on-hand equal to zero is only a factual state.
+  No-negative stock follows `ADR-024`.
+- `forecast-sale-mean-28d-v1` cannot be inserted as uncensored
+  `ProjectedDemand` without accepting how stockout-censored observed sales,
+  horizon alignment, and current/incoming stock affect the risk calculation.
 - The LLM must never assign this risk.
 
 ### M-106 Overstock risk
@@ -587,7 +593,7 @@ Branch, or Product. Null coverage never produces `OVERSTOCK`.
 
 - Status: **Accepted** by `ADR-030` for P6-M3-T02, subject to the common
   classification/null contract below. Forecast-based overstock policy remains
-  deferred under `OQ-012`.
+  deferred pending a separate decision.
 
 ### P6-M3-T02 internal stock classification contract
 
@@ -633,8 +639,9 @@ pages may observe newer current stock; no historical risk series or stock
 reconstruction is claimed. `INVENTORY_ANALYTICS_VIEW` governs access;
 `SALES_COST_VIEW` is not required, and classification never exposes cost/value
 fields by itself. P6-M3-T03 owns HTTP/API/UI exposure. This fixed threshold
-decision requires no schema, migration, or configuration storage. `OQ-012`
-remains open for `STOCKOUT_RISK`, forecasting, safety stock, and reorder.
+decision requires no schema, migration, or configuration storage. `ADR-031`
+separately defines Forecasting V1; `STOCKOUT_RISK`, safety stock, and reorder
+remain undecided.
 
 ### M-107 Reorder recommendation
 
@@ -656,9 +663,15 @@ Potential rounding:
 Round up to purchasing unit/case size after the raw quantity is computed.
 ```
 
-- Status: **Blocked** only by `OQ-012`; quantity representation is accepted by
-  `ADR-022` and future confirmed incoming semantics follow `ADR-026`.
-- Must decide lead-time source, safety-stock formula, accepted incoming PO state (`ORDERED`), order multiples, minimum order quantity, and unavailable-data behavior.
+- Status: **Blocked** pending a separate P6-M4-T03 replenishment decision;
+  `ADR-031` supplies a seven-day forecast but no lead-time demand policy.
+  Quantity representation is accepted by `ADR-022`; Purchase Order lifecycle
+  follows `ADR-026`, but expected-arrival/confirmed-incoming semantics are not set.
+- `ForecastDemandDuringLeadTime` is an unresolved input, not a conversion of
+  the seven-day observed-sale forecast to any supplier lead time.
+- Must decide lead-time source, safety-stock formula, whether/when an `ORDERED`
+  PO counts as incoming, order multiples, minimum order quantity, and
+  unavailable-data behavior.
 - Output is a recommendation, not an automatic purchase order.
 
 ### M-108 Current on-hand and movement summary
@@ -795,8 +808,8 @@ The query uses `InventoryTransaction`, `Product`, `InventoryBalance`,
 PostgreSQL aggregation. It adds no per-Product/Branch/bucket query, index, migration,
 warehouse, materialized view, or rollup by default. `ADR-030` separately accepts
 fixed low/normal/overstock coverage classification on these factual outputs;
-`OQ-012` remains open for fast/slow, stockout risk, forecast-derived risk, and
-reorder definitions.
+`ADR-031` separately defines the forecast. Fast/slow, stockout risk,
+forecast-derived risk, and reorder still require later accepted definitions.
 
 ## 9. Query authority, authorization, and performance
 
@@ -816,6 +829,7 @@ Authorization is server-derived from the active membership and assignments:
 | --- | --- |
 | Sales/discount/VAT/refund/count/AOV/category/branch metrics | `BUSINESS_ANALYTICS_VIEW`; `OWNER`/`ADMIN` Organization-wide, assigned `BRANCH_MANAGER` assigned active Branches |
 | Inventory quantity/movement/availability/coverage metrics | `INVENTORY_ANALYTICS_VIEW`; `OWNER`/`ADMIN` Organization-wide, assigned `BRANCH_MANAGER`/`INVENTORY_STAFF` assigned active Branches |
+| Forecasting V1 observed-Sale quantity estimates | Existing `FORECAST_REORDER_VIEW`; `OWNER`/`ADMIN` Organization-wide, assigned `BRANCH_MANAGER`/`INVENTORY_STAFF` assigned active Branches; no `SALES_COST_VIEW` |
 | COGS/Gross Profit/Gross Margin/current inventory value or any cost coverage amount | Relevant analytics permission **and** existing `SALES_COST_VIEW`; `OWNER`/`ADMIN` Organization-wide, assigned `BRANCH_MANAGER` assigned active Branches |
 | Any analytics | `CASHIER`: none |
 
@@ -858,46 +872,139 @@ route, UI, schema, rollup, warehouse, or second cost authorization matrix.
 A trend beyond accepted period-over-period Net Sales Growth must name its method,
 lookback, grain, and confidence/data status.
 
-- Status: **Deferred** to `OQ-012`; two-point M-009 growth is not labeled a trend.
+- Status: **Deferred** pending a separate trend decision; two-point M-009 growth is
+  not labeled a trend. `ADR-031` does not estimate trend.
 - Prohibited: label simple two-point growth as a statistically established trend without disclosure.
 
 ### Seasonal pattern
 
-Seasonality requires enough comparable cycles and must declare its granularity (day-of-week, week-of-year, month-of-year) and minimum history.
+Seasonality requires enough comparable cycles and must declare its granularity
+(day-of-week, week-of-year, month-of-year) and minimum history.
 
-- Status: **Blocked** by `OQ-012`.
-- With insufficient history, return `INSUFFICIENT_DATA`; OpenRouter must not infer seasonality from a short snapshot.
+- Status: **Deferred** for Forecasting V1 by `ADR-031`: no day-of-week, holiday,
+  promotion, or other seasonal adjustment is inferred from its 28-day history.
+- A future seasonal model requires its own version and evaluation. OpenRouter must
+  not infer seasonality from a short snapshot.
 
 ## 11. Forecasting V1 contract
 
-Forecasting is part of StockWise's deterministic analytics layer, but its V1 algorithm is unresolved.
+**Status: Accepted contract, not implemented.** `ADR-031` resolves `OQ-012` for
+P6-M4-T02. The result estimates observed future Sale quantity, not latent customer
+demand, revenue, inventory need, or a purchasable reorder quantity.
 
-### Required decision fields (`OQ-012`)
+### Target, grain, time, and inputs
 
-- Forecast target: units, explicitly named Sales amount, or both
-- Grain: product/branch, category/branch, branch total
-- Horizon(s): next day/week/month or other
-- Training/lookback window
-- Baseline algorithm, such as naive last-period or moving average
-- Candidate algorithm, if different from baseline
-- Seasonality and calendar features
-- Treatment of stockouts, refunds, price changes, promotions, missing days, and new products; V1 has no VOID operation
-- Minimum sample/history requirements and cold-start output
-- Retraining/recalculation cadence
-- Forecast version and reproducibility metadata
-- Evaluation metric and acceptance threshold
+- One series is one authorized Branch/Product pair in the Product's immutable base
+  unit. No Organization/Product, Category, or mixed-unit scalar forecast exists in V1.
+- For each Organization-local calendar day, the observed target is the sum of
+  immutable `SaleItem.quantity` for completed Sales at that Branch and Product whose
+  `Sale.completedAt` falls in the day's half-open UTC bounds. A day with no eligible
+  SaleItem has exact zero. `Sale.completedAt`, not item creation time or the current
+  Product category, determines the day.
+- Refund quantity, optional `SALE_REFUND_RETURN` stock, receipts, adjustments,
+  price, cost, category, stock, supplier, holidays, promotions, and external data
+  are not target adjustments or model features. Later refunds never rewrite a Sale
+  training day. A zero-sale stockout day remains observed zero; V1 does not exclude
+  it or estimate lost sales. This censoring can understate demand.
+- The forecast covers exactly seven daily local-calendar buckets. Its first day
+  starts at the first local midnight **at or after** server-captured `sourceCutoff`;
+  at an exact midnight it starts that day, otherwise it starts the next day. Daily
+  local date labels and IANA-derived half-open UTC bounds are authoritative,
+  including DST. Weekly/monthly values are outside V1.
+- Training is the 28 complete local days immediately before the local day
+  containing `sourceCutoff`. That current day contributes nothing; it is partial
+  unless the cutoff is exactly at its opening midnight. At a non-midnight
+  cutoff, this leaves an intentional partial-day gap before the
+  forecast horizon. Training/horizon bounds and reporting timezone are recorded.
+  No client supplies an as-of cutoff to the production calculation.
+- The exact Branch/Product must have its earliest visible
+  `InventoryTransaction.occurredAt` at or before the training-window start. This
+  establishes that the pair existed in inventory context by that boundary, using
+  the same conservative marker as M-101. It does **not** establish continuous
+  stock availability across the 28 days; Product creation, Branch creation, and
+  first SALE alone do not establish this eligibility.
+  No minimum positive Sale count is imposed. An eligible all-zero window is a
+  genuine zero forecast, not insufficient history.
 
-### Current implementation boundary
+### `forecast-sale-mean-28d-v1` calculation and output
 
-- Use TypeScript and SQL only.
-- Do not introduce Python, FastAPI, XGBoost, LightGBM, or a separate ML service now.
-- A simple, testable statistical baseline is preferred before more complex models.
-- Forecast outputs must expose algorithm/version, horizon, generated-at time, input window, and data status.
-- A forecast is an estimate and must not be presented as guaranteed demand.
+Let `q_1 ... q_28` be the 28 daily observed Sale quantities, including zero days:
+
+```text
+dailyRaw = (sum(q_1 ... q_28)) / 28
+forecastDay_k = ROUND_HALF_UP(dailyRaw, 4), for k = 1 ... 7
+horizonTotal = sum(forecastDay_1 ... forecastDay_7)
+```
+
+Use exact Decimal arithmetic. Daily and total forecasts are non-negative decimal
+**expectations** with exactly four fractional places as decimal strings, even for
+integer-only `EA`, `PACK`, and `BOX`; no whole-unit rounding occurs here. The total
+is the sum of the seven displayed daily values, so it reconciles exactly. Actual
+Sale quantities retain the Product unit rules of `ADR-022`. Forecast rounding is
+not a sale, inventory mutation, or purchasing quantity rule. Summing these
+serialized rounded buckets can differ slightly from rounding seven times the
+unrounded daily mean; the serialized-bucket sum is authoritative.
+
+The calculation is recomputed on demand by P6-M4-T02 in the Express/TypeScript
+analytics module using set-based normalized PostgreSQL reads, one consistent MVCC
+snapshot, and the existing authorization boundary. It needs no new service,
+dependency, schema, migration, forecast-output table, model table, training-run
+table, scheduler, or persisted forecast. `coverageSalesVelocity` may equal this
+mean numerically for an eligible pair, but its inventory-ledger input, purpose,
+and page-current coverage context are separate; it is not reused as a forecast
+algorithm or as historical training truth. Future persistence needs a measured
+query/reproducibility use case and its own decision.
+
+An internal result contains `organizationId`, `branchId`, `productId`, `unit`,
+`forecastVersion: "forecast-sale-mean-28d-v1"`, `generatedAt`, `sourceCutoff`,
+`reportingTimezone`, `trainingStartInclusive`, `trainingEndExclusive`,
+`historyStartAt` (nullable earliest pair movement), `horizonDays: 7`,
+`horizonStartInclusive`, `horizonEndExclusive`, and seven ordered `days` with
+`localDate`, `bucketStartInclusive`, `bucketEndExclusive`, and `quantity`, plus
+`horizonTotal`, `status`, and `reason`. UTC instants are ISO strings; quantities
+are decimal strings. `status=AVAILABLE` has seven values, a total, and null
+reason. `status=UNAVAILABLE` has no day quantities/total and reason
+`INSUFFICIENT_DATA` when the pair lacks 28 complete days, or `INACTIVE_PRODUCT`
+when the current Product is inactive; it returns `days: []` and
+`horizonTotal: null`, while the training/horizon interval metadata remains
+present, and inactive takes precedence. A new Product,
+new pair, or pair with no movement is insufficient, never a fabricated zero or
+Organization/Category fallback. A sparse but eligible pair is available. Missing
+or unauthorized resources use existing safe errors, not a forecast reason.
+
+Use the existing `FORECAST_REORDER_VIEW` capability at the server-derived Branch
+scope for this quantity-only result: `OWNER`/`ADMIN` across the Organization and assigned
+`BRANCH_MANAGER`/`INVENTORY_STAFF` on active assigned Branches. `CASHIER` has no
+access. `SALES_COST_VIEW` is unnecessary because no prices, money, or cost are
+returned. P6-M4-T02 must apply that existing policy even if it adapts the
+analytics Branch-set resolver, which currently accepts only business/inventory
+kinds. P6-M4-T04 owns any later HTTP/UI contract; this section adds none.
+
+### Cutoff, reproducibility, and limitations
+
+Capture `generatedAt`/`sourceCutoff` server-side inside the calculation's read
+execution. Eligible Sales and first-movement evidence have event times no later
+than `sourceCutoff`; training Sales additionally satisfy
+`Sale.completedAt < trainingEndExclusive`. The first-movement marker must be at
+or before `trainingStartInclusive`. The snapshot must read Sale, SaleItem,
+InventoryTransaction, Organization timezone, Product unit/status, and access
+scope consistently. Product unit is immutable; current status is only an
+applicability gate, never a historical training feature. Current category and
+current stock never enter the calculation.
+
+As in `ADR-029`, event-time `sourceCutoff` is **not** a commit-visibility watermark:
+a delayed transaction can become visible later with an earlier event timestamp.
+Current Organization timezone changes also re-bucket on-demand history. The
+recorded timezone/bounds/version explain a result, but on-demand recomputation
+after such changes is not guaranteed byte-identical. No historical Product-status
+timeline exists. A future persisted forecast would retain its original inputs;
+V1 does not claim an archival replay capability.
 
 ## 12. Forecast evaluation metrics
 
-These formulas are accepted mathematical definitions, but the primary evaluation metric and product threshold remain `OQ-012`.
+These formulas remain mathematical definitions. `ADR-031` selects E-001 MAE as
+Forecasting V1's **primary** metric at one Branch/Product grain. E-002 RMSE and
+E-003 WAPE are not V1 acceptance metrics; no secondary metric is required.
 
 For actual values `A_t`, forecasts `F_t`, errors `e_t = A_t - F_t`, and `n` evaluated points:
 
@@ -930,13 +1037,55 @@ WAPE = sum(abs(A_t - F_t)) / sum(abs(A_t)) * 100
 
 MAPE is not a default because zero/near-zero actual demand makes it unstable. It requires explicit acceptance if added.
 
-### Evaluation protocol requirements
+### Forecasting V1 backtest and acceptance
 
-- Use time-ordered holdout/backtesting; do not randomly mix future observations into training.
-- Compare candidate Forecasting V1 with a named naive baseline.
-- Evaluate by product/branch and a weighted aggregate so high-volume items do not hide cold/slow items.
-- Report data exclusions and zero-demand handling.
-- Use reproducible synthetic or anonymized data; do not expose personal data.
+- Use rolling-origin backtests with four non-overlapping seven-day test windows
+  per eligible Branch/Product. For a fixed 56-day fixture ending at local day 56,
+  origin midnights are days 28, 35, 42, and 49. Each origin trains on exactly the
+  preceding 28 complete local days and predicts the seven days beginning at that
+  origin: training/evaluation day indexes are `[0,28)/[28,35)`,
+  `[7,35)/[35,42)`, `[14,42)/[42,49)`, and `[21,49)/[49,56)`.
+  The evaluation windows do not overlap; training windows may include earlier
+  evaluation days once those days precede a later origin. Each origin's actuals
+  are its next seven observed daily Sale quantities; no evaluation day enters
+  its own training window. The pair's first movement must
+  precede or equal each origin's training start. A pair lacking four evaluable
+  windows is reported as `INSUFFICIENT_EVALUATION_HISTORY`, not assigned an error
+  of zero. Forecast availability itself still requires only 28 days.
+- Compare the selected trailing-28-day mean with a named `last-day-naive` reference:
+  each of the seven forecast days equals the observed quantity of the last complete
+  training day. Compute E-001 MAE over all 28 daily predictions/actuals for each
+  pair, including zero-actual days, using exact Decimal errors and HALF_UP to four
+  decimal places only for the reported MAE. MAE is defined with a zero actual and
+  requires no percentage denominator. Compare within the same Product unit; do not sum or
+  average absolute errors across different units. Report per-pair errors,
+  eligible/excluded pair counts, and unit-separated distributions, including
+  zero-heavy pairs. Do not let high-volume pairs hide sparse ones in one scalar.
+- Freeze the fixture, reporting timezone, source event facts, first-movement
+  markers, and model version for every run. Time-ordered synthetic fixtures with
+  known visibility provide exact regression evidence; a retrospective live-data
+  backtest uses one extraction snapshot and event-time origin filters, and must
+  disclose that delayed commits cannot be reconstructed as-of past origins.
+  Historical Product status is unavailable; use fixed-status fixtures for exact
+  tests. A live backtest may select currently active Products but must label this
+  cohort selection and never treat current status/category/stock as an origin-time
+  model feature. Do not claim historical as-of replay from normalized tables.
+- P6-M4-T02 must pass hand-calculated unit fixtures for 28-day sums and zero days,
+  27-day/new-pair insufficiency, inactive precedence, four rolling origins,
+  cutoff exclusion, a later refund, DST and timezone rebucketing, quantity
+  precision, authorization, and deterministic repeat on fixed data. Report both
+  model and reference MAE with exclusions. The reference comparison is diagnostic;
+  V1 establishes a measured baseline;
+  there is no fixed accuracy threshold or requirement for the baseline to beat
+  itself or the reference. A later model change requires a new version and a
+  separately accepted improvement criterion.
+
+For example, an eligible `EA` pair with 14 units sold across its 28 training
+days produces seven `0.5000` daily expectations and `3.5000` total. An eligible
+all-zero pair produces seven `0.0000` values and `0.0000` total. A pair whose
+first movement is after the training start is `UNAVAILABLE`/
+`INSUFFICIENT_DATA` even if it sold recently. A refund in a later day changes
+none of those training quantities.
 
 ## 13. Analytics response metadata
 
@@ -1092,13 +1241,13 @@ Expected results must be hand-verifiable and stored with the test. SQL and TypeS
 
 Canonical Open Questions are in `BUILD_SPEC.md`:
 
-- `OQ-012` Forecasting V1
 - `OQ-017` generation schedule and retries
 - `OQ-018` OpenRouter model/fallback/budget/retention
 - `OQ-020` performance and retention targets
 
-`OQ-011` and `OQ-016` are resolved by `ADR-029`. `ADR-030` accepts only fixed
-coverage-based `LOW_STOCK`/`NORMAL`/`OVERSTOCK` classification. Fast/slow,
-`STOCKOUT_RISK`, forecast-derived risk, and reorder remain deferred/blocked by
-`OQ-012` or a future accepted decision; this does not reopen Analytics V1 metric
-or timezone semantics.
+`OQ-011` and `OQ-016` are resolved by `ADR-029`; `OQ-012` is resolved for
+Forecasting V1 by `ADR-031`. `ADR-030` accepts only fixed coverage-based
+`LOW_STOCK`/`NORMAL`/`OVERSTOCK` classification. Fast/slow,
+`STOCKOUT_RISK`, forecast-derived risk, safety stock, and reorder remain
+deferred/blocked until separate accepted decisions. This does not reopen
+Analytics V1 metric or timezone semantics.

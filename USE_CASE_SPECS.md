@@ -239,7 +239,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 - **Status:** Implemented inventory foundation; factual availability is accepted by
   `ADR-029`. `ADR-030` accepts fixed coverage-based low/normal/overstock
   classification for the later inventory analytics view; stockout risk remains
-  blocked by `OQ-012`.
+  blocked pending a separate risk/safety-stock policy.
 - **Actor:** Authorized branch user or organization-level viewer
 - **Preconditions:** Actor has access to the requested branch or authorized aggregate.
 - **Trigger:** Actor opens inventory list/product history.
@@ -442,13 +442,20 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-AN-002 — View forecast and reorder recommendation
 
-- **Status:** Blocked by `OQ-012`; Analytics V1 inputs/time follow `ADR-029`, future costing and incoming-order semantics follow `ADR-026`; quantity inputs
-  follow `ADR-022` and no-negative stock follows `ADR-024`
+- **Status:** Forecasting V1's internal calculation is accepted by `ADR-031` but
+  unimplemented; the combined forecast/reorder flow remains blocked pending a
+  separate P6-M4-T03 replenishment policy and P6-M4-T04 API/UI contract.
+  Analytics time follows `ADR-029`, quantity follows `ADR-022`, and no-negative
+  stock follows `ADR-024`.
 - **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` within the accepted forecast/reorder scope
-- **Preconditions:** Forecasting V1 and input definitions are accepted; actor has scope access.
+- **Preconditions:** Forecasting V1 is implemented, the separate replenishment
+  inputs/policy are accepted and implemented, and the actor has scope access.
 - **Trigger:** Actor opens forecast/replenishment view.
 - **Main flow:** Resolve scope/horizon; load accepted history/current/incoming data; calculate versioned forecast; apply deterministic reorder formula; return estimate, recommendation, inputs, data status, and limitations.
-- **Alternative flows:** Cold start/insufficient history returns baseline or no recommendation exactly as `OQ-012` decides; product/category/branch aggregation discloses grain.
+- **Alternative flows:** New/insufficient Branch/Product history returns
+  `INSUFFICIENT_DATA`; inactive Product returns `INACTIVE_PRODUCT`; eligible
+  all-zero history yields zero forecast. Reorder unavailable behavior and any
+  product/category aggregation await separate decisions.
 - **Error cases:** Missing/incomplete data; invalid horizon; inactive product; unavailable lead time; negative stock; stale forecast; calculation failure.
 - **Business rules:** OpenRouter does not produce values. Recommendation does not automatically create a purchase order. Model/version and uncertainty/data status are visible.
 - **Authorization:** `OWNER`/`ADMIN` may access organization-wide forecast/reorder results; `BRANCH_MANAGER`/`INVENTORY_STAFF` are limited to assigned branches; `CASHIER` has no access. Cost-sensitive inputs are filtered by permission.
@@ -459,7 +466,9 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-AI-001 — Generate a scheduled AI insight
 
-- **Status:** Analytics periods accepted by `ADR-029`; blocked in execution detail by `OQ-017`, `OQ-018` and forecast content by `OQ-012`
+- **Status:** Analytics periods accepted by `ADR-029`; blocked in execution detail
+  by `OQ-017` and `OQ-018`. Forecasting V1 content is defined by `ADR-031` but
+  remains unimplemented and is not a required AI input yet.
 - **Actor:** System scheduler/job
 - **Preconditions:** A due report identity exists; deterministic metrics for the period can be computed or marked insufficient; provider configuration is available for an attempt.
 - **Trigger:** Production EventBridge schedule or an authorized operational replay mechanism triggers the job.

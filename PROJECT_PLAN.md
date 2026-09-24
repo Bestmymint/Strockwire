@@ -52,7 +52,7 @@ Completing checks makes work ready for commit; it does not authorize a commit, p
 | [x] **P0-M2-T02 — Establish change protocol** | Prevent silent requirement drift | Record OQ/ADR/affected-document/plan update workflow | P0-M1-T10 | Future decisions have one owner and update path; implementers must stop at product/architecture ambiguity | Manual workflow trace completed |
 | [x] **P0-M2-T03 — Identity/onboarding/authorization gate** | Finalize rules before identity-domain implementation | Recorded accepted `OQ-003`–`OQ-006` and `OQ-022` rules for sessions, email lifecycle, onboarding, invitations, and fixed RBAC | Before affected Phase 2 implementation | Decisions accepted; build/data/API/use cases/ADR and permission matrix updated consistently | Cross-document trace plus session/token, invitation, delegation, escalation, and last-owner decision-boundary review completed 2026-08-22 |
 | [x] **P0-M2-T04 — Inventory/purchasing/sales gate** | Finalize stock, money, and cost rules before affected operations | `OQ-007` is resolved by `ADR-024`, `OQ-010`/`OQ-021` by `ADR-026`, sales-side `OQ-008` by `ADR-027`, refund behavior `OQ-009` by `ADR-028`, and `OQ-023` by `ADR-022` | Before affected inventory, purchasing, sales, and refund implementation | Worked examples and affected contracts agree; VOID is excluded and REFUND is implementation-ready | Stock, decimal, costing, checkout, receiving, and 12 refund boundary scenarios reviewed 2026-09-19 |
-| [ ] **P0-M2-T05 — Analytics/forecast gate** | Finalize numerical truth before affected analytics/forecast implementation | `OQ-011` is resolved by `ADR-029`; `ADR-030` separately accepts fixed P6-M3-T02 coverage classification; resolve remaining `OQ-012` for forecast/stockout-risk/reorder while preserving TypeScript/SQL calculation and summary-only LLM boundary | Before each affected Phase 6 implementation | Every implemented metric/forecast/reorder rule has one accepted definition/version; T02 needs no full Forecasting V1 decision | Analytics fixtures/time-boundary review completed 2026-09-20; forecast backtest design and leakage review remain |
+| [ ] **P0-M2-T05 — Analytics/forecast gate** | Finalize numerical truth before affected analytics/forecast implementation | `OQ-011` resolved by `ADR-029`; `ADR-030` accepts fixed P6-M3-T02 coverage classification; `ADR-031` resolves `OQ-012` for Forecasting V1; stockout-risk/reorder require separate rules while preserving TypeScript/SQL and summary-only LLM | Before each affected Phase 6 implementation | Every implemented metric/forecast/reorder rule has one accepted definition/version | Analytics fixtures/time-boundary review completed 2026-09-20; forecast backtest design/leakage review completed 2026-09-24; replenishment/risk decisions remain |
 
 The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, application shells, or unrelated work. Each gate blocks only the affected business-domain implementation. Cloud/operations questions such as `OQ-015`, `OQ-017`–`OQ-020` remain open until their relevant phases.
 
@@ -226,16 +226,16 @@ accessible table rather than relying on chart coordinates.
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
 | [x] **P6-M3-T01 — Movement and coverage metrics** | Compute accepted factual inventory analytics internally | Paginated Branch/Product movement series; requested-period ADS; 28-complete-day coverage velocity and coverage; current on-hand/value snapshots and Branch availability summaries under `docs/ANALYTICS.md`. No fast/slow classification is currently accepted. | P6-M1, inventory/sales | Explicit zero/insufficient/integrity states, unit-safe quantities, and separate event/current-snapshot capture metadata | Fixed data, zero demand, 28-day eligibility, cutoff/pagination, negative-stock reconciliation anomaly, branch and cost-authorization tests; implemented by `c74bc098` |
-| [x] **P6-M3-T02 — Stock risk analytics** | Classify page-current Branch/Product stock coverage internally | Compose fixed `stock-risk-v1` `LOW_STOCK`/`NORMAL`/`OVERSTOCK` classification onto each T01 dimension from its `coverageDays` only; null with an explicit reason when unavailable or Product inactive. No forecast, `STOCKOUT_RISK`, fast/slow, reorder, ranking, Top-N, LLM, or API/UI; `OQ-012` remains open. | T01; `ADR-030` fixed threshold decision | Explainable existing coverage input/status and version; exact accepted boundaries, no arbitrary or configurable thresholds | Decimal 0.00/7.00/just-above-7/just-below-60/60.00/above-60, null-reason, inactive-Product, authorization, and no-ranking/forecast fixtures; implemented by `f25adbf5` |
+| [x] **P6-M3-T02 — Stock risk analytics** | Classify page-current Branch/Product stock coverage internally | Compose fixed `stock-risk-v1` `LOW_STOCK`/`NORMAL`/`OVERSTOCK` classification onto each T01 dimension from its `coverageDays` only; null with an explicit reason when unavailable or Product inactive. No forecast, `STOCKOUT_RISK`, fast/slow, reorder, ranking, Top-N, LLM, or API/UI; Forecasting V1 was decided later by `ADR-031`. | T01; `ADR-030` fixed threshold decision | Explainable existing coverage input/status and version; exact accepted boundaries, no arbitrary or configurable thresholds | Decimal 0.00/7.00/just-above-7/just-below-60/60.00/above-60, null-reason, inactive-Product, authorization, and no-ranking/forecast fixtures; implemented by `f25adbf5` |
 | [x] **P6-M3-T03 — Inventory analytics API/UI** | Expose accepted inventory analytics | HTTP/UI exposure of T01 factual results and T02 accepted per-dimension coverage classification only; no API/UI work in T01 or T02 | T01–T02 | Accessible, scoped, versioned outputs; no risk ranking/Top-N | API/UI/E2E/security/empty tests; complete in `1043c58c` (`feat: expose inventory analytics`) |
 
 ### Milestone 6.4 — Forecast and replenishment
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
-| [ ] **P6-M4-T01 — Close Forecasting V1** | Define one testable baseline/candidate | Resolve `OQ-012`; target/grain/horizon/data/features/cold start/evaluation | P6-M1 | `docs/ANALYTICS.md`/ADR/plan updated; no Python service | Backtest design review and leakage check |
-| [ ] **P6-M4-T02 — Forecast implementation** | Produce versioned deterministic forecasts | TypeScript/SQL algorithm, data status, reproducible inputs | T01 | Repeatable output and known baseline comparison | Unit/backtest/time-order/zero/new-product tests |
-| [ ] **P6-M4-T03 — Reorder recommendation** | Turn accepted inputs into guidance | Lead time, safety stock, incoming, on-hand, order rounding as accepted | T02, P4 decisions | Explainable recommendation; never auto-order | Formula/boundary/missing-input tests |
+| [x] **P6-M4-T01 — Close Forecasting V1** | Define one testable baseline/candidate | Resolved `OQ-012` for observed Sale quantity at Branch/Product grain, seven local days, prior 28 complete days, `forecast-sale-mean-28d-v1`, explicit cold start and MAE evaluation; excludes replenishment policy | P6-M1 | `docs/ANALYTICS.md`/`ADR-031`/plan aligned; no Python service or runtime | Four-window rolling-origin backtest design and leakage review completed 2026-09-24 |
+| [ ] **P6-M4-T02 — Forecast implementation** | Produce versioned deterministic forecasts | TypeScript/SQL algorithm, data status, reproducible inputs under `ADR-031` | T01 | Repeatable output and named `last-day-naive` MAE comparison | Unit/backtest/time-order/zero/new-product tests |
+| [ ] **P6-M4-T03 — Reorder recommendation** | Turn accepted inputs into guidance | First accept separate lead-time, safety-stock, incoming, on-hand, and order-rounding policy; then implement as accepted | T02, P4 decisions | Explainable recommendation; never auto-order | Formula/boundary/missing-input tests |
 | [ ] **P6-M4-T04 — Forecast/reorder API/UI** | Present estimates and limitations | Endpoints, filters, version/data status/limitations | T02–T03 | No LLM numbers; accessible uncertainty/insufficient state | API/UI/E2E/security tests |
 
 ### Milestone 6.5 — Synthetic demo data
@@ -347,14 +347,13 @@ API/UI** is complete at `1043c58cefea41699929e83d2579856ba9182ede` (`feat: expos
 inventory analytics`). It exposes the accepted T01/T02 facts through the authenticated
 inventory endpoint and `/app/analytics`, with scoped opaque pagination, current/event
 time markers, and separate cost authorization. No risk ranking or Top-N was added.
-`OQ-012` remains open and is the subject of the next documentation task.
-
-The next task is **P6-M4-T01 — Close Forecasting V1**. Its objective is to define one
-testable forecasting baseline/candidate; scope is to resolve `OQ-012` for target, grain,
-horizon, data/features, cold start, and evaluation. It depends on P6-M1. Acceptance
-requires updating `docs/ANALYTICS.md`, an ADR, and this plan without introducing a Python
-service. Testing is a backtest design review and leakage check. This is a documentation
-clarification task; do not implement forecasts or reorder recommendations in T01.
+`ADR-031` now resolves `OQ-012` for Forecasting V1 through the documentation-only
+**P6-M4-T01 — Close Forecasting V1** task. The next planned product task is
+**P6-M4-T02 — Forecast implementation**. Before its DB-heavy test work, the known
+`TEST_DATABASE_URL` fallback/reset footgun needs a separate safety fix and verified
+guard. This plan does not silently add or reorder a task. P6-M4-T03 still needs a
+separate accepted replenishment policy for lead time, safety stock, incoming,
+and purchase rounding; `ADR-031` does not authorize that implementation.
 
 Current-state constraints that the next task must preserve:
 
@@ -370,8 +369,9 @@ Current-state constraints that the next task must preserve:
   `ADR-013`–`ADR-029`. `ADR-029` fixes Organization reporting timezone, canonical
   periods, event attribution, Analytics V1 metrics, cost/null/decimal semantics, and
   threshold deferrals then in force. `ADR-030` later accepts fixed V1
-  coverage-based low/normal/overstock classification. `OQ-012` remains open for
-  forecasting, forecast-derived risk, stockout risk, and reorder;
+  coverage-based low/normal/overstock classification. `ADR-031` resolves `OQ-012`
+  for Forecasting V1; forecast-derived risk, stockout risk, and reorder still
+  require separate accepted rules;
   `OQ-019` remains open beyond refund-owned immutable attribution/provenance; and
   `OQ-020` remains open beyond its narrow application-level limiter exceptions.
 - `OQ-013` is resolved by `ADR-025` as **DEFERRED FROM MVP**. Stock transfer remains broader/full future scope, but no transfer schema, API, UI, permission, lifecycle, ledger-source, or idempotency contract is implemented or frozen.
@@ -384,16 +384,15 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P6-M4-T01 — Close Forecasting V1
+Task: P6-M4-T02 — Forecast implementation
 
-Resolve `OQ-012` and define one testable forecasting baseline/candidate: target,
-aggregation grain, horizon, eligible data/features, cold-start behavior, and the
-primary evaluation method. Update `docs/ANALYTICS.md`, an ADR, and this plan so the
-forecasting contract is testable and consistent with `ADR-029`/`ADR-030`. Include a
-time-ordered backtest design and check for leakage. This is documentation/decision
-work only; do not implement forecasting or reorder behavior, add a Python service,
-or start P6-M4-T02/T03/T04. Preserve the accepted separation between deterministic
-analytics and summary-only LLM use.
+First resolve and verify the separate test-harness safety fix for the known
+`TEST_DATABASE_URL` fallback/reset behavior before DB-heavy tests. Then implement
+only the internal Branch/Product seven-day observed-Sale quantity forecast in
+`ADR-031` and `docs/ANALYTICS.md`, with deterministic Decimal output, explicit
+insufficient/inactive states, server-derived cutoff/scope, and rolling-origin MAE
+against `last-day-naive`. Do not implement reorder, stockout risk, API/UI,
+Python/ML infrastructure, schema/persistence, or scheduled work in T02.
 
 Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not commit without separate authorization.
 ```

@@ -224,8 +224,8 @@ Use PostgreSQL SQL and TypeScript for metrics, period comparisons, classificatio
 
 ### Consequences
 
-- `ADR-029` later closes exact Analytics V1 formulas in `OQ-011`; Forecasting V1 still
-  requires `OQ-012` before implementation.
+- `ADR-029` later closes exact Analytics V1 formulas in `OQ-011`; `ADR-031`
+  subsequently resolves `OQ-012` for Forecasting V1.
 - Forecast experiments compare a named baseline using accepted reproducible metrics.
 - Introducing Python/ML later requires measured improvement and a superseding ADR.
 
@@ -1922,8 +1922,9 @@ UNKNOWN cost into zero, and must not let browser/server locale define business d
   shape suppresses affected value with that reason. Reconciliation compares the
   current projection with all ledger deltas visible in the same snapshot, not only
   deltas passing the earlier event cutoff.
-- Fast/slow, low-stock, stockout-risk, overstock-risk, safety-stock, and reorder labels
-  are explicitly deferred/blocked pending `OQ-012` or a separate threshold decision.
+- At the time of `ADR-029`, fast/slow, low-stock, stockout-risk, overstock-risk,
+  safety-stock, and reorder labels were deferred. `ADR-030` subsequently accepts
+  fixed low/normal/overstock coverage labels; `ADR-031` accepts only the forecast.
   Factual zero on-hand is not a forecast-risk label.
 
 #### Authorization, precision, and query authority
@@ -1960,7 +1961,8 @@ honest without delaying non-cost analytics.
 
 ### Consequences
 
-- `OQ-011` and `OQ-016` are resolved. `OQ-012`, `OQ-017`, and `OQ-018` remain open.
+- `OQ-011` and `OQ-016` are resolved here. `OQ-012` is subsequently resolved for
+  Forecasting V1 by `ADR-031`; `OQ-017` and `OQ-018` remain open.
 - P6-M1-T01 is documentation-only. It adds no Organization timezone column,
   migration, period engine, query repository, endpoint, dashboard, chart, job,
   forecast, AI integration, or index.
@@ -2007,10 +2009,87 @@ and null-state definitions.
 
 - This decision narrows only `ADR-029`'s threshold deferral. M-103 fast/slow,
   M-105 `STOCKOUT_RISK`, forecasts, safety stock, lead-time policy, reorder,
-  ranking, and Top-N remain outside P6-M3-T02. `OQ-012` remains open for the
-  forecasting and replenishment decisions, with P6-M4 as their planned phase.
+  ranking, and Top-N remain outside P6-M3-T02. `ADR-031` subsequently resolves
+  `OQ-012` for the forecast only; replenishment still needs its own decision.
 - `LOW_STOCK` is a coverage classification, not a reorder point or purchase
   quantity. No LLM assigns any stock classification.
+
+## ADR-031 — Fix observed-sale quantity Forecasting V1
+
+- **Date:** 2026-09-24
+- **Status:** Accepted
+- **Type:** Forecast product, evaluation, and architecture decision
+
+### Context
+
+`OQ-012` blocks a testable Forecasting V1 definition. Existing immutable
+`Sale`/`SaleItem` facts, Branch/Product scope, immutable Product units, and the
+Organization reporting calendar can support a small quantity forecast. Current
+stock coverage velocity is factual inventory analytics, not an accepted model.
+`docs/ANALYTICS.md` owns the exact formula, output, and backtest protocol.
+
+### Alternatives considered
+
+Gross SALE depletion, refund-adjusted sales, revenue, and inventory need were
+considered as targets. Gross observed Sale quantity retains immutable event-time
+history and direct unit meaning; refunds and optional restock have separate later
+events and do not retroactively alter a customer's original purchase. Inventory
+need would require unresolved stock, lead-time, and safety-stock policy. A 7-day
+daily forecast is the smallest useful horizon; 14/28-day and multiple horizons
+add unsupported scope before lead-time policy exists. A fixed 28-day history
+includes four weekday cycles and limits old-pattern drift; 56/84-day or
+all-history windows need more startup time and are not justified by current data.
+The 28-day mean was chosen over a same-day-of-week seasonal naive method,
+weighted mean, smoothing, or ML because four weeks is too little evidence for
+a reliable seasonal claim and the simple mean handles sparse zero days without
+extra parameters. The last-day naive method remains a named evaluation
+reference. MAE remains defined on zero-heavy daily actuals; percentage metrics
+need special zero-denominator treatment, while RMSE overweights large misses.
+
+### Decision
+
+- Forecast one Branch/Product's observed `SaleItem.quantity` by
+  `Sale.completedAt` in the Product's immutable base unit. Use seven consecutive
+  Organization-local days and exactly the preceding 28 complete local days,
+  including zeros. Require first Branch/Product inventory movement at or before
+  the training start. No positive-Sale minimum or cross-series fallback exists.
+- Version the constant daily trailing-mean model as
+  `forecast-sale-mean-28d-v1`. Round daily decimal expectations HALF_UP to four
+  places, including integral Product units, and sum displayed daily values for
+  the seven-day total. Do not round to orderable units.
+- Use no seasonality, refund adjustment, stockout correction, price/promotion,
+  current stock, category, supplier, holiday, or external feature. A zero-sale
+  stockout day remains observed zero and can understate latent demand. A Product
+  with insufficient pair history returns `INSUFFICIENT_DATA`; an inactive Product
+  returns `INACTIVE_PRODUCT` before that check; eligible all-zero history returns
+  an available zero forecast.
+- Derive local days from the current Organization IANA timezone and UTC
+  half-open bounds. Capture server `sourceCutoff` and one MVCC read snapshot;
+  training excludes the current partial day and every future event. Record
+  timezone, training/horizon bounds, source cutoff, generated time, version,
+  status/reason, daily quantities, and total. Event-time cutoff is not a
+  commit-visibility watermark. A later commit or timezone change can alter
+  on-demand recomputation; historical current Product status cannot be replayed.
+- Use rolling-origin four-window, seven-day backtesting and per-Branch/Product
+  daily MAE, including zeros; compare with named `last-day-naive` and disclose
+  exclusions. No cross-unit scalar error or fixed accuracy threshold is accepted.
+  The V1 baseline must be measured and pass deterministic fixtures; the
+  reference comparison is diagnostic, with no required superiority. Historical
+  live extraction has the documented late-commit limitation.
+- P6-M4-T02 may compute on demand inside the Express/TypeScript analytics module
+  from normalized tables. No Python/ML service, scheduler, schema, migration,
+  dependency, model store, training-run table, or forecast persistence is needed.
+  Quantity-only results reuse server-enforced `FORECAST_REORDER_VIEW` and
+  Branch scope; `SALES_COST_VIEW` is not required. P6-M4-T04 owns HTTP/UI exposure.
+
+### Consequences
+
+`OQ-012` is resolved for Forecasting V1. This decision supplies a forecast input,
+not `STOCKOUT_RISK`, safety stock, lead-time demand, confirmed incoming,
+reorder rounding, or an automatic purchase order. P6-M4-T03 needs a separate
+accepted replenishment policy before implementing those calculations; risk
+classification needs a separate decision. Future seasonal or other models need
+new identifiers and measured comparisons. T01 adds documentation only.
 
 ## 2. Explicitly superseded planning directions
 

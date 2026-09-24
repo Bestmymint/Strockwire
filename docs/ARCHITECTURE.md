@@ -695,7 +695,6 @@ Scale in measured stages:
 
 This document does not answer the following canonical questions from `BUILD_SPEC.md`:
 
-- `OQ-012` forecasting V1
 - `OQ-015` exact production hosting
 - `OQ-017` schedule timing
 - `OQ-018` OpenRouter model/fallback/budget
@@ -703,8 +702,10 @@ This document does not answer the following canonical questions from `BUILD_SPEC
 
 Implementation touching one of these areas must stop at its accepted boundary until the referenced question is resolved and all affected documents are updated.
 `ADR-030` separately accepts only P6-M3-T02's fixed coverage-based
-Branch/Product classification; it does not close `OQ-012` or authorize
-forecast-derived stockout risk or reorder.
+Branch/Product classification. `ADR-031` closes `OQ-012` for Forecasting V1:
+on-demand normalized-table SQL/TypeScript in the existing analytics module,
+with no new schema/service. Neither ADR authorizes forecast-derived stockout
+risk, safety stock, or reorder; those need separate accepted policies.
 
 `ADR-029` resolves `OQ-011` and `OQ-016` with one configurable Organization IANA
 timezone, event-period attribution, canonical half-open periods, accepted Analytics V1

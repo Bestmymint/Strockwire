@@ -1400,7 +1400,10 @@ The canonical definitions live in `BUILD_SPEC.md`:
 - `OQ-011` is resolved by `ADR-029`: Sale/refund/receipt/movement event-time
   attribution, direct normalized-table aggregates, exact decimals, UNKNOWN-cost
   coverage, and accepted/deferred metrics affect later query indexes/snapshots.
-- `OQ-012` forecast definition affects forecast storage.
+- `OQ-012` is resolved for Forecasting V1 by `ADR-031`: P6-M4-T02 computes
+  on demand from normalized Sale/SaleItem and first-movement facts, with no
+  forecast/model/training-run persistence or migration. Stockout risk and
+  replenishment storage remain subject to separate later decisions.
 - Stock transfer is deferred from MVP by `ADR-025`; inventory records intentionally
   contain no transfer lifecycle, source, or linkage.
 - `OQ-016` is resolved by `ADR-029`: one configurable Organization IANA timezone,
