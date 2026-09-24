@@ -186,6 +186,7 @@ describe("inventory analytics with PostgreSQL", () => {
 
   it("separates linked receipt, sale, and restocked refund facts from financial-only refunds", async () => {
     const f = await fixture();
+    const firstDimensionProductId = "00000000-0000-4000-8000-000000000001";
     await prisma.organization.update({
       where: { id: f.org.id },
       data: { salesVatStatus: "NOT_REGISTERED" },
@@ -275,6 +276,16 @@ describe("inventory analytics with PostgreSQL", () => {
       });
       expect(refund.kind).toBe("success");
     }
+    await prisma.product.create({
+      data: {
+        id: firstDimensionProductId,
+        organizationId: f.org.id,
+        sku: "FIRST",
+        name: "First dimension",
+        unit: "EA",
+        basePrice: "10",
+      },
+    });
     const outcome = await service().read(request(f.org.id, f.owner.user.id));
     expect(outcome.kind).toBe("success");
     if (outcome.kind !== "success") return;
@@ -287,12 +298,84 @@ describe("inventory analytics with PostgreSQL", () => {
     expect(row.coverageSalesVelocity.value).toBe("0.1071");
     expect(row.onHandQuantity).toBe("8.0000");
     expect(row.coverageDays.value).toBe("74.67");
+    expect(row.stockClassification).toEqual({
+      classification: "OVERSTOCK",
+      reason: null,
+      thresholdVersion: "stock-risk-v1",
+    });
     expect(row.cost?.inventoryValue.value).toBe("40.0000000000");
     expect(
       await prisma.inventoryTransaction.count({
         where: { source: "SALE_REFUND_RETURN" },
       }),
     ).toBe(1);
+    const firstPage = await service().read({
+      ...request(f.org.id, f.owner.user.id),
+      limit: 1,
+    });
+    expect(firstPage.kind).toBe("success");
+    if (firstPage.kind !== "success") return;
+    expect(firstPage.page.series[0]?.productId).toBe(firstDimensionProductId);
+    expect(firstPage.page.nextCursor).not.toBeNull();
+    for (const [delta, quantity, inventoryValue, classification, at] of [
+      ["-2", "6", "30", "NORMAL", "2026-09-05T00:00:00.000Z"],
+      ["-6", "0", "0", "LOW_STOCK", "2026-09-06T00:00:00.000Z"],
+    ] as const) {
+      await manual({
+        organizationId: f.org.id,
+        branchId: f.branchA.id,
+        productId: f.productB.id,
+        actorUserId: f.owner.user.id,
+        actorMembershipId: f.owner.membership.id,
+        delta,
+        occurredAt: new Date(at),
+      });
+      await prisma.inventoryBalance.update({
+        where: {
+          branchId_productId: {
+            branchId: f.branchA.id,
+            productId: f.productB.id,
+          },
+        },
+        data: { quantity },
+      });
+      await prisma.inventoryCostState.update({
+        where: {
+          branchId_productId: {
+            branchId: f.branchA.id,
+            productId: f.productB.id,
+          },
+        },
+        data: { inventoryValue },
+      });
+      const current = await service({ at: new Date(at) }).read({
+        ...request(f.org.id, f.owner.user.id),
+        ...(quantity === "6"
+          ? { cursor: firstPage.page.nextCursor!, limit: 100 }
+          : {}),
+      });
+      expect(current.kind).toBe("success");
+      if (current.kind !== "success") return;
+      if (quantity === "6") {
+        expect(current.page.context.period.sourceCutoff).toEqual(
+          firstPage.page.context.period.sourceCutoff,
+        );
+        expect(
+          current.page.currentSnapshotCapturedAt.getTime(),
+        ).toBeGreaterThan(firstPage.page.currentSnapshotCapturedAt.getTime());
+      }
+      const currentRow = current.page.series.find(
+        (r) => r.branchId === f.branchA.id && r.productId === f.productB.id,
+      )!;
+      expect(currentRow.stockClassification.classification).toBe(
+        classification,
+      );
+      expect(currentRow.stockClassification.reason).toBeNull();
+      if (quantity === "0") {
+        expect(currentRow.coverageDays.value).toBe("0.00");
+        expect(currentRow.onHandQuantity).toBe("0.0000");
+      }
+    }
     if (receipt.kind === "success") {
       await prisma.purchaseReceiptItem.update({
         where: { id: receipt.receipt.items[0]!.id },
@@ -308,6 +391,15 @@ describe("inventory analytics with PostgreSQL", () => {
             (r) => r.productId === f.productB.id && r.branchId === f.branchA.id,
           )?.coverageDays.reason,
         ).toBe("INVENTORY_INTEGRITY_ERROR");
+        expect(
+          corrupted.page.series.find(
+            (r) => r.productId === f.productB.id && r.branchId === f.branchA.id,
+          )?.stockClassification,
+        ).toEqual({
+          classification: null,
+          reason: "INVENTORY_INTEGRITY_ERROR",
+          thresholdVersion: "stock-risk-v1",
+        });
       }
     }
   });
@@ -410,6 +502,16 @@ describe("inventory analytics with PostgreSQL", () => {
     }
     expect(seen).toHaveLength(5);
     expect(
+      seen.find(
+        (row) =>
+          row.productId === f.productC.id && row.branchId === f.branchA.id,
+      )?.stockClassification,
+    ).toEqual({
+      classification: null,
+      reason: "INACTIVE_PRODUCT",
+      thresholdVersion: "stock-risk-v1",
+    });
+    expect(
       new Set(seen.map((row) => `${row.branchId}/${row.productId}`)).size,
     ).toBe(5);
     expect(
@@ -431,6 +533,9 @@ describe("inventory analytics with PostgreSQL", () => {
       expect(staff.page.branches[0]).not.toHaveProperty("cost");
       expect(
         staff.page.series.every((row) => !Object.hasOwn(row, "cost")),
+      ).toBe(true);
+      expect(
+        staff.page.series.every((row) => row.stockClassification !== undefined),
       ).toBe(true);
     }
     expect(

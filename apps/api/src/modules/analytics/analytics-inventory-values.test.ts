@@ -67,6 +67,11 @@ describe("inventory analytics values", () => {
       reason: null,
     });
     expect(result.coverageDays).toEqual({ value: "10.00", reason: null });
+    expect(result.stockClassification).toEqual({
+      classification: "NORMAL",
+      reason: null,
+      thresholdVersion: "stock-risk-v1",
+    });
     expect(result.cost?.inventoryValue.value).toBe("123.1234567890");
     expect(result.buckets).toHaveLength(2);
     expect(result.buckets[1]?.saleDepletionQuantity).toBe("0.0000");
@@ -149,6 +154,9 @@ describe("inventory analytics values", () => {
       value: null,
       reason: "INVENTORY_INTEGRITY_ERROR",
     });
+    expect(negative.stockClassification.reason).toBe(
+      "INVENTORY_INTEGRITY_ERROR",
+    );
     expect(negative.cost?.inventoryValue.reason).toBe(
       "INVENTORY_INTEGRITY_ERROR",
     );

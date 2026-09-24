@@ -6,6 +6,10 @@ import type {
   AnalyticsPeriodContext,
 } from "./analytics-period.ts";
 import { localDateToUtcBoundary } from "./analytics-period.ts";
+import {
+  classifyInventoryStock,
+  type InventoryStockClassification,
+} from "./analytics-stock-risk-values.ts";
 
 const Decimal = Prisma.Decimal.clone({ precision: 80 });
 const ZERO = new Decimal(0);
@@ -60,6 +64,7 @@ export interface InventoryDimension {
   coverageSalesVelocity: InventoryNullableMetric;
   onHandQuantity: string;
   coverageDays: InventoryNullableMetric;
+  stockClassification: InventoryStockClassification;
   cost?: InventoryCostResult;
 }
 
@@ -208,6 +213,10 @@ export function buildInventoryDimension(input: {
     coverageSalesVelocity,
     onHandQuantity: quantity(first.onHand),
     coverageDays,
+    stockClassification: classifyInventoryStock(
+      coverageDays,
+      first.productStatus,
+    ),
   };
   if (input.canViewCost) {
     const known = first.costBasisState === "KNOWN";
