@@ -227,7 +227,7 @@ accessible table rather than relying on chart coordinates.
 | --- | --- | --- | --- | --- | --- |
 | [x] **P6-M3-T01 — Movement and coverage metrics** | Compute accepted factual inventory analytics internally | Paginated Branch/Product movement series; requested-period ADS; 28-complete-day coverage velocity and coverage; current on-hand/value snapshots and Branch availability summaries under `docs/ANALYTICS.md`. No fast/slow classification is currently accepted. | P6-M1, inventory/sales | Explicit zero/insufficient/integrity states, unit-safe quantities, and separate event/current-snapshot capture metadata | Fixed data, zero demand, 28-day eligibility, cutoff/pagination, negative-stock reconciliation anomaly, branch and cost-authorization tests; implemented by `c74bc098` |
 | [x] **P6-M3-T02 — Stock risk analytics** | Classify page-current Branch/Product stock coverage internally | Compose fixed `stock-risk-v1` `LOW_STOCK`/`NORMAL`/`OVERSTOCK` classification onto each T01 dimension from its `coverageDays` only; null with an explicit reason when unavailable or Product inactive. No forecast, `STOCKOUT_RISK`, fast/slow, reorder, ranking, Top-N, LLM, or API/UI; `OQ-012` remains open. | T01; `ADR-030` fixed threshold decision | Explainable existing coverage input/status and version; exact accepted boundaries, no arbitrary or configurable thresholds | Decimal 0.00/7.00/just-above-7/just-below-60/60.00/above-60, null-reason, inactive-Product, authorization, and no-ranking/forecast fixtures; implemented by `f25adbf5` |
-| [ ] **P6-M3-T03 — Inventory analytics API/UI** | Expose accepted inventory analytics | HTTP/UI exposure of T01 factual results and T02 accepted per-dimension coverage classification only; no API/UI work in T01 or T02 | T01–T02 | Accessible, scoped, versioned outputs; no risk ranking/Top-N | API/UI/E2E/security/empty tests |
+| [x] **P6-M3-T03 — Inventory analytics API/UI** | Expose accepted inventory analytics | HTTP/UI exposure of T01 factual results and T02 accepted per-dimension coverage classification only; no API/UI work in T01 or T02 | T01–T02 | Accessible, scoped, versioned outputs; no risk ranking/Top-N | API/UI/E2E/security/empty tests; complete in `1043c58c` (`feat: expose inventory analytics`) |
 
 ### Milestone 6.4 — Forecast and replenishment
 
@@ -342,9 +342,19 @@ foundation implements reporting time, period, scope, source cutoff, completeness
 base Sales metrics, Category/Branch dimensions, and Sales/Category/Branch HTTP and UI.
 **P6-M3-T01 — Movement and coverage metrics** is complete at `c74bc098`.
 **P6-M3-T02 — Stock risk analytics** is complete at `f25adbf5`. `ADR-030`
-accepts fixed coverage-based classification; `OQ-012` remains open for forecasting,
-`STOCKOUT_RISK`, fast/slow classification, and reorder. The next remaining
-implementation task is **P6-M3-T03 — Inventory analytics API/UI**.
+accepts fixed coverage-based classification. **P6-M3-T03 — Inventory analytics
+API/UI** is complete at `1043c58cefea41699929e83d2579856ba9182ede` (`feat: expose
+inventory analytics`). It exposes the accepted T01/T02 facts through the authenticated
+inventory endpoint and `/app/analytics`, with scoped opaque pagination, current/event
+time markers, and separate cost authorization. No risk ranking or Top-N was added.
+`OQ-012` remains open and is the subject of the next documentation task.
+
+The next task is **P6-M4-T01 — Close Forecasting V1**. Its objective is to define one
+testable forecasting baseline/candidate; scope is to resolve `OQ-012` for target, grain,
+horizon, data/features, cold start, and evaluation. It depends on P6-M1. Acceptance
+requires updating `docs/ANALYTICS.md`, an ADR, and this plan without introducing a Python
+service. Testing is a backtest design review and leakage check. This is a documentation
+clarification task; do not implement forecasts or reorder recommendations in T01.
 
 Current-state constraints that the next task must preserve:
 
@@ -354,7 +364,7 @@ Current-state constraints that the next task must preserve:
 - The root `.env.example` documents the active web/API loopback contract, redacted Docker-only `STOCKWISE_POSTGRES_*` placeholders, API-only `DATABASE_URL`, required runtime mode, session idle/absolute/touch values, and the required stable API-only Analytics cursor HMAC key. `apps/web` and `apps/api` retain separate strict Zod environment schemas; the API validates `DATABASE_URL` as a PostgreSQL URL and the web schema does not accept it.
 - Web/API configuration ownership, client/server exposure boundaries, local/test rules, and later-task deferrals are documented in `AGENTS.md`.
 - `.github/workflows/ci.yml` reproduces the frozen install, format-check, lint, typecheck, test, and build gates for pushes and pull requests with read-only repository permission and immutable action pins.
-- `apps/web` contains the Next.js App Router root shell, Tailwind/shadcn baseline, TanStack Query provider, strict environment boundary, same-origin health and `/api/v1` rewrites, authentication/onboarding, URL-owned `/app` context, Catalog, Inventory, branch/member, Supplier, Purchase Order/Receiving, POS, `/app/sales` Sales History/detail/browser-receipt/refund UI, and `/app/analytics` Sales/Category/Branch views. It has no Next.js business Route Handlers, persisted selection authority, VOID UI, or branch-price behavior. The browser receipt uses the existing Sale detail response and remains original-Sale-only; no separate receipt or refund-document endpoint exists.
+- `apps/web` contains the Next.js App Router root shell, Tailwind/shadcn baseline, TanStack Query provider, strict environment boundary, same-origin health and `/api/v1` rewrites, authentication/onboarding, URL-owned `/app` context, Catalog, Inventory, branch/member, Supplier, Purchase Order/Receiving, POS, `/app/sales` Sales History/detail/browser-receipt/refund UI, and `/app/analytics` Sales/Category/Branch/Inventory views. Inventory analytics uses the API-produced facts/classification, role-aware navigation/cache identity, and opaque pagination; the browser does not recalculate thresholds. It has no Next.js business Route Handlers, persisted selection authority, VOID UI, or branch-price behavior. The browser receipt uses the existing Sale detail response and remains original-Sale-only; no separate receipt or refund-document endpoint exists.
 - `OQ-002` is resolved by `ADR-012`: App Router under `src/app`, Server Components by default, justified Client Components only, deferred Route Groups, and Express-owned business REST APIs.
 - `OQ-003`–`OQ-011`, `OQ-016`, `OQ-021`, and `OQ-022` are resolved by
   `ADR-013`–`ADR-029`. `ADR-029` fixes Organization reporting timezone, canonical
@@ -365,8 +375,8 @@ Current-state constraints that the next task must preserve:
   `OQ-019` remains open beyond refund-owned immutable attribution/provenance; and
   `OQ-020` remains open beyond its narrow application-level limiter exceptions.
 - `OQ-013` is resolved by `ADR-025` as **DEFERRED FROM MVP**. Stock transfer remains broader/full future scope, but no transfer schema, API, UI, permission, lifecycle, ledger-source, or idempotency contract is implemented or frozen.
-- `apps/api` contains the Express app/server bootstrap, safe transport/errors, Prisma client, all accepted authentication endpoints, first onboarding, `GET /me/access-context`, branch lifecycle endpoints, invitation/member workflows, Catalog, Inventory, Supplier, Purchase Order, Receiving, Sales, and the Analytics period/scope/base-Sales/Category/Branch and factual inventory repositories and services with authenticated Sales, Category, and Branch HTTP endpoints. Metrics use set-based PostgreSQL statements and exact Decimal derivation. Sales includes bounded Organization VAT configuration, completed Sale/SaleItem/Payment snapshots and constraints, `SALE_CHECKOUT` hashes, tenant-safe negative `SALE` ledger provenance, atomic checkout, POS reads/checkout transport, branch-scoped history/detail reads with field-level cost permission, and immutable linked SaleRefund/SaleRefundItem/RefundPayment compensation with optional positive `SALE_REFUND_RETURN` stock/cost effects. Existing protected writes continue to derive the verified actor, re-evaluate centralized policy and tenant scope, and serialize their accepted invariants.
-- The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, the bounded refund workflow, and Sales/Category/Branch Analytics HTTP/UI exposure are implemented. Factual inventory analytics are internal only; inventory classification and HTTP/UI exposure, AI, AWS resources, deployment, and release automation remain unimplemented.
+- `apps/api` contains the Express app/server bootstrap, safe transport/errors, Prisma client, all accepted authentication endpoints, first onboarding, `GET /me/access-context`, branch lifecycle endpoints, invitation/member workflows, Catalog, Inventory, Supplier, Purchase Order, Receiving, Sales, and the Analytics period/scope/base-Sales/Category/Branch/Inventory repositories and services with authenticated Sales, Category, Branch, and Inventory HTTP endpoints. Metrics use set-based PostgreSQL statements and exact Decimal derivation. Sales includes bounded Organization VAT configuration, completed Sale/SaleItem/Payment snapshots and constraints, `SALE_CHECKOUT` hashes, tenant-safe negative `SALE` ledger provenance, atomic checkout, POS reads/checkout transport, branch-scoped history/detail reads with field-level cost permission, and immutable linked SaleRefund/SaleRefundItem/RefundPayment compensation with optional positive `SALE_REFUND_RETURN` stock/cost effects. Existing protected writes continue to derive the verified actor, re-evaluate centralized policy and tenant scope, and serialize their accepted invariants.
+- The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, the bounded refund workflow, and Sales/Category/Branch/Inventory Analytics HTTP/UI exposure are implemented. Inventory facts/classification remain deterministic and cost gated; forecasting, AI, AWS resources, deployment, and release automation remain unimplemented.
 - Git metadata is present, but P1-M1-T05 did not create a commit or perform any remote action.
 
 ### Handoff prompt
@@ -374,14 +384,16 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P6-M3-T03 — Inventory analytics API/UI
+Task: P6-M4-T01 — Close Forecasting V1
 
-Expose the accepted P6-M3-T01 factual inventory analytics and P6-M3-T02
-`stock-risk-v1` per-dimension `stockClassification` through the inventory analytics
-API/UI. Follow the existing `docs/ANALYTICS.md` and `docs/API.md` contracts;
-preserve authorization and cost visibility. Deliver accessible, scoped, versioned
-outputs and API/UI/E2E/security/empty tests. Do not add `STOCKOUT_RISK`, fast/slow,
-forecasting, safety stock, reorder, ranking, or Top-N; `OQ-012` remains open.
+Resolve `OQ-012` and define one testable forecasting baseline/candidate: target,
+aggregation grain, horizon, eligible data/features, cold-start behavior, and the
+primary evaluation method. Update `docs/ANALYTICS.md`, an ADR, and this plan so the
+forecasting contract is testable and consistent with `ADR-029`/`ADR-030`. Include a
+time-ordered backtest design and check for leakage. This is documentation/decision
+work only; do not implement forecasting or reorder behavior, add a Python service,
+or start P6-M4-T02/T03/T04. Preserve the accepted separation between deterministic
+analytics and summary-only LLM use.
 
 Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not commit without separate authorization.
 ```
