@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | Behavioral Source of Truth; Architecture Freeze v1 with explicit blockers |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-09-24 |
+| Last updated | 2026-09-25 |
 
 ## 1. How to use this document
 
@@ -442,14 +442,14 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-AN-002 — View forecast and reorder recommendation
 
-- **Status:** Forecasting V1's internal calculation is accepted by `ADR-031` but
-  unimplemented; the combined forecast/reorder flow remains blocked pending a
-  separate P6-M4-T03 replenishment policy and P6-M4-T04 API/UI contract.
+- **Status:** Forecasting V1's internal Branch/Product calculation is implemented
+  by P6-M4-T02 under `ADR-031`. The combined forecast/reorder user flow remains
+  blocked pending the separate P6-M4-T03 replenishment policy and P6-M4-T04 API/UI.
   Analytics time follows `ADR-029`, quantity follows `ADR-022`, and no-negative
   stock follows `ADR-024`.
 - **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` within the accepted forecast/reorder scope
-- **Preconditions:** Forecasting V1 is implemented, the separate replenishment
-  inputs/policy are accepted and implemented, and the actor has scope access.
+- **Preconditions:** The actor has scope access; reorder inputs and policy are
+  separately accepted and implemented before a recommendation is returned.
 - **Trigger:** Actor opens forecast/replenishment view.
 - **Main flow:** Resolve scope/horizon; load accepted history/current/incoming data; calculate versioned forecast; apply deterministic reorder formula; return estimate, recommendation, inputs, data status, and limitations.
 - **Alternative flows:** New/insufficient Branch/Product history returns
@@ -467,8 +467,8 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 ### UC-AI-001 — Generate a scheduled AI insight
 
 - **Status:** Analytics periods accepted by `ADR-029`; blocked in execution detail
-  by `OQ-017` and `OQ-018`. Forecasting V1 content is defined by `ADR-031` but
-  remains unimplemented and is not a required AI input yet.
+  by `OQ-017` and `OQ-018`. Forecasting V1 is implemented internally by
+  P6-M4-T02 but is not a required AI input.
 - **Actor:** System scheduler/job
 - **Preconditions:** A due report identity exists; deterministic metrics for the period can be computed or marked insufficient; provider configuration is available for an attempt.
 - **Trigger:** Production EventBridge schedule or an authorized operational replay mechanism triggers the job.

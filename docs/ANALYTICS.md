@@ -6,7 +6,7 @@
 | Compute stack | PostgreSQL SQL + TypeScript |
 | AI boundary | OpenRouter summarizes supplied aggregates only |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-09-24 |
+| Last updated | 2026-09-25 |
 
 ## 1. Scope and authority
 
@@ -888,9 +888,11 @@ Seasonality requires enough comparable cycles and must declare its granularity
 
 ## 11. Forecasting V1 contract
 
-**Status: Accepted contract, not implemented.** `ADR-031` resolves `OQ-012` for
-P6-M4-T02. The result estimates observed future Sale quantity, not latent customer
-demand, revenue, inventory need, or a purchasable reorder quantity.
+**Status: Accepted contract; internal calculation implemented by P6-M4-T02** in
+`68a3e995696924d35afdabf7c8e27dcc098101e0`. `ADR-031` resolves `OQ-012`. The
+result estimates observed future Sale quantity, not latent customer demand,
+revenue, inventory need, or a purchasable reorder quantity. HTTP/API and UI
+exposure remain assigned to P6-M4-T04.
 
 ### Target, grain, time, and inputs
 
