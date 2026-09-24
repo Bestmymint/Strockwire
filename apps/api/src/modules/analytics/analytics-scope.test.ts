@@ -107,6 +107,26 @@ describe("analytics scope engine", () => {
     });
   });
 
+  it("grants forecast scope to assigned staff without cost permission, but denies CASHIER", () => {
+    expect(
+      resolve({
+        analyticsKind: "forecast",
+        assignedBranchIds: ["active-a", "inactive"],
+        role: "INVENTORY_STAFF",
+      }),
+    ).toMatchObject({
+      kind: "allowed",
+      scope: { branchIds: ["active-a"], canViewCost: false },
+    });
+    expect(
+      resolve({
+        analyticsKind: "forecast",
+        assignedBranchIds: ["active-a"],
+        role: "CASHIER",
+      }),
+    ).toEqual({ kind: "forbidden" });
+  });
+
   it("denies INVENTORY_STAFF business analytics and CASHIER analytics", () => {
     expect(
       resolve({

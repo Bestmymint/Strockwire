@@ -6,7 +6,7 @@ import {
   type TrustedAuthorizationContext,
 } from "../identity/authorization-policy.ts";
 
-export const ANALYTICS_KINDS = ["business", "inventory"] as const;
+export const ANALYTICS_KINDS = ["business", "inventory", "forecast"] as const;
 export type AnalyticsKind = (typeof ANALYTICS_KINDS)[number];
 
 export type AnalyticsScopeCandidate =
@@ -32,9 +32,14 @@ export type AnalyticsScopeResolution =
   | Readonly<{ kind: "forbidden" }>;
 
 function analyticsPermission(kind: AnalyticsKind): Permission {
-  return kind === "business"
-    ? PERMISSIONS.BUSINESS_ANALYTICS_VIEW
-    : PERMISSIONS.INVENTORY_ANALYTICS_VIEW;
+  switch (kind) {
+    case "business":
+      return PERMISSIONS.BUSINESS_ANALYTICS_VIEW;
+    case "inventory":
+      return PERMISSIONS.INVENTORY_ANALYTICS_VIEW;
+    case "forecast":
+      return PERMISSIONS.FORECAST_REORDER_VIEW;
+  }
 }
 
 function isOrganizationWideRole(context: TrustedAuthorizationContext): boolean {
