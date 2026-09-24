@@ -226,7 +226,7 @@ accessible table rather than relying on chart coordinates.
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
 | [x] **P6-M3-T01 — Movement and coverage metrics** | Compute accepted factual inventory analytics internally | Paginated Branch/Product movement series; requested-period ADS; 28-complete-day coverage velocity and coverage; current on-hand/value snapshots and Branch availability summaries under `docs/ANALYTICS.md`. No fast/slow classification is currently accepted. | P6-M1, inventory/sales | Explicit zero/insufficient/integrity states, unit-safe quantities, and separate event/current-snapshot capture metadata | Fixed data, zero demand, 28-day eligibility, cutoff/pagination, negative-stock reconciliation anomaly, branch and cost-authorization tests; implemented by `c74bc098` |
-| [ ] **P6-M3-T02 — Stock risk analytics** | Classify page-current Branch/Product stock coverage internally | Compose fixed `stock-risk-v1` `LOW_STOCK`/`NORMAL`/`OVERSTOCK` classification onto each T01 dimension from its `coverageDays` only; null with an explicit reason when unavailable or Product inactive. No forecast, `STOCKOUT_RISK`, fast/slow, reorder, ranking, Top-N, LLM, or API/UI; `OQ-012` remains open. | T01; `ADR-030` fixed threshold decision | Explainable existing coverage input/status and version; exact accepted boundaries, no arbitrary or configurable thresholds | Decimal 0.00/7.00/just-above-7/just-below-60/60.00/above-60, null-reason, inactive-Product, authorization, and no-ranking/forecast fixtures |
+| [x] **P6-M3-T02 — Stock risk analytics** | Classify page-current Branch/Product stock coverage internally | Compose fixed `stock-risk-v1` `LOW_STOCK`/`NORMAL`/`OVERSTOCK` classification onto each T01 dimension from its `coverageDays` only; null with an explicit reason when unavailable or Product inactive. No forecast, `STOCKOUT_RISK`, fast/slow, reorder, ranking, Top-N, LLM, or API/UI; `OQ-012` remains open. | T01; `ADR-030` fixed threshold decision | Explainable existing coverage input/status and version; exact accepted boundaries, no arbitrary or configurable thresholds | Decimal 0.00/7.00/just-above-7/just-below-60/60.00/above-60, null-reason, inactive-Product, authorization, and no-ranking/forecast fixtures; implemented by `f25adbf5` |
 | [ ] **P6-M3-T03 — Inventory analytics API/UI** | Expose accepted inventory analytics | HTTP/UI exposure of T01 factual results and T02 accepted per-dimension coverage classification only; no API/UI work in T01 or T02 | T01–T02 | Accessible, scoped, versioned outputs; no risk ranking/Top-N | API/UI/E2E/security/empty tests |
 
 ### Milestone 6.4 — Forecast and replenishment
@@ -341,9 +341,10 @@ are complete. `ADR-029` resolves `OQ-011` and `OQ-016`; the current Analytics
 foundation implements reporting time, period, scope, source cutoff, completeness,
 base Sales metrics, Category/Branch dimensions, and Sales/Category/Branch HTTP and UI.
 **P6-M3-T01 — Movement and coverage metrics** is complete at `c74bc098`.
-**P6-M3-T02 — Stock risk analytics** is the next remaining implementation task;
-`ADR-030` accepts only fixed coverage-based classification, while `OQ-012` remains
-open for forecasting, `STOCKOUT_RISK`, and reorder.
+**P6-M3-T02 — Stock risk analytics** is complete at `f25adbf5`. `ADR-030`
+accepts fixed coverage-based classification; `OQ-012` remains open for forecasting,
+`STOCKOUT_RISK`, fast/slow classification, and reorder. The next remaining
+implementation task is **P6-M3-T03 — Inventory analytics API/UI**.
 
 Current-state constraints that the next task must preserve:
 
@@ -373,13 +374,14 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P6-M3-T02 — Stock risk analytics
+Task: P6-M3-T03 — Inventory analytics API/UI
 
-Implement only `ADR-030`'s fixed `stock-risk-v1` Branch/Product classification
-over the page-current T01 `coverageDays` result, following `docs/ANALYTICS.md`.
-Preserve T01 pagination, source-cutoff/current-snapshot, authorization, and
-null/Decimal contracts. Do not begin forecast, stockout risk, reorder, API/UI,
-AI, or infrastructure work.
+Expose the accepted P6-M3-T01 factual inventory analytics and P6-M3-T02
+`stock-risk-v1` per-dimension `stockClassification` through the inventory analytics
+API/UI. Follow the existing `docs/ANALYTICS.md` and `docs/API.md` contracts;
+preserve authorization and cost visibility. Deliver accessible, scoped, versioned
+outputs and API/UI/E2E/security/empty tests. Do not add `STOCKOUT_RISK`, fast/slow,
+forecasting, safety stock, reorder, ranking, or Top-N; `OQ-012` remains open.
 
 Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not commit without separate authorization.
 ```
