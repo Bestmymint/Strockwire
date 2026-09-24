@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | Architecture Freeze v1; implementation verified through P5-M3; refund architecture accepted |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-09-19 |
+| Last updated | 2026-09-24 |
 
 ## 1. Scope and authority
 
@@ -702,6 +702,9 @@ This document does not answer the following canonical questions from `BUILD_SPEC
 - `OQ-020` production targets
 
 Implementation touching one of these areas must stop at its accepted boundary until the referenced question is resolved and all affected documents are updated.
+`ADR-030` separately accepts only P6-M3-T02's fixed coverage-based
+Branch/Product classification; it does not close `OQ-012` or authorize
+forecast-derived stockout risk or reorder.
 
 `ADR-029` resolves `OQ-011` and `OQ-016` with one configurable Organization IANA
 timezone, event-period attribution, canonical half-open periods, accepted Analytics V1

@@ -5,13 +5,13 @@ This file is the execution contract for human and AI developers working in the `
 | Field | Value |
 | --- | --- |
 | Documentation baseline | Architecture Freeze v1 |
-| Last updated | 2026-09-23 |
+| Last updated | 2026-09-24 |
 
 ## 1. Project overview
 
 StockWise is a responsive, cloud-based retail platform for SMEs. It covers organization-level product and supplier management; branch-level inventory, purchasing/receiving, POS, and sales; deterministic analytics and forecasting; and scheduled aggregate summaries through OpenRouter.
 
-The repository contains the repository/tooling foundation; identity, tenancy, authentication, onboarding, branch, invitation, and membership workflows; organization-scoped Catalog and Supplier persistence/API/UI; branch inventory balance/history/manual-adjustment persistence/API/UI; Purchase Order and Receiving persistence/API/UI; P5-M1 Sales persistence; P5-M2 atomic checkout, POS API, and responsive POS UI; complete P5-M3 Sales History list/detail/browser-receipt API/UI; the P5-M4 linked immutable refund persistence/service/API/history/UI workflow with optional per-item same-branch restock; the P6-M1 Organization reporting-time, canonical period, authorized Branch-set, source-cutoff, and completeness foundation; P6-M2-T01 internal base Sales metrics; P6-M2-T02 internal Category/Branch dimensions; and P6-M2-T03 Sales, Category, and Branch Analytics HTTP/API/UI exposure with a stable cursor HMAC key. `ADR-028` excludes VOID from V1, and `ADR-029` defines Analytics V1 metrics/reporting time. The next remaining work in `PROJECT_PLAN.md` is P6-M3-T01. Branch pricing, inventory analytics, forecasting, AI insights, generic accounting/tax/audit systems, and production infrastructure remain unimplemented. Do not treat later planned directories, commands, schemas, endpoints, or features as existing code.
+The repository contains the repository/tooling foundation; identity, tenancy, authentication, onboarding, branch, invitation, and membership workflows; organization-scoped Catalog and Supplier persistence/API/UI; branch inventory balance/history/manual-adjustment persistence/API/UI; Purchase Order and Receiving persistence/API/UI; P5-M1 Sales persistence; P5-M2 atomic checkout, POS API, and responsive POS UI; complete P5-M3 Sales History list/detail/browser-receipt API/UI; the P5-M4 linked immutable refund persistence/service/API/history/UI workflow with optional per-item same-branch restock; the P6-M1 Organization reporting-time, canonical period, authorized Branch-set, source-cutoff, and completeness foundation; P6-M2-T01 internal base Sales metrics; P6-M2-T02 internal Category/Branch dimensions; P6-M2-T03 Sales, Category, and Branch Analytics HTTP/API/UI exposure with a stable cursor HMAC key; and P6-M3-T01 internal factual inventory movement/coverage analytics. `ADR-028` excludes VOID from V1, `ADR-029` defines Analytics V1 metrics/reporting time, and `ADR-030` accepts fixed V1 coverage-based stock classification without implementing it. The next remaining implementation work in `PROJECT_PLAN.md` is P6-M3-T02. Branch pricing, inventory analytics HTTP/UI, forecasting, AI insights, generic accounting/tax/audit systems, and production infrastructure remain unimplemented. Do not treat later planned directories, commands, schemas, endpoints, or features as existing code.
 
 ## 2. Read before changing anything
 
@@ -40,8 +40,9 @@ At minimum, enforce these gates:
 - POS/sales monetary behavior: `ADR-027` plus `ADR-016`, `ADR-022`, `ADR-024`, and `ADR-026`; `OQ-008` is resolved
 - Refund behavior: `ADR-028` plus `ADR-016`, `ADR-022`, `ADR-024`, `ADR-026`, and `ADR-027`; `OQ-009` is resolved and VOID is excluded from V1
 - Purchasing/receiving behavior: `ADR-024`, `ADR-026`; quantity representation is accepted by `ADR-022`
-- Analytics periods/base metrics: `ADR-029`; forecasting, risk, and reorder:
-  `OQ-012` plus any metric-specific dependency documented in `docs/ANALYTICS.md`
+- Analytics periods/base metrics: `ADR-029`; fixed Branch/Product coverage
+  classification: `ADR-030`; forecasting, stockout risk, and reorder: `OQ-012`
+  plus any metric-specific dependency documented in `docs/ANALYTICS.md`
 
 The accepted MVP roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER`. Authorization is fixed, deny-by-default RBAC from `ADR-016` and `BUILD_SPEC.md` section 8: a user has one organization role per organization; `OWNER`/`ADMIN` have organization-wide branch access; the remaining roles need explicit branch assignments. The Express API, not the frontend, is the security boundary. At least one OWNER must remain. `ADR-028` allows refund creation only for `OWNER`, `ADMIN`, and assigned `BRANCH_MANAGER`; authorized `CASHIER` may view refund records but cannot create them, and `INVENTORY_STAFF` has no refund access.
 

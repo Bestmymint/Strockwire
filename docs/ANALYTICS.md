@@ -6,15 +6,17 @@
 | Compute stack | PostgreSQL SQL + TypeScript |
 | AI boundary | OpenRouter summarizes supplied aggregates only |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-09-20 |
+| Last updated | 2026-09-24 |
 
 ## 1. Scope and authority
 
 This is the only authoritative document for analytics terminology, formulas, periods, dimensions, forecast evaluation, replenishment logic, snapshot schema, and scheduled AI report inputs.
 
 `ADR-029` resolves the Analytics V1 metric and reporting-time contract in `OQ-011`
-and `OQ-016`. Forecasting, risk/reorder thresholds, job timing, and provider behavior
-remain separately governed by `OQ-012`, `OQ-017`, and `OQ-018`.
+and `OQ-016`. `ADR-030` accepts fixed V1 coverage-based stock classification.
+Forecasting, stockout risk, reorder, other deferred classifications, job timing,
+and provider behavior remain separately governed by `OQ-012`, `OQ-017`, and
+`OQ-018` as applicable.
 
 ## 2. Definition status
 
@@ -539,26 +541,24 @@ Candidate inputs:
 
 - Status: **Deferred**; `OQ-011` is not a license to choose an arbitrary threshold.
 - Prohibited: hard-code arbitrary global thresholds in different features.
+- The `stock-risk-v1` 7/60-day coverage thresholds do not classify movement speed;
+  P6-M3-T02 emits neither `FAST_MOVING` nor `SLOW_MOVING`.
 
 ### M-104 Low-stock state
 
-Low stock requires a manual reorder point or forecast/lead-time policy that does not
-exist in the current Product model.
+StockWise V1 `LOW_STOCK` is a fixed, page-current Branch/Product coverage
+classification: valid M-102 `coverageDays <= 7.00`, under `stock-risk-v1`.
+It is not a manual reorder point, safety stock, a forecast, or a purchase-quantity
+recommendation. The threshold is system-wide and not configurable by Organization,
+Branch, or Product; it requires no persisted threshold/configuration field.
 
-Proposed factual output before classification:
-
-```text
-onHand
-configuredReorderPoint (if any)
-forecastDuringLeadTime (if available)
-incomingConfirmed
-dataStatus
-```
-
-- Status: **Deferred** to `OQ-012` or a separate accepted reorder-point decision.
-- This does not block factual `outOfStockProductCount`, defined as the count of active
+- Status: **Accepted** by `ADR-030` for P6-M3-T02, subject to the common
+  classification/null contract below. A future reorder-point or forecast/lead-time
+  low-stock policy remains unaccepted under `OQ-012` or a separate decision.
+- Factual `outOfStockProductCount` remains the count of active
   Organization Products with current Branch on-hand exactly `0.0000`; an absent lazy
-  balance row is zero. Inactive Products are excluded.
+  balance row is zero. Inactive Products are excluded. Zero current stock with valid
+  `coverageDays = 0.00` is `LOW_STOCK`, never a `STOCKOUT_RISK` prediction.
 
 ### M-105 Stockout risk
 
@@ -573,21 +573,68 @@ StockoutRisk = ProjectedEnding < SafetyStock
 
 Optional estimated stockout date comes from cumulative daily forecast crossing available quantity.
 
-- Status: **Blocked** only by `OQ-012`; no-negative stock follows `ADR-024`.
+- Status: **Blocked** by `OQ-012` and outside P6-M3-T02. It requires a future-demand
+  policy; current on-hand equal to zero is only a factual state. No-negative stock
+  follows `ADR-024`.
 - The LLM must never assign this risk.
 
 ### M-106 Overstock risk
 
-Candidate definition compares on-hand/coverage with an accepted horizon/threshold and forecast.
+StockWise V1 `OVERSTOCK` is a fixed, page-current Branch/Product coverage
+classification: valid M-102 `coverageDays >= 60.00`, under `stock-risk-v1`.
+It is neither forecast- nor cost-based and is not configurable by Organization,
+Branch, or Product. Null coverage never produces `OVERSTOCK`.
 
-```text
-CoverageDays > OverstockThresholdDays
-```
+- Status: **Accepted** by `ADR-030` for P6-M3-T02, subject to the common
+  classification/null contract below. Forecast-based overstock policy remains
+  deferred under `OQ-012`.
 
-or an accepted alternative tied to reorder cycles and shelf life.
+### P6-M3-T02 internal stock classification contract
 
-- Status: **Blocked** only by `OQ-012`.
-- No global threshold is accepted yet.
+P6-M3-T02 composes one `stockClassification` object onto each existing T01
+Branch/Product dimension. It does not create a separate page, cursor, summary,
+historical bucket series, rank, severity order, alert priority, or Top-N result.
+Its sole classification input is that dimension's already calculated M-102
+`coverageDays.value`, interpreted with exact Decimal comparison; do not recompute
+coverage or substitute requested-period ADS, movement quantity, stock alone,
+cost/value, category, or forecast demand. `Product.status` is only the inactive
+applicability gate. Product base units remain separate.
+For an active Product with valid coverage:
+
+| Exact `coverageDays` boundary | `stockClassification.classification` |
+| --- | --- |
+| `<= 7.00` | `LOW_STOCK` |
+| `> 7.00` and `< 60.00` | `NORMAL` |
+| `>= 60.00` | `OVERSTOCK` |
+
+`stockClassification` contains `classification: LOW_STOCK | NORMAL | OVERSTOCK | null`,
+`reason: INSUFFICIENT_DATA | NO_RECENT_DEMAND | NO_STOCK_AND_NO_DEMAND |
+INVENTORY_INTEGRITY_ERROR | INACTIVE_PRODUCT | null`, and
+`thresholdVersion: "stock-risk-v1"`. A valid active-Product result has a non-null
+classification and null reason. A null `coverageDays.value` yields null
+classification and preserves its T01 reason; neither no-recent-demand reason maps
+to a stock label or fabricated coverage. An inactive Product yields null
+classification and `INACTIVE_PRODUCT` before considering its coverage reason; T01
+movement/history facts remain visible. No equivalent inactive-classification reason
+exists in the current analytics contract.
+
+Fixtures must distinguish `0.00` and `7.00` as `LOW_STOCK`, `7.01` and `59.99`
+as `NORMAL`, and `60.00` and `60.01` as `OVERSTOCK`. They must
+cover each null reason, inactive Product precedence, positive velocity with zero
+on-hand, `INVENTORY_STAFF` access without cost permission, `CASHIER` denial, and
+absence of forecast, ranking, and Top-N dependencies. Decimal strings and exact
+Decimal comparisons are authoritative; JavaScript `number` is not.
+
+The classification is page-current: it inherits the T01 row's cursor-bound event
+`sourceCutoff` for 28-day velocity and page-specific `currentSnapshotCapturedAt`
+for on-hand/coverage. It reuses T01 Branch ID/Product ID ascending dimension
+pagination, opaque cursor, authorized scope, and all temporal limitations. Later
+pages may observe newer current stock; no historical risk series or stock
+reconstruction is claimed. `INVENTORY_ANALYTICS_VIEW` governs access;
+`SALES_COST_VIEW` is not required, and classification never exposes cost/value
+fields by itself. P6-M3-T03 owns HTTP/API/UI exposure. This fixed threshold
+decision requires no schema, migration, or configuration storage. `OQ-012`
+remains open for `STOCKOUT_RISK`, forecasting, safety stock, and reorder.
 
 ### M-107 Reorder recommendation
 
@@ -656,9 +703,10 @@ Round up to purchasing unit/case size after the raw quantity is computed.
   one Branch/current projection read. An absent lazy balance is zero. Inactive
   Products are excluded from these counts, including those with historical movements
   or a current projection row.
-- "Low stock", "stockout risk", "overstock risk", safety stock, and reorder labels
-  remain deferred/blocked as stated above. A factual zero balance must not be relabeled
-  as forecast risk.
+- M-110 counts remain factual. `ADR-030` separately accepts page-current
+  Branch/Product low/normal/overstock coverage classification; stockout risk,
+  safety stock, and reorder remain blocked. A factual zero balance must not be
+  relabeled as forecast risk.
 
 ### P6-M3-T01 internal inventory result contract
 
@@ -745,9 +793,10 @@ invariants are checked without mixing Product units; no transfer source exists.
 The query uses `InventoryTransaction`, `Product`, `InventoryBalance`,
 `InventoryCostState`, and the existing authorized Branch resolver with set-based
 PostgreSQL aggregation. It adds no per-Product/Branch/bucket query, index, migration,
-warehouse, materialized view, or rollup by default. `OQ-012` remains open for
-fast/slow, low-stock, risk, forecast, and reorder definitions; it does not block
-these accepted factual metrics.
+warehouse, materialized view, or rollup by default. `ADR-030` separately accepts
+fixed low/normal/overstock coverage classification on these factual outputs;
+`OQ-012` remains open for fast/slow, stockout risk, forecast-derived risk, and
+reorder definitions.
 
 ## 9. Query authority, authorization, and performance
 
@@ -1048,6 +1097,8 @@ Canonical Open Questions are in `BUILD_SPEC.md`:
 - `OQ-018` OpenRouter model/fallback/budget/retention
 - `OQ-020` performance and retention targets
 
-`OQ-011` and `OQ-016` are resolved by `ADR-029`. Threshold-based movement/risk/reorder
-metrics explicitly deferred above remain blocked by `OQ-012` or a future accepted
-decision; their deferral does not reopen Analytics V1 metric or timezone semantics.
+`OQ-011` and `OQ-016` are resolved by `ADR-029`. `ADR-030` accepts only fixed
+coverage-based `LOW_STOCK`/`NORMAL`/`OVERSTOCK` classification. Fast/slow,
+`STOCKOUT_RISK`, forecast-derived risk, and reorder remain deferred/blocked by
+`OQ-012` or a future accepted decision; this does not reopen Analytics V1 metric
+or timezone semantics.

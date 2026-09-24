@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | Accepted decision history |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-09-19 |
+| Last updated | 2026-09-24 |
 
 ## 1. Log rules
 
@@ -1970,6 +1970,47 @@ honest without delaying non-cost analytics.
 - Timezone changes can alter historical on-demand bucket membership. Responses and
   snapshots must expose timezone, exact UTC boundaries, definition version, scope, and
   source cutoff so this behavior is reviewable.
+
+## ADR-030 — Fix V1 Branch/Product stock coverage classifications
+
+- **Date:** 2026-09-24
+- **Status:** Accepted
+- **Type:** Inventory analytics product threshold and scope decision
+
+### Context
+
+`ADR-029` accepted factual inventory coverage but deferred threshold-based labels.
+P6-M3-T02 needs a bounded classification contract without waiting for Forecasting
+V1 or adding configurable stock policy. `docs/ANALYTICS.md` owns the exact rule
+and null-state definitions.
+
+### Decision
+
+- At Branch/Product grain, classify only the page-current T01 `coverageDays` using
+  exact Decimal comparisons. Fixed system-wide `stock-risk-v1` labels are
+  `LOW_STOCK` at `<= 7.00`, `NORMAL` at `> 7.00` and `< 60.00`, and `OVERSTOCK` at
+  `>= 60.00`. The same Product can have different labels in different Branches.
+- Compose a nullable classification, reason, and threshold version onto each
+  existing T01 dimension. Null coverage preserves its accepted T01 reason;
+  inactive Products receive null/`INACTIVE_PRODUCT` without hiding movement
+  history. Current zero stock with valid zero coverage is `LOW_STOCK`, not a
+  `STOCKOUT_RISK` prediction.
+- Reuse T01 pagination, event `sourceCutoff`, page-current
+  `currentSnapshotCapturedAt`, and `INVENTORY_ANALYTICS_VIEW` scope. This
+  quantity/coverage rule does not require `SALES_COST_VIEW` or reveal cost.
+  P6-M3-T03 owns HTTP/UI exposure.
+- Thresholds are versioned application/domain rules, not Organization, Branch,
+  or Product configuration. No schema, migration, or configuration store is
+  required. Configurable thresholds would need a separate future contract.
+
+### Consequences
+
+- This decision narrows only `ADR-029`'s threshold deferral. M-103 fast/slow,
+  M-105 `STOCKOUT_RISK`, forecasts, safety stock, lead-time policy, reorder,
+  ranking, and Top-N remain outside P6-M3-T02. `OQ-012` remains open for the
+  forecasting and replenishment decisions, with P6-M4 as their planned phase.
+- `LOW_STOCK` is a coverage classification, not a reorder point or purchase
+  quantity. No LLM assigns any stock classification.
 
 ## 2. Explicitly superseded planning directions
 

@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | Behavioral Source of Truth; Architecture Freeze v1 with explicit blockers |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-09-19 |
+| Last updated | 2026-09-24 |
 
 ## 1. How to use this document
 
@@ -237,7 +237,9 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 ### UC-INV-001 — View branch stock and inventory history
 
 - **Status:** Implemented inventory foundation; factual availability is accepted by
-  `ADR-029`, while low/risk labels remain deferred/blocked by `OQ-012`
+  `ADR-029`. `ADR-030` accepts fixed coverage-based low/normal/overstock
+  classification for the later inventory analytics view; stockout risk remains
+  blocked by `OQ-012`.
 - **Actor:** Authorized branch user or organization-level viewer
 - **Preconditions:** Actor has access to the requested branch or authorized aggregate.
 - **Trigger:** Actor opens inventory list/product history.
@@ -249,7 +251,9 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
      and unavailable data.
 - **Alternative flows:** Organization view returns separate/aggregated branch data only when authorized; inactive products can be included by explicit filter.
 - **Error cases:** Invalid cursor/filter; inaccessible branch/product; stale page cursor; database unavailable. Do not leak another tenant's product or movement.
-- **Business rules:** Balance is a projection; ledger explains changes. Low/stockout labels use only accepted analytics definitions.
+- **Business rules:** Balance is a projection; ledger explains changes. This
+  operational inventory view does not emit the planned analytics classification.
+  Current zero stock is factual, never a stockout-risk prediction.
 - **Authorization:** Branch inventory-read permission or organization-wide permission.
 - **Expected result:** Actor sees consistent balance and traceable movements for allowed scope only.
 - **Acceptance criteria:** Pagination stability; tenant/branch isolation; balance-ledger fixture reconciliation; empty/error states; no N+1 access pattern.

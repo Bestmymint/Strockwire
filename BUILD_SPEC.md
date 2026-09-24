@@ -7,7 +7,7 @@
 | Repository | `stockwise` pnpm workspace monorepo |
 | Baseline | Architecture Freeze v1 |
 | Status | Implemented and verified through P5-M3; refund contract accepted for P5-M4 implementation |
-| Last updated | 2026-09-19 |
+| Last updated | 2026-09-24 |
 
 ## 1. Purpose and source-of-truth map
 
@@ -271,14 +271,17 @@ Partial/over/short receipt, multiple receipt events, receiving without a PO, sup
   `Asia/Bangkok`; store event timestamps in UTC and derive half-open daily,
   Monday-based weekly, monthly, and yearly local-calendar periods under `ADR-029`.
 - Provide sales totals, units, transaction counts, average order value, category performance, branch performance, trends, and movement indicators.
-- Provide stock coverage, low-stock/stockout risk, overstock risk, and replenishment guidance once their exact definitions are accepted.
+- Provide stock coverage and the fixed V1 Branch/Product `LOW_STOCK`/`NORMAL`/
+  `OVERSTOCK` coverage classification under `ADR-030`. Forecast-derived
+  `STOCKOUT_RISK` and replenishment guidance require later accepted definitions.
 - Calculate forecasting in the application using TypeScript and SQL. No Python service is used now.
 - Retain reproducible metric inputs or snapshots needed for reports and experiments.
 - Compare forecast results with actual values using accepted evaluation metrics.
 
 `OQ-011`/`OQ-016` are resolved by `ADR-029`. `docs/ANALYTICS.md` is the only place
 where accepted formulas, null semantics, period boundaries, or explicit deferrals may
-be changed. Forecasting/risk/reorder definitions remain `OQ-012`.
+be changed. `ADR-030` accepts only the fixed coverage classification;
+Forecasting V1, stockout risk, safety stock, and reorder remain `OQ-012`.
 
 ### 10.7 Scheduled AI summaries
 
