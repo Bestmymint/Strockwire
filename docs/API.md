@@ -1166,7 +1166,7 @@ accepted internal row contracts without ranking or Top-N behavior.
 Common success metadata includes `metricDefinitionVersion: "analytics-v1"`, scope,
 included authorized Branch IDs/count, requested local dates/granularity, exact UTC
 `periodStartInclusive`/`periodEndExclusive`, `reportingTimezone`, `generatedAt`,
-`sourceCutoff`, and `dataStatus`. Planned inventory responses additionally distinguish
+`sourceCutoff`, and `dataStatus`. Inventory responses additionally distinguish
 page-current `currentSnapshotCapturedAt` from their cursor-bound event `sourceCutoff`.
 Monetary/quantity/percentage fields are decimal strings; null metrics carry a stable
 reason. Cost outputs also carry cost coverage.
@@ -1175,7 +1175,7 @@ reason. Cost outputs also carry cost coverage.
 | --- | --- | --- | --- | --- | --- |
 | `GET /organizations/{organizationId}/analytics/sales` | `BUSINESS_ANALYTICS_VIEW`; cost fields also `SALES_COST_VIEW` | Required `scope=organization` or `scope=branch&branchId={id}` plus `from`, `to`, `granularity` | Canonical bucket series with accepted Sales/discount/VAT/refund/count/AOV/growth/profit metrics | Invalid period/inaccessible scope | Implemented P6-M2-T03 |
 | `GET /organizations/{organizationId}/analytics/categories` | `BUSINESS_ANALYTICS_VIEW` | Same required scope/period plus optional `cursor`, `limit` | Current Category/Uncategorized dimension page with only identity, current name/status, Gross Sales, Discount Amount, Sales After Discount, Refund Amount, Net Sales, Category Share per canonical bucket | Invalid period/cursor/inaccessible scope | Implemented P6-M2-T03 |
-| `GET /organizations/{organizationId}/analytics/inventory` | `INVENTORY_ANALYTICS_VIEW`; value/cost fields also `SALES_COST_VIEW` | Scope + required range/granularity; planned opaque dimension `cursor`/`limit`, no client cutoff | Planned exposure of T01 paginated Branch/Product movement series, page-current snapshots, Branch availability/value summaries, and each dimension's `stockClassification` object (`classification`, `reason`, `thresholdVersion`) from T02 | Null classification preserves an accepted unavailable reason; no `STOCKOUT_RISK`, ranking, or Top-N | Planned P6-M3-T03; T01 and T02 remain internal only; forecast/stockout risk/reorder remain blocked `OQ-012` |
+| `GET /organizations/{organizationId}/analytics/inventory` | `INVENTORY_ANALYTICS_VIEW`; value/cost fields also `SALES_COST_VIEW` | Scope + required range/granularity; optional opaque dimension `cursor`/`limit`, no client cutoff | T01 paginated Branch/Product movement series, page-current snapshots, Branch availability/value summaries, and each dimension's `stockClassification` object (`classification`, `reason`, `thresholdVersion`) from T02 | Null classification preserves an accepted unavailable reason; no `STOCKOUT_RISK`, ranking, or Top-N | Implemented P6-M3-T03; T01 and T02 remain internal sources; forecast/stockout risk/reorder remain blocked `OQ-012` |
 | `GET /organizations/{organizationId}/analytics/branches` | `BUSINESS_ANALYTICS_VIEW`; cost fields also `SALES_COST_VIEW` | Same required scope/period plus optional `cursor`, `limit` | Every authorized Branch, including zero-activity Branches, with current name/status and accepted P6-M2-T01 metrics per canonical bucket; no ranking | Unauthorized Branch/invalid period/cursor | Implemented P6-M2-T03 |
 | `GET /organizations/{organizationId}/analytics/forecast` | Forecast read | Scope + product/category + horizon | Versioned forecast + data status | Unsupported horizon/insufficient data | Blocked `OQ-012` |
 | `GET /organizations/{organizationId}/analytics/reorder-recommendations` | Reorder read | Scope + horizon/filter | Inputs + deterministic recommendations | Missing lead time/forecast/cost/unit | Blocked `OQ-012`; Analytics V1 inputs follow `ADR-029`, future cost/incoming-order semantics follow `ADR-026`, and quantity representation follows `ADR-022` |
@@ -1193,16 +1193,30 @@ Analytics error/null semantics:
 - Dimension cursors freeze the authorized execution inputs and source cutoff across
   pages. Current Category membership and labels remain live and may reclassify
   historical facts between pages; pagination is not a catalog snapshot.
-- Planned inventory pagination selects Branch/Product dimensions ordered by
+- Inventory pagination selects Branch/Product dimensions ordered by
   `(branchId ASC, productId ASC)`, default 25 and maximum 100; each selected row
   carries every requested canonical movement bucket. Its signed internal cursor
   binds version/dimension, Organization, reauthorized Branch set, canonical period,
   timezone/UTC bounds, order, and original event `sourceCutoff`. Each continuation
   page reads current on-hand/value/availability under its own
   `currentSnapshotCapturedAt`; it must not present those mutable values as a
-  historical snapshot at the original cutoff. The exact HTTP representation is
-  assigned to P6-M3-T03, not T01. No client-supplied current cutoff is accepted.
-- The planned `stockClassification` is page-current `stock-risk-v1` from that
+  historical snapshot at the original cutoff. P6-M3-T03 owns the HTTP
+  representation. No client-supplied current cutoff is accepted.
+- P6-M3-T03 inventory HTTP representation uses the existing `{ data, meta }`
+  analytics envelope. `data.dimensions` is the paginated Branch/Product row array;
+  each row contains current Branch/Product identity, Product unit/status, the five
+  source-separated decimal-string movement quantities in every canonical `buckets`
+  entry, `requestedPeriodAds`, `coverageSalesVelocity`, current
+  `onHandQuantity`, `coverageDays`, and the T02 `stockClassification` object.
+  `data.branches` contains the page-current unpaginated M-110 availability summary
+  for every included Branch. Rows and Branch summaries include `cost` only when
+  `SALES_COST_VIEW` is authorized; its exact T01 `inventoryValue` null/reason,
+  `knownInventoryValue`, known/unknown Product counts, and
+  `unknownQuantityByUnit` are preserved. `meta` follows the existing dimension
+  metadata, including `nextCursor`, and additionally returns the page's
+  `currentSnapshotCapturedAt` ISO instant. Later pages keep the original
+  `sourceCutoff` while the current snapshot marker may advance.
+- The `stockClassification` is page-current `stock-risk-v1` from that
   dimension's existing `coverageDays`. `LOW_STOCK` applies at `<= 7.00`, `NORMAL`
   at `> 7.00` and `< 60.00`, and `OVERSTOCK` at `>= 60.00`. If coverage is null,
   classification is null with its T01 reason; an inactive Product instead has

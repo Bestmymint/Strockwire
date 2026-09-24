@@ -225,5 +225,6 @@ describe("application context shell", () => {
 
     await screen.findByRole("heading", { name: "Store One" });
     expect(screen.queryByRole("link", { name: "Sales history" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Analytics" })).toBeTruthy();
   });
 });

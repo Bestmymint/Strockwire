@@ -25,12 +25,13 @@ import {
   getAnalyticsSales,
 } from "@/analytics-api-client";
 import { resolveApplicationContext } from "@/application-context";
+import { InventoryAnalyticsView } from "@/components/inventory-analytics-view";
 import {
   fetchAccessContext,
   type AccessibleOrganization,
 } from "@/branch-api-client";
 
-type View = "sales" | "categories" | "branches";
+type View = "sales" | "categories" | "branches" | "inventory";
 
 function initialPeriod(): AnalyticsPeriod {
   const today = new Date();
@@ -437,10 +438,7 @@ export function AnalyticsManagement() {
         </Link>
       </PageFrame>
     );
-  if (
-    resolved.organization.role === "INVENTORY_STAFF" ||
-    resolved.organization.role === "CASHIER"
-  )
+  if (resolved.organization.role === "CASHIER")
     return (
       <PageFrame>
         <p role="alert">Analytics is not available for your current access.</p>
@@ -451,7 +449,7 @@ export function AnalyticsManagement() {
     );
   return (
     <AnalyticsContent
-      key={resolved.organization.id}
+      key={`${resolved.organization.id}:${resolved.organization.role}`}
       organization={resolved.organization}
     />
   );
@@ -466,7 +464,9 @@ function AnalyticsContent({
     useState<AnalyticsPeriod>(initialPeriod);
   const [period, setPeriod] = useState<AnalyticsPeriod>(draftPeriod);
   const [scopeValue, setScopeValue] = useState("organization");
-  const [view, setView] = useState<View>("sales");
+  const [view, setView] = useState<View>(
+    organization.role === "INVENTORY_STAFF" ? "inventory" : "sales",
+  );
   const [selectedBucket, setSelectedBucket] = useState<string | null>(null);
   const [categoryReset, setCategoryReset] = useState(0);
   const [branchReset, setBranchReset] = useState(0);
@@ -503,7 +503,7 @@ function AnalyticsContent({
   const salesQuery = useQuery({
     queryKey: [...queryRoot, "sales"],
     queryFn: ({ signal }) => getAnalyticsSales(request, signal),
-    enabled,
+    enabled: enabled && view !== "inventory",
   });
   const categoryQuery = useInfiniteQuery({
     queryKey: [...queryRoot, "categories", categoryReset],
@@ -530,7 +530,7 @@ function AnalyticsContent({
   return (
     <PageFrame>
       <p className="text-sm text-muted-foreground">
-        Sales, categories, and branches for {organization.name}.
+        Analytics for {organization.name}.
       </p>
       <form
         className="rounded-lg border bg-card p-4 sm:p-5"
@@ -621,7 +621,10 @@ function AnalyticsContent({
         </div>
       </form>
       <nav aria-label="Analytics views" className="flex flex-wrap gap-2">
-        {(["sales", "categories", "branches"] as const).map((item) => (
+        {(organization.role === "INVENTORY_STAFF"
+          ? (["inventory"] as const)
+          : (["sales", "categories", "branches", "inventory"] as const)
+        ).map((item) => (
           <button
             key={item}
             type="button"
@@ -633,11 +636,19 @@ function AnalyticsContent({
               ? "Sales"
               : item === "categories"
                 ? "Categories"
-                : "Branches"}
+                : item === "branches"
+                  ? "Branches"
+                  : "Inventory"}
           </button>
         ))}
       </nav>
-      {!enabled ? (
+      {view === "inventory" ? (
+        <InventoryAnalyticsView
+          request={request}
+          enabled={enabled}
+          role={organization.role}
+        />
+      ) : !enabled ? (
         <p role="alert">Choose an accessible branch and a valid date range.</p>
       ) : salesQuery.isPending ? (
         <p aria-live="polite">Loading sales analytics…</p>

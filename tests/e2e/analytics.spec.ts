@@ -92,6 +92,30 @@ test("cashier sees no analytics navigation and direct link remains inaccessible"
   ).toContainText("Analytics is not available");
 });
 
+test("owner reads scoped inventory availability, movement, and classification", async ({
+  page,
+}) => {
+  await signIn(page, E2E_OWNER_EMAIL);
+  await page.getByRole("button", { name: "Catalog E2E Store" }).click();
+  await page.getByRole("link", { name: "Analytics" }).click();
+  await page.getByRole("button", { name: "Inventory" }).click();
+  const inventory = page.getByLabel("Inventory analytics");
+  await expect(
+    inventory.getByRole("heading", { name: "Current branch availability" }),
+  ).toBeVisible();
+  await expect(
+    inventory.getByRole("heading", { name: "Product movement and coverage" }),
+  ).toBeVisible();
+  await expect(inventory.getByText("Active products").first()).toBeVisible();
+  const firstProduct = inventory.locator("details").first();
+  await firstProduct.locator("summary").click();
+  await expect(firstProduct.getByText(/Stock classification/)).toBeVisible();
+  await expect(
+    firstProduct.getByRole("table", { name: /Movement by period/ }),
+  ).toBeVisible();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
 test("dimension load-more controls send opaque cursors in a real browser", async ({
   page,
 }) => {

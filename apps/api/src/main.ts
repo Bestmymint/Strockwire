@@ -8,6 +8,8 @@ import { createPrismaAnalyticsCategoryRepository } from "./modules/analytics/ana
 import { createAnalyticsCategoryService } from "./modules/analytics/analytics-category-service.ts";
 import { createAnalyticsContextEngine } from "./modules/analytics/analytics-context.ts";
 import { createAnalyticsDimensionCursorCodec } from "./modules/analytics/analytics-dimension-cursor.ts";
+import { createPrismaAnalyticsInventoryRepository } from "./modules/analytics/analytics-inventory-repository.ts";
+import { createAnalyticsInventoryService } from "./modules/analytics/analytics-inventory-service.ts";
 import { createAnalyticsRouter } from "./modules/analytics/analytics-router.ts";
 import { createPrismaAnalyticsSalesRepository } from "./modules/analytics/analytics-sales-repository.ts";
 import { createAnalyticsSalesService } from "./modules/analytics/analytics-sales-service.ts";
@@ -169,6 +171,14 @@ async function main(): Promise<void> {
       analyticsCursorCodec,
     ),
   });
+  const analyticsInventoryService = createAnalyticsInventoryService({
+    contextEngine: analyticsContextEngine,
+    cursorCodec: analyticsCursorCodec,
+    repository: createPrismaAnalyticsInventoryRepository(
+      prisma,
+      analyticsCursorCodec,
+    ),
+  });
   const apiRouter = Router();
   apiRouter.use(
     createRegistrationRouter({
@@ -263,6 +273,7 @@ async function main(): Promise<void> {
       authenticationMiddleware,
       branchService: analyticsBranchService,
       categoryService: analyticsCategoryService,
+      inventoryService: analyticsInventoryService,
       salesService: analyticsSalesService,
     }),
   );

@@ -8,6 +8,9 @@ import type { AnalyticsExecutionContext } from "./analytics-context.ts";
 import type { AnalyticsPeriodError } from "./analytics-period.ts";
 import { AnalyticsPeriodError as PeriodError } from "./analytics-period.ts";
 import type { AnalyticsSalesService } from "./analytics-sales-service.ts";
+import type { createAnalyticsInventoryService } from "./analytics-inventory-service.ts";
+import type { InventoryDimension } from "./analytics-inventory-values.ts";
+import type { InventoryBranchSummary } from "./analytics-inventory-repository.ts";
 import type { AnalyticsSalesMetricBucket } from "./analytics-sales-values.ts";
 import type {
   AnalyticsCategoryMetricBucket,
@@ -127,6 +130,26 @@ function categoryBucket(bucket: AnalyticsCategoryMetricBucket) {
   };
 }
 
+function inventoryBucket(bucket: InventoryDimension["buckets"][number]) {
+  return {
+    bucketEndExclusive: bucket.bucketEndExclusive.toISOString(),
+    bucketStartInclusive: bucket.bucketStartInclusive.toISOString(),
+    dataStatus: bucket.dataStatus,
+    label: bucket.label,
+    localEndExclusive: bucket.localEndExclusive,
+    localStartInclusive: bucket.localStartInclusive,
+    purchaseReceivedQuantity: bucket.purchaseReceivedQuantity,
+    saleDepletionQuantity: bucket.saleDepletionQuantity,
+    refundReturnQuantity: bucket.refundReturnQuantity,
+    positiveAdjustmentQuantity: bucket.positiveAdjustmentQuantity,
+    negativeAdjustmentQuantity: bucket.negativeAdjustmentQuantity,
+  };
+}
+
+function inventoryDimension(row: InventoryDimension) {
+  return { ...row, buckets: row.buckets.map(inventoryBucket) };
+}
+
 type AnalyticsHttpMetadata = ReturnType<typeof metadata>;
 type AnalyticsDimensionMetadata = AnalyticsHttpMetadata & {
   nextCursor: string | null;
@@ -159,6 +182,14 @@ export interface AnalyticsBranchHttpResponse {
     })[];
   };
   meta: AnalyticsDimensionMetadata;
+}
+
+export interface AnalyticsInventoryHttpResponse {
+  data: {
+    dimensions: ReturnType<typeof inventoryDimension>[];
+    branches: readonly InventoryBranchSummary[];
+  };
+  meta: AnalyticsDimensionMetadata & { currentSnapshotCapturedAt: string };
 }
 
 function handlePeriodError(cause: unknown, response: Response): boolean {
@@ -204,6 +235,7 @@ export function createAnalyticsRouter(input: {
   authenticationMiddleware: RequestHandler;
   branchService: ReturnType<typeof createAnalyticsBranchService>;
   categoryService: ReturnType<typeof createAnalyticsCategoryService>;
+  inventoryService: ReturnType<typeof createAnalyticsInventoryService>;
   salesService: AnalyticsSalesService;
 }): Router {
   const router = Router();
@@ -348,5 +380,66 @@ export function createAnalyticsRouter(input: {
       },
     );
   }
+  router.get(
+    "/organizations/:organizationId/analytics/inventory",
+    input.authenticationMiddleware,
+    async (request, response, next) => {
+      const actor = getTrustedAuthenticationContext(response);
+      if (actor === null)
+        return error(
+          response,
+          401,
+          "AUTHENTICATION_REQUIRED",
+          "Authentication is required.",
+        );
+      const params = paramsSchema.safeParse(request.params);
+      const query = dimensionQuerySchema.safeParse(request.query);
+      if (!params.success || !query.success)
+        return error(
+          response,
+          400,
+          "VALIDATION_ERROR",
+          "The request is invalid.",
+        );
+      const { from, granularity, to } = query.data;
+      const scope =
+        query.data.scope === "branch"
+          ? { kind: "branch" as const, branchId: query.data.branchId }
+          : { kind: "organization" as const };
+      try {
+        const outcome = await input.inventoryService.read({
+          actorUserId: actor.actor.id,
+          ...(query.data.cursor === undefined
+            ? {}
+            : { cursor: query.data.cursor }),
+          from,
+          granularity,
+          ...(query.data.limit === undefined
+            ? {}
+            : { limit: query.data.limit }),
+          organizationId: params.data.organizationId,
+          scope,
+          to,
+        });
+        if (outcome.kind !== "success")
+          return sendAnalyticsFailure(response, outcome.kind);
+        const body: AnalyticsInventoryHttpResponse = {
+          data: {
+            dimensions: outcome.page.series.map(inventoryDimension),
+            branches: outcome.page.branches,
+          },
+          meta: {
+            ...metadata(outcome.page.context, response),
+            currentSnapshotCapturedAt:
+              outcome.page.currentSnapshotCapturedAt.toISOString(),
+            nextCursor: outcome.page.nextCursor,
+          },
+        };
+        response.status(200).json(body);
+      } catch (cause: unknown) {
+        if (!handlePeriodError(cause, response)) next(cause);
+      }
+    },
+  );
   return router;
 }

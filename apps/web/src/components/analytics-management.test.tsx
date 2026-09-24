@@ -39,6 +39,12 @@ let role: string;
 let salesCost: boolean;
 let categoryCursorError: boolean;
 let salesError: { code: string; status: number } | null;
+let inventoryMode: "normal" | "empty" | "error";
+let inventoryCost: boolean;
+let inventoryClassification:
+  "LOW_STOCK" | "NORMAL" | "OVERSTOCK" | null | undefined;
+let inventoryReason: string | null;
+let inventoryProductStatus: "ACTIVE" | "INACTIVE";
 
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), { status });
@@ -153,6 +159,98 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
         meta: meta(),
       }),
     );
+  if (url.includes("/analytics/inventory?")) {
+    if (inventoryMode === "error")
+      return Promise.resolve(json({ error: { code: "FORBIDDEN" } }, 403));
+    const cursor = new URL(url, "http://localhost").searchParams.get("cursor");
+    const classification =
+      inventoryClassification === undefined
+        ? cursor
+          ? "OVERSTOCK"
+          : "LOW_STOCK"
+        : inventoryClassification;
+    const cost = inventoryCost
+      ? {
+          inventoryValue: { value: null, reason: "INCOMPLETE_COST_COVERAGE" },
+          knownInventoryValue: "0.0000000000",
+          knownCostProductCount: 0,
+          unknownCostProductCount: 1,
+          unknownQuantityByUnit: { EA: "3.0000" },
+        }
+      : undefined;
+    return Promise.resolve(
+      json({
+        data: {
+          branches: [
+            {
+              branchId: BRANCH,
+              branchName: "Alpha",
+              branchStatus: "ACTIVE",
+              activeProductCount: 2,
+              inStockProductCount: 1,
+              outOfStockProductCount: 1,
+              ...(cost ? { cost } : {}),
+            },
+          ],
+          dimensions:
+            inventoryMode === "empty"
+              ? []
+              : [
+                  {
+                    branchId: BRANCH,
+                    branchName: "Alpha",
+                    branchStatus: "ACTIVE",
+                    productId: cursor ? OTHER_BRANCH : BRANCH,
+                    productName: cursor ? "Second product" : "First product",
+                    productStatus: inventoryProductStatus,
+                    productUnit: "EA",
+                    onHandQuantity: "3.0000",
+                    requestedPeriodAds: { value: "1.0000", reason: null },
+                    coverageSalesVelocity: { value: "0.5000", reason: null },
+                    coverageDays: {
+                      value:
+                        inventoryReason &&
+                        inventoryReason !== "INACTIVE_PRODUCT"
+                          ? null
+                          : cursor
+                            ? "60.00"
+                            : "6.00",
+                      reason:
+                        inventoryReason === "INACTIVE_PRODUCT"
+                          ? null
+                          : inventoryReason,
+                    },
+                    stockClassification: {
+                      classification,
+                      reason: inventoryReason,
+                      thresholdVersion: "stock-risk-v1",
+                    },
+                    buckets: [
+                      {
+                        label: "2026-09-22",
+                        localStartInclusive: "2026-09-22",
+                        localEndExclusive: "2026-09-23",
+                        dataStatus: "complete",
+                        purchaseReceivedQuantity: "4.0000",
+                        saleDepletionQuantity: "1.0000",
+                        refundReturnQuantity: "0.0000",
+                        positiveAdjustmentQuantity: "0.0000",
+                        negativeAdjustmentQuantity: "0.0000",
+                      },
+                    ],
+                    ...(cost ? { cost } : {}),
+                  },
+                ],
+        },
+        meta: {
+          ...meta(cursor ? null : "opaque-inventory-next"),
+          currentSnapshotCapturedAt: cursor
+            ? "2026-09-24T00:00:01.000Z"
+            : "2026-09-24T00:00:00.000Z",
+        },
+      }),
+    );
+  }
   if (url.includes("/analytics/categories?")) {
     const cursor = new URL(url, "http://localhost").searchParams.get("cursor");
     if (cursor && categoryCursorError)
@@ -223,6 +321,7 @@ function renderPage() {
       <AnalyticsManagement />
     </QueryClientProvider>,
   );
+  return client;
 }
 
 beforeEach(() => {
@@ -231,6 +330,11 @@ beforeEach(() => {
   salesCost = false;
   categoryCursorError = false;
   salesError = null;
+  inventoryMode = "normal";
+  inventoryCost = false;
+  inventoryClassification = undefined;
+  inventoryReason = null;
+  inventoryProductStatus = "ACTIVE";
   vi.stubGlobal("fetch", vi.fn(mockFetch));
 });
 afterEach(() => {
@@ -239,6 +343,145 @@ afterEach(() => {
 });
 
 describe("analytics management", () => {
+  it("shows inventory facts and opaque continuation without cost for staff", async () => {
+    role = "INVENTORY_STAFF";
+    renderPage();
+    expect(
+      await screen.findByRole("region", { name: "Inventory analytics" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Sales" })).toBeNull();
+    expect(screen.getByText("Out of stock")).toBeTruthy();
+    expect(screen.getAllByText(/LOW STOCK/).length).toBeGreaterThan(0);
+    expect(screen.getByText("6.00 days")).toBeTruthy();
+    expect(screen.queryByText("Current inventory value")).toBeNull();
+    expect(
+      screen.getByText("Cost and value require additional access."),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(/STOCKOUT_RISK|FAST_MOVING|SLOW_MOVING/),
+    ).toBeNull();
+    fireEvent.click(screen.getByText(/^First product/));
+    expect(
+      screen.getByRole("table", {
+        name: /Movement by period for First product/,
+      }),
+    ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Load more inventory" }),
+    );
+    expect(await screen.findByText(/^Second product/)).toBeTruthy();
+    expect(screen.getByText("OVERSTOCK")).toBeTruthy();
+    expect(
+      requests.some((url) => url.includes("cursor=opaque-inventory-next")),
+    ).toBe(true);
+    expect(requests.some((url) => url.includes("/analytics/sales?"))).toBe(
+      false,
+    );
+    fireEvent.change(screen.getByLabelText("Analytics scope"), {
+      target: { value: OTHER_BRANCH },
+    });
+    await waitFor(() =>
+      expect(
+        requests.some(
+          (url) =>
+            url.includes(`/analytics/inventory?`) &&
+            url.includes(`scope=branch&branchId=${OTHER_BRANCH}`),
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("resets Sales and excludes cached Owner cost when access changes to Inventory Staff", async () => {
+    inventoryCost = true;
+    const client = renderPage();
+    expect(
+      await screen.findByRole("region", { name: "Sales analytics" }),
+    ).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Analytics scope"), {
+      target: { value: BRANCH },
+    });
+    await waitFor(() =>
+      expect(
+        requests.some(
+          (url) =>
+            url.includes(`/analytics/sales?`) &&
+            url.includes(`branchId=${BRANCH}`),
+        ),
+      ).toBe(true),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Inventory" }));
+    expect(
+      (await screen.findAllByText("Current inventory value")).length,
+    ).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Sales" }));
+    expect(
+      screen.getByRole("region", { name: "Sales analytics" }),
+    ).toBeTruthy();
+    inventoryCost = false;
+    role = "INVENTORY_STAFF";
+    await client.invalidateQueries({ queryKey: ["access-context"] });
+    expect(
+      await screen.findByRole("region", { name: "Inventory analytics" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("region", { name: "Sales analytics" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sales" })).toBeNull();
+    expect(screen.queryByText("Current inventory value")).toBeNull();
+    expect(
+      await screen.findByText("Cost and value require additional access."),
+    ).toBeTruthy();
+  });
+
+  it("shows normal classification and explains unavailable inactive or no-demand states", async () => {
+    inventoryClassification = "NORMAL";
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Inventory" }));
+    expect(await screen.findByText("NORMAL")).toBeTruthy();
+  });
+
+  it("explains why classification is unavailable for an inactive product", async () => {
+    inventoryClassification = null;
+    inventoryReason = "INACTIVE_PRODUCT";
+    inventoryProductStatus = "INACTIVE";
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Inventory" }));
+    expect(
+      await screen.findByText("Product is inactive", { selector: "dd" }),
+    ).toBeTruthy();
+  });
+
+  it("shows authorized inventory cost and handles empty and denied states", async () => {
+    inventoryCost = true;
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Inventory" }));
+    expect(
+      (await screen.findAllByText("Some stocked products have unknown cost"))
+        .length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Current inventory value").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("shows an explicit empty inventory state", async () => {
+    inventoryMode = "empty";
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Inventory" }));
+    expect(
+      await screen.findByText("No product dimensions in this scope."),
+    ).toBeTruthy();
+  });
+
+  it("announces inventory API denial", async () => {
+    inventoryMode = "error";
+    role = "INVENTORY_STAFF";
+    renderPage();
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      "Inventory analytics is not available for your current access.",
+    );
+  });
   it("renders exact API sales strings, null reasons, negative trend, and hides absent cost", async () => {
     renderPage();
     expect(

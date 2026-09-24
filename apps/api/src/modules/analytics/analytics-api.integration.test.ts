@@ -20,6 +20,8 @@ import { createPrismaAnalyticsCategoryRepository } from "./analytics-category-re
 import { createAnalyticsCategoryService } from "./analytics-category-service.ts";
 import { createAnalyticsContextEngine } from "./analytics-context.ts";
 import { createAnalyticsDimensionCursorCodec } from "./analytics-dimension-cursor.ts";
+import { createPrismaAnalyticsInventoryRepository } from "./analytics-inventory-repository.ts";
+import { createAnalyticsInventoryService } from "./analytics-inventory-service.ts";
 import { createAnalyticsRouter } from "./analytics-router.ts";
 import { createPrismaAnalyticsSalesRepository } from "./analytics-sales-repository.ts";
 import { createAnalyticsSalesService } from "./analytics-sales-service.ts";
@@ -67,6 +69,26 @@ interface HttpBody {
       branchId: string;
       branchStatus: string;
       buckets: { grossSalesAmount: string }[];
+      cost?: {
+        inventoryValue: { value: string | null; reason: string | null };
+      };
+    }[];
+    dimensions: {
+      branchId: string;
+      buckets: {
+        saleDepletionQuantity: string;
+        purchaseReceivedQuantity: string;
+      }[];
+      coverageDays: { value: string | null; reason: string | null };
+      stockClassification: {
+        classification: string | null;
+        reason: string | null;
+        thresholdVersion: string;
+      };
+      onHandQuantity: string;
+      cost?: {
+        inventoryValue: { value: string | null; reason: string | null };
+      };
     }[];
   };
   error: { code: string };
@@ -256,6 +278,14 @@ describe("analytics HTTP API with PostgreSQL", () => {
           contextEngine,
           cursorCodec,
           repository: createPrismaAnalyticsCategoryRepository(
+            prisma,
+            cursorCodec,
+          ),
+        }),
+        inventoryService: createAnalyticsInventoryService({
+          contextEngine,
+          cursorCodec,
+          repository: createPrismaAnalyticsInventoryRepository(
             prisma,
             cursorCodec,
           ),
@@ -649,5 +679,244 @@ describe("analytics HTTP API with PostgreSQL", () => {
         )
       ).body.error.code,
     ).toBe("INVALID_CURSOR");
+  });
+
+  it("exposes inventory facts, classification, page markers, and cost only to permitted roles", async () => {
+    const fixture = await setup();
+    await start();
+    for (const actor of [fixture.owner, fixture.admin, fixture.manager]) {
+      const result = await get(
+        fixture.organization.id,
+        `inventory?${period}`,
+        actor.cookie,
+      );
+      expect(result.status).toBe(200);
+      expect(result.body.meta.metricDefinitionVersion).toBe("analytics-v1");
+      expect(result.body.meta.currentSnapshotCapturedAt).toEqual(
+        expect.any(String),
+      );
+      expect(result.body.data.dimensions[0]?.buckets).toHaveLength(2);
+      expect(result.body.data.dimensions[0]?.cost).toBeDefined();
+      expect(result.body.data.branches[0]?.cost).toBeDefined();
+    }
+    const staff = await get(
+      fixture.organization.id,
+      `inventory?${period}`,
+      fixture.inventory.cookie,
+    );
+    expect(staff.status).toBe(200);
+    expect(staff.body.meta.includedBranchIds).toEqual([
+      fixture.branches[0]!.id,
+    ]);
+    expect(staff.body.data.dimensions).toHaveLength(1);
+    expect(staff.body.data.dimensions[0]).not.toHaveProperty("cost");
+    expect(staff.body.data.branches[0]).not.toHaveProperty("cost");
+    expect(staff.body.data.dimensions[0]?.onHandQuantity).toBe("9.0000");
+    expect(
+      staff.body.data.dimensions[0]?.buckets[0]?.saleDepletionQuantity,
+    ).toBe("1.0000");
+    expect(staff.body.data.dimensions[0]?.coverageDays.reason).toBe(
+      "INVENTORY_INTEGRITY_ERROR",
+    );
+    expect(staff.body.data.dimensions[0]?.stockClassification).toEqual({
+      classification: null,
+      reason: "INVENTORY_INTEGRITY_ERROR",
+      thresholdVersion: "stock-risk-v1",
+    });
+    expect(JSON.stringify(staff.body)).not.toContain("STOCKOUT_RISK");
+    expect(
+      (
+        await get(
+          fixture.organization.id,
+          `inventory?${period}`,
+          fixture.cashier.cookie,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await get(
+          fixture.organization.id,
+          `inventory?${period}`,
+          fixture.outsider.cookie,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await get(
+          fixture.outsiderOrganizationId,
+          `inventory?${period}`,
+          fixture.owner.cookie,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await get(
+          fixture.organization.id,
+          `inventory?scope=branch&branchId=${fixture.branches[2]!.id}&from=2026-09-21&to=2026-09-23&granularity=day`,
+          fixture.inventory.cookie,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await get(
+          fixture.organization.id,
+          `inventory?${period}&limit=101`,
+          fixture.owner.cookie,
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await get(
+          fixture.organization.id,
+          `inventory?scope=organization&from=2026-09-22&to=2026-09-21&granularity=day`,
+          fixture.owner.cookie,
+        )
+      ).status,
+    ).toBe(400);
+  });
+
+  it("pages inventory dimensions with a scope-bound event cutoff and page-current marker", async () => {
+    const fixture = await setup();
+    await start();
+    const first = await get(
+      fixture.organization.id,
+      `inventory?${period}&limit=1`,
+      fixture.owner.cookie,
+    );
+    expect(first.status).toBe(200);
+    expect(first.body.data.dimensions).toHaveLength(1);
+    expect(first.body.data.branches).toHaveLength(3);
+    const cursor = first.body.meta.nextCursor as string;
+    expect(cursor).toEqual(expect.any(String));
+    const next = await get(
+      fixture.organization.id,
+      `inventory?${period}&limit=1&cursor=${encodeURIComponent(cursor)}`,
+      fixture.owner.cookie,
+    );
+    expect(next.status).toBe(200);
+    expect(next.body.meta.sourceCutoff).toBe(first.body.meta.sourceCutoff);
+    expect(next.body.meta.currentSnapshotCapturedAt).not.toBe(
+      first.body.meta.currentSnapshotCapturedAt,
+    );
+    expect(next.body.data.dimensions[0]?.buckets).toHaveLength(2);
+    const staff = await get(
+      fixture.organization.id,
+      `inventory?${period}&cursor=${encodeURIComponent(cursor)}`,
+      fixture.inventory.cookie,
+    );
+    expect(staff.body.error.code).toBe("INVALID_CURSOR");
+    const tampered = await get(
+      fixture.organization.id,
+      `inventory?${period}&cursor=${encodeURIComponent(cursor.slice(0, -1) + "x")}`,
+      fixture.owner.cookie,
+    );
+    expect(tampered.body.error.code).toBe("INVALID_CURSOR");
+    const empty = await get(
+      fixture.organization.id,
+      `inventory?scope=branch&branchId=${fixture.branches[1]!.id}&from=2026-09-21&to=2026-09-23&granularity=day`,
+      fixture.owner.cookie,
+    );
+    expect(empty.status).toBe(200);
+    expect(empty.body.data.branches).toHaveLength(1);
+  });
+
+  it("serializes a classified row and preserves UNKNOWN current cost", async () => {
+    const fixture = await setup();
+    const membership = await prisma.organizationMembership.findUniqueOrThrow({
+      where: {
+        organizationId_userId: {
+          organizationId: fixture.organization.id,
+          userId: fixture.owner.id,
+        },
+      },
+    });
+    await prisma.inventoryTransaction.create({
+      data: {
+        organizationId: fixture.organization.id,
+        branchId: fixture.branches[0]!.id,
+        productId: fixture.product.id,
+        actorUserId: fixture.owner.id,
+        actorMembershipId: membership.id,
+        delta: "10",
+        occurredAt: new Date("2026-08-01T00:00:00.000Z"),
+        source: "MANUAL_ADJUSTMENT",
+        adjustmentReason: "FOUND",
+        idempotencyKeyHash: "a".repeat(64),
+        canonicalRequestHash: "b".repeat(64),
+      },
+    });
+    await prisma.inventoryCostState.update({
+      where: {
+        branchId_productId: {
+          branchId: fixture.branches[0]!.id,
+          productId: fixture.product.id,
+        },
+      },
+      data: {
+        basisState: "UNKNOWN",
+        averageUnitCost: null,
+        inventoryValue: null,
+      },
+    });
+    await start();
+    const result = await get(
+      fixture.organization.id,
+      `inventory?${period}`,
+      fixture.owner.cookie,
+    );
+    expect(result.status).toBe(200);
+    const row = result.body.data.dimensions.find(
+      (item) => item.branchId === fixture.branches[0]!.id,
+    )!;
+    expect(row.coverageDays).toEqual({ value: "252.00", reason: null });
+    expect(row.stockClassification).toEqual({
+      classification: "OVERSTOCK",
+      reason: null,
+      thresholdVersion: "stock-risk-v1",
+    });
+    expect(row.cost?.inventoryValue).toEqual({
+      value: null,
+      reason: "INCOMPLETE_COST_COVERAGE",
+    });
+    expect(
+      result.body.data.branches.find(
+        (branch) => branch.branchId === fixture.branches[0]!.id,
+      )?.cost?.inventoryValue,
+    ).toEqual({
+      value: null,
+      reason: "INCOMPLETE_COST_COVERAGE",
+    });
+  });
+
+  it("returns an empty inventory dimension page and factual zero availability", async () => {
+    const organization = await prisma.organization.create({
+      data: { name: "Empty analytics", reportingTimezone: "Asia/Bangkok" },
+    });
+    const branch = await prisma.branch.create({
+      data: { code: "EMPTY", name: "Empty", organizationId: organization.id },
+    });
+    const owner = await actor(organization.id, "OWNER");
+    await start();
+    const result = await get(
+      organization.id,
+      `inventory?${period}`,
+      owner.cookie,
+    );
+    expect(result.status).toBe(200);
+    expect(result.body.data.dimensions).toEqual([]);
+    expect(result.body.data.branches).toEqual([
+      expect.objectContaining({
+        branchId: branch.id,
+        activeProductCount: 0,
+        inStockProductCount: 0,
+        outOfStockProductCount: 0,
+      }),
+    ]);
+    expect(result.body.meta.nextCursor).toBeNull();
   });
 });

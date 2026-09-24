@@ -85,10 +85,83 @@ const branchResponseSchema = z.object({
   }),
   meta: metadataSchema.extend({ nextCursor: z.string().nullable() }),
 });
+const inventoryCostSchema = z.object({
+  inventoryValue: nullableMetricSchema,
+  knownInventoryValue: z.string(),
+  knownCostProductCount: z.number(),
+  unknownCostProductCount: z.number(),
+  unknownQuantityByUnit: z.record(z.string(), z.string()),
+});
+const inventoryResponseSchema = z.object({
+  data: z.object({
+    dimensions: z.array(
+      z.object({
+        branchId: z.string(),
+        branchName: z.string(),
+        branchStatus: z.enum(["ACTIVE", "INACTIVE"]),
+        productId: z.string(),
+        productName: z.string(),
+        productStatus: z.enum(["ACTIVE", "INACTIVE"]),
+        productUnit: z.string(),
+        buckets: z.array(
+          z.object({
+            label: z.string(),
+            localStartInclusive: z.string(),
+            localEndExclusive: z.string(),
+            dataStatus: z.string(),
+            purchaseReceivedQuantity: z.string(),
+            saleDepletionQuantity: z.string(),
+            refundReturnQuantity: z.string(),
+            positiveAdjustmentQuantity: z.string(),
+            negativeAdjustmentQuantity: z.string(),
+          }),
+        ),
+        requestedPeriodAds: nullableMetricSchema,
+        coverageSalesVelocity: nullableMetricSchema,
+        onHandQuantity: z.string(),
+        coverageDays: nullableMetricSchema,
+        stockClassification: z.object({
+          classification: z
+            .enum(["LOW_STOCK", "NORMAL", "OVERSTOCK"])
+            .nullable(),
+          reason: z
+            .enum([
+              "INSUFFICIENT_DATA",
+              "NO_RECENT_DEMAND",
+              "NO_STOCK_AND_NO_DEMAND",
+              "INVENTORY_INTEGRITY_ERROR",
+              "INACTIVE_PRODUCT",
+            ])
+            .nullable(),
+          thresholdVersion: z.literal("stock-risk-v1"),
+        }),
+        cost: inventoryCostSchema.optional(),
+      }),
+    ),
+    branches: z.array(
+      z.object({
+        branchId: z.string(),
+        branchName: z.string(),
+        branchStatus: z.enum(["ACTIVE", "INACTIVE"]),
+        activeProductCount: z.number(),
+        inStockProductCount: z.number(),
+        outOfStockProductCount: z.number(),
+        cost: inventoryCostSchema.optional(),
+      }),
+    ),
+  }),
+  meta: metadataSchema.extend({
+    currentSnapshotCapturedAt: z.string(),
+    nextCursor: z.string().nullable(),
+  }),
+});
 
 export type AnalyticsSalesResponse = z.infer<typeof salesResponseSchema>;
 export type AnalyticsCategoryResponse = z.infer<typeof categoryResponseSchema>;
 export type AnalyticsBranchResponse = z.infer<typeof branchResponseSchema>;
+export type AnalyticsInventoryResponse = z.infer<
+  typeof inventoryResponseSchema
+>;
 export type AnalyticsSalesBucket =
   AnalyticsSalesResponse["data"]["buckets"][number];
 export type AnalyticsCategoryBucket =
@@ -133,7 +206,7 @@ function queryString(input: AnalyticsRequest, cursor?: string): string {
 }
 
 async function request<T>(
-  dimension: "sales" | "categories" | "branches",
+  dimension: "sales" | "categories" | "branches" | "inventory",
   input: AnalyticsRequest,
   schema: z.ZodType<T>,
   signal?: AbortSignal,
@@ -200,4 +273,11 @@ export function getAnalyticsBranches(
   cursor?: string,
 ) {
   return request("branches", input, branchResponseSchema, signal, cursor);
+}
+export function getAnalyticsInventory(
+  input: AnalyticsRequest,
+  signal?: AbortSignal,
+  cursor?: string,
+) {
+  return request("inventory", input, inventoryResponseSchema, signal, cursor);
 }
