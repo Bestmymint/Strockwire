@@ -1,5 +1,3 @@
-import { existsSync } from "node:fs";
-
 import { hashPassword } from "../../apps/api/src/modules/identity/password-hasher.ts";
 import { loadTestDatabaseEnvironment } from "../../apps/api/src/test/database-environment.ts";
 import {
@@ -26,7 +24,6 @@ import {
 } from "./catalog-fixtures.ts";
 
 export default async function globalSetup(): Promise<void> {
-  if (existsSync(".env")) process.loadEnvFile(".env");
   const environment = loadTestDatabaseEnvironment();
   await provisionTestDatabase(environment);
   await applyTestDatabaseMigrations(environment);

@@ -31,9 +31,16 @@ export function createTestPrismaClient(
 export async function provisionTestDatabase(
   environment: TestDatabaseEnvironment,
 ): Promise<void> {
-  const databaseName = getTestDatabaseName(environment.TEST_DATABASE_URL);
+  const allowStockwiseTest = environment.STOCKWISE_ALLOW_STOCKWISE_TEST === "1";
+  const databaseName = getTestDatabaseName(
+    environment.TEST_DATABASE_URL,
+    allowStockwiseTest,
+  );
   const adminClient = new Client({
-    connectionString: getTestDatabaseAdminUrl(environment.TEST_DATABASE_URL),
+    connectionString: getTestDatabaseAdminUrl(
+      environment.TEST_DATABASE_URL,
+      allowStockwiseTest,
+    ),
   });
 
   try {
@@ -57,7 +64,10 @@ export async function provisionTestDatabase(
 export async function applyTestDatabaseMigrations(
   environment: TestDatabaseEnvironment,
 ): Promise<void> {
-  getTestDatabaseName(environment.TEST_DATABASE_URL);
+  getTestDatabaseName(
+    environment.TEST_DATABASE_URL,
+    environment.STOCKWISE_ALLOW_STOCKWISE_TEST === "1",
+  );
 
   await execFileAsync(
     process.execPath,
@@ -81,7 +91,10 @@ export async function applyTestDatabaseMigrations(
 export async function resetTestDatabase(
   environment: TestDatabaseEnvironment,
 ): Promise<void> {
-  getTestDatabaseName(environment.TEST_DATABASE_URL);
+  getTestDatabaseName(
+    environment.TEST_DATABASE_URL,
+    environment.STOCKWISE_ALLOW_STOCKWISE_TEST === "1",
+  );
   const testClient = new Client({
     connectionString: environment.TEST_DATABASE_URL,
   });

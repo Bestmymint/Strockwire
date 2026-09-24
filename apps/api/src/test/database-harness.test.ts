@@ -33,7 +33,10 @@ describe("database test harness", () => {
     `;
 
     expect(result[0]?.databaseName).toBe(
-      getTestDatabaseName(environment.TEST_DATABASE_URL),
+      getTestDatabaseName(
+        environment.TEST_DATABASE_URL,
+        environment.STOCKWISE_ALLOW_STOCKWISE_TEST === "1",
+      ),
     );
   });
 
@@ -53,9 +56,9 @@ describe("database test harness", () => {
     expect(() =>
       loadTestDatabaseEnvironment({
         DATABASE_URL:
-          "postgresql://local-user:local-password@127.0.0.1:5432/stockwise_test",
+          "postgresql://local-user:local-password@127.0.0.1:5432/harness_equal_test",
         TEST_DATABASE_URL:
-          "postgresql://local-user:local-password@127.0.0.1:5432/stockwise_test",
+          "postgresql://local-user:local-password@127.0.0.1:5432/harness_equal_test",
       }),
     ).toThrow("must not equal");
     await expect(
@@ -64,6 +67,18 @@ describe("database test harness", () => {
           "postgresql://local-user:local-password@127.0.0.1:5432/stockwise_dev",
       }),
     ).rejects.toThrow("ending in _test");
+    await expect(
+      resetTestDatabase({
+        TEST_DATABASE_URL:
+          "postgresql://local-user:local-password@127.0.0.1:5432/stockwise_test",
+      }),
+    ).rejects.toThrow("stockwise_test is refused by default");
+    await expect(
+      resetTestDatabase({
+        TEST_DATABASE_URL:
+          "postgresql://local-user:local-password@127.0.0.1:5432/harness_safe_test?host=remote.example.com",
+      }),
+    ).rejects.toThrow("query parameters");
   });
 
   it("cleans non-domain probe objects between test runs", async () => {

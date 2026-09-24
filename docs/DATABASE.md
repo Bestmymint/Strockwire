@@ -56,8 +56,15 @@ schema. It repeats that cleanup during teardown. Test files run serially because
 they intentionally share one resettable target.
 
 Run `pnpm test` for the full suite or `pnpm test:db` for the focused harness.
-Both require a populated local `TEST_DATABASE_URL`; CI supplies an ephemeral
-PostgreSQL service and a test-only URL.
+Both require `TEST_DATABASE_URL` in the invoking process environment. Test
+setup never takes that target from `.env`; it may read `.env`'s runtime
+`DATABASE_URL` only to reject a collision. Use a fresh loopback database ending in
+`_test`; only the optional `?schema=public` URL query is accepted so connection
+overrides cannot redirect it. The known stale `stockwise_test` is refused by
+default. CI explicitly opts into that name with
+`STOCKWISE_ALLOW_STOCKWISE_TEST=1` for its ephemeral
+PostgreSQL service. Playwright E2E setup follows the same rule. Package-scoped
+web unit tests use their own Vitest config and do not invoke database setup.
 
 ### Implemented identity and tenancy schema
 

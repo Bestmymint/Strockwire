@@ -1,4 +1,10 @@
 {
   "extends": "./tsconfig.base.json",
-  "files": ["prettier.config.mts", "test/smoke.test.ts", "vitest.config.mts"]
+  "files": [
+    "prettier.config.mts",
+    "playwright.config.ts",
+    "test/smoke.test.ts",
+    "vitest.config.mts",
+    "vitest.database-environment.config.mts"
+  ]
 }

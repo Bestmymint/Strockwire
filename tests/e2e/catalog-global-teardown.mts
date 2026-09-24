@@ -1,5 +1,3 @@
-import { existsSync } from "node:fs";
-
 import { loadTestDatabaseEnvironment } from "../../apps/api/src/test/database-environment.ts";
 import {
   createTestPrismaClient,
@@ -7,7 +5,6 @@ import {
 } from "../../apps/api/src/test/database-harness.ts";
 
 export default async function globalTeardown(): Promise<void> {
-  if (existsSync(".env")) process.loadEnvFile(".env");
   const environment = loadTestDatabaseEnvironment();
   const prisma = createTestPrismaClient(environment);
   try {

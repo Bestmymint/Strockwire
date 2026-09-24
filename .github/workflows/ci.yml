@@ -14,6 +14,7 @@ jobs:
     env:
       STOCKWISE_API_ORIGIN: http://127.0.0.1:3001
       TEST_DATABASE_URL: postgresql://stockwise_test_runner:stockwise_test_runner_only@127.0.0.1:5432/stockwise_test?schema=public
+      STOCKWISE_ALLOW_STOCKWISE_TEST: "1"
     services:
       postgres:
         image: postgres:16.11-alpine
