@@ -646,7 +646,7 @@ separately defines Forecasting V1; `ADR-032` later accepts Reorder V1 policy.
 
 ### M-107 Reorder recommendation
 
-**Status: Accepted by `ADR-032`; internal advisory `reorder-v1` runtime implemented by P6-M4-T03 in `977f33f0588fc42547a60fc6a17f28fea131cdc5`. API/UI exposure remains P6-M4-T04 work.**
+**Status: Accepted by `ADR-032`; internal advisory `reorder-v1` runtime implemented by P6-M4-T03 in `977f33f0588fc42547a60fc6a17f28fea131cdc5`; Forecast/Reorder API/UI implemented by P6-M4-T04 in `89c5d722a0088e9fb930082bd423ebdb1adc455f`.**
 One advisory result applies to one authorized, active Branch/Product in its immutable
 Product base unit. It consumes the `ADR-031` forecast from the **same read
 snapshot**. No Organization/Product or mixed-unit quantity is produced.
@@ -741,8 +741,8 @@ commit-visibility watermark, or multi-request snapshot token. Repeated requests 
 observe changed stock, Sales, status, or timezone. Reuse server-enforced
 `FORECAST_REORDER_VIEW` at active Branch scope; quantity-only output needs no
 `SALES_COST_VIEW`. No PO read is needed when incoming is fixed zero. T03 adds
-no schema, persistence, scheduler, PO write, or API/UI; T04 owns transport and
-presentation. `STOCKOUT_RISK` remains outside this policy.
+no schema, persistence, scheduler, or PO write. P6-M4-T04 exposes the accepted
+transport and presentation. `STOCKOUT_RISK` remains outside this policy.
 
 T03 runtime coverage includes exact Decimal formula and zero floor; just-below/equal/
 just-above on-hand demand; absent, negative, and ledger-divergent balance;
@@ -991,7 +991,7 @@ Seasonality requires enough comparable cycles and must declare its granularity
 `68a3e995696924d35afdabf7c8e27dcc098101e0`. `ADR-031` resolves `OQ-012`. The
 result estimates observed future Sale quantity, not latent customer demand,
 revenue, inventory need, or a purchasable reorder quantity. HTTP/API and UI
-exposure remain assigned to P6-M4-T04.
+exposure is implemented by P6-M4-T04.
 
 ### Target, grain, time, and inputs
 
@@ -1079,7 +1079,8 @@ scope for this quantity-only result: `OWNER`/`ADMIN` across the Organization and
 access. `SALES_COST_VIEW` is unnecessary because no prices, money, or cost are
 returned. P6-M4-T02 must apply that existing policy even if it adapts the
 analytics Branch-set resolver, which currently accepts only business/inventory
-kinds. P6-M4-T04 owns any later HTTP/UI contract; this section adds none.
+kinds. P6-M4-T04 implements the HTTP/UI contract; this section adds no route-
+specific contract.
 
 ### Cutoff, reproducibility, and limitations
 

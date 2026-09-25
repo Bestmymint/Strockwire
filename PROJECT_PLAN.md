@@ -4,7 +4,7 @@
 | --- | --- |
 | Project | StockWise |
 | Plan baseline | Architecture Freeze v1 |
-| Repository state | Implemented and verified through P6-M4-T03; P6-M4-T04 is next and not started |
+| Repository state | Implemented and verified through P6-M4-T04; P6-M5-T01 is next and not started |
 | Last updated | 2026-09-25 |
 
 ## 1. Plan rules
@@ -198,8 +198,9 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 ## Phase 6 — Analytics and forecasting
 
-Phase 6 remains IN PROGRESS. P6-M4-T01, T02, and T03 are complete; P6-M4-T04 is
-the next task and has not started.
+Phase 6 remains IN PROGRESS. Milestone 6.4 is complete, including P6-M4-T01
+through T04. P6-M5-T01 — Synthetic data specification is the next task;
+P6-M5-T01 and P6-M5-T02 remain unchecked.
 
 ### Milestone 6.1 — Definitions and period engine
 
@@ -239,7 +240,7 @@ accessible table rather than relying on chart coordinates.
 | [x] **P6-M4-T01 — Close Forecasting V1** | Define one testable baseline/candidate | Resolved `OQ-012` for observed Sale quantity at Branch/Product grain, seven local days, prior 28 complete days, `forecast-sale-mean-28d-v1`, explicit cold start and MAE evaluation; excludes replenishment policy | P6-M1 | `docs/ANALYTICS.md`/`ADR-031`/plan aligned; no Python service or runtime | Four-window rolling-origin backtest design and leakage review completed 2026-09-24 |
 | [x] **P6-M4-T02 — Forecast implementation** | Produce versioned deterministic forecasts | TypeScript/SQL algorithm, data status, reproducible inputs under `ADR-031` | T01 | Repeatable output and named `last-day-naive` MAE comparison | Implemented in `68a3e995696924d35afdabf7c8e27dcc098101e0`; focused 21/21, analytics/authorization 178/178; full suite 965/965 across 111 files before final test-only fixture correction, affected tests passed after correction; lint/typecheck/build/Prettier/diff check passed |
 | [x] **P6-M4-T03 — Reorder recommendation** | Turn accepted inputs into guidance | Implemented internal advisory `reorder-v1` under accepted `ADR-032`; one Branch/Product result, no auto-order or API/UI exposure | T02, P4 decisions, `ADR-032` | Explainable recommendation; never auto-order | Implemented in `977f33f0588fc42547a60fc6a17f28fea131cdc5`; full suite 995/995 across 112 files, closure 35/35 across 2 files, lint/typecheck/build/targeted Prettier/diff check passed |
-| [ ] **P6-M4-T04 — Forecast/reorder API/UI** | Present estimates and limitations | Endpoints, filters, version/data status/limitations | T02–T03 | No LLM numbers; accessible uncertainty/insufficient state | API/UI/E2E/security tests |
+| [x] **P6-M4-T04 — Forecast/reorder API/UI** | Present estimates and limitations | Forecast/Reorder endpoints and `/app/analytics` view over T02–T03; version/data status/limitations; `FORECAST_REORDER_VIEW`; no LLM numbers, purchasing action, Supplier/MOQ behavior, or `STOCKOUT_RISK` | T02–T03 | No LLM numbers; accessible uncertainty/insufficient state | Implemented in `89c5d722a0088e9fb930082bd423ebdb1adc455f`; API/analytics/UI 66/66, web closure 25/25, E2E 2/2, full suite 1005/1005 across 113 files; lint/typecheck/Prettier/diff check passed; build passed before UI-only closure edit |
 
 ### Milestone 6.5 — Synthetic demo data
 
@@ -356,10 +357,12 @@ Forecasting V1**. **P6-M4-T02 — Forecast implementation** is complete in
 `68a3e995696924d35afdabf7c8e27dcc098101e0`. **P6-M4-T03 — Reorder
 recommendation** is complete: `ADR-032` accepts its policy and internal advisory
 `reorder-v1` is implemented in `977f33f0588fc42547a60fc6a17f28fea131cdc5`.
-It does not auto-order and has no API/UI exposure. **P6-M4-T04 — Forecast/reorder
-API/UI** is next and not started; it owns estimate/recommendation transport and
-presentation. Phase 6 remains in progress. `STOCKOUT_RISK` remains
-deferred/unassigned pending a separate accepted policy.
+**P6-M4-T04 — Forecast/reorder API/UI** is complete in
+`89c5d722a0088e9fb930082bd423ebdb1adc455f`; its authorized Forecast/Reorder
+endpoints and `/app/analytics` view are available. The view remains advisory and
+does not auto-order. Milestone 6.4 is complete. Phase 6 remains IN PROGRESS;
+P6-M5-T01 is next. `STOCKOUT_RISK` remains deferred/unassigned pending a separate
+accepted policy.
 
 Current-state constraints that the next task must preserve:
 
@@ -369,7 +372,7 @@ Current-state constraints that the next task must preserve:
 - The root `.env.example` documents the active web/API loopback contract, redacted Docker-only `STOCKWISE_POSTGRES_*` placeholders, API-only `DATABASE_URL`, required runtime mode, session idle/absolute/touch values, and the required stable API-only Analytics cursor HMAC key. `apps/web` and `apps/api` retain separate strict Zod environment schemas; the API validates `DATABASE_URL` as a PostgreSQL URL and the web schema does not accept it.
 - Web/API configuration ownership, client/server exposure boundaries, local/test rules, and later-task deferrals are documented in `AGENTS.md`.
 - `.github/workflows/ci.yml` reproduces the frozen install, format-check, lint, typecheck, test, and build gates for pushes and pull requests with read-only repository permission and immutable action pins.
-- `apps/web` contains the Next.js App Router root shell, Tailwind/shadcn baseline, TanStack Query provider, strict environment boundary, same-origin health and `/api/v1` rewrites, authentication/onboarding, URL-owned `/app` context, Catalog, Inventory, branch/member, Supplier, Purchase Order/Receiving, POS, `/app/sales` Sales History/detail/browser-receipt/refund UI, and `/app/analytics` Sales/Category/Branch/Inventory views. Inventory analytics uses the API-produced facts/classification, role-aware navigation/cache identity, and opaque pagination; the browser does not recalculate thresholds. It has no Next.js business Route Handlers, persisted selection authority, VOID UI, or branch-price behavior. The browser receipt uses the existing Sale detail response and remains original-Sale-only; no separate receipt or refund-document endpoint exists.
+- `apps/web` contains the Next.js App Router root shell, Tailwind/shadcn baseline, TanStack Query provider, strict environment boundary, same-origin health and `/api/v1` rewrites, authentication/onboarding, URL-owned `/app` context, Catalog, Inventory, branch/member, Supplier, Purchase Order/Receiving, POS, `/app/sales` Sales History/detail/browser-receipt/refund UI, and `/app/analytics` Sales/Category/Branch/Inventory/Forecast/Reorder views. Inventory analytics uses the API-produced facts/classification, role-aware navigation/cache identity, and opaque pagination; forecast/reorder quantities and statuses also remain API-authoritative. It has no Next.js business Route Handlers, persisted selection authority, VOID UI, or branch-price behavior. The browser receipt uses the existing Sale detail response and remains original-Sale-only; no separate receipt or refund-document endpoint exists.
 - `OQ-002` is resolved by `ADR-012`: App Router under `src/app`, Server Components by default, justified Client Components only, deferred Route Groups, and Express-owned business REST APIs.
 - `OQ-003`–`OQ-011`, `OQ-016`, `OQ-021`, and `OQ-022` are resolved by
   `ADR-013`–`ADR-029`. `ADR-029` fixes Organization reporting timezone, canonical
@@ -381,8 +384,8 @@ Current-state constraints that the next task must preserve:
   `OQ-019` remains open beyond refund-owned immutable attribution/provenance; and
   `OQ-020` remains open beyond its narrow application-level limiter exceptions.
 - `OQ-013` is resolved by `ADR-025` as **DEFERRED FROM MVP**. Stock transfer remains broader/full future scope, but no transfer schema, API, UI, permission, lifecycle, ledger-source, or idempotency contract is implemented or frozen.
-- `apps/api` contains the Express app/server bootstrap, safe transport/errors, Prisma client, all accepted authentication endpoints, first onboarding, `GET /me/access-context`, branch lifecycle endpoints, invitation/member workflows, Catalog, Inventory, Supplier, Purchase Order, Receiving, Sales, and the Analytics period/scope/base-Sales/Category/Branch/Inventory repositories and services with authenticated Sales, Category, Branch, and Inventory HTTP endpoints. Metrics use set-based PostgreSQL statements and exact Decimal derivation. Sales includes bounded Organization VAT configuration, completed Sale/SaleItem/Payment snapshots and constraints, `SALE_CHECKOUT` hashes, tenant-safe negative `SALE` ledger provenance, atomic checkout, POS reads/checkout transport, branch-scoped history/detail reads with field-level cost permission, and immutable linked SaleRefund/SaleRefundItem/RefundPayment compensation with optional positive `SALE_REFUND_RETURN` stock/cost effects. Existing protected writes continue to derive the verified actor, re-evaluate centralized policy and tenant scope, and serialize their accepted invariants.
-- The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, the bounded refund workflow, and Sales/Category/Branch/Inventory Analytics HTTP/UI exposure are implemented. Inventory facts/classification and internal Forecasting V1/Reorder V1 runtimes remain deterministic and cost gated as applicable; forecast/reorder API/UI, AI, AWS resources, deployment, and release automation remain unimplemented.
+- `apps/api` contains the Express app/server bootstrap, safe transport/errors, Prisma client, all accepted authentication endpoints, first onboarding, `GET /me/access-context`, branch lifecycle endpoints, invitation/member workflows, Catalog, Inventory, Supplier, Purchase Order, Receiving, Sales, and the Analytics period/scope/base-Sales/Category/Branch/Inventory/Forecast/Reorder repositories and services with authenticated analytics endpoints. Metrics use set-based PostgreSQL statements and exact Decimal derivation. Sales includes bounded Organization VAT configuration, completed Sale/SaleItem/Payment snapshots and constraints, `SALE_CHECKOUT` hashes, tenant-safe negative `SALE` ledger provenance, atomic checkout, POS reads/checkout transport, branch-scoped history/detail reads with field-level cost permission, and immutable linked SaleRefund/SaleRefundItem/RefundPayment compensation with optional positive `SALE_REFUND_RETURN` stock/cost effects. Existing protected writes continue to derive the verified actor, re-evaluate centralized policy and tenant scope, and serialize their accepted invariants.
+- The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, the bounded refund workflow, and Sales/Category/Branch/Inventory/Forecast/Reorder Analytics HTTP/UI exposure are implemented. Forecasting V1 and Reorder V1 remain deterministic; forecast/reorder presentation uses server-authoritative values and statuses. AI, AWS resources, deployment, and release automation remain unimplemented.
 - Git metadata is present, but P1-M1-T05 did not create a commit or perform any remote action.
 
 ### Handoff prompt
@@ -390,15 +393,14 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P6-M4-T04 — Forecast/reorder API/UI
+Task: P6-M5-T01 — Synthetic data specification
 
-Read the current Source of Truth and implement only P6-M4-T04 forecast/reorder
-API/UI over the existing internal P6-M4-T02 Forecasting V1 and P6-M4-T03
-Reorder V1 runtimes. Follow `docs/API.md`, `docs/ANALYTICS.md`, `ADR-031`, and
-`ADR-032`; keep calculations and authorization server-authoritative. Do not
-change runtime policy or implement `STOCKOUT_RISK`, automatic purchase orders,
-Python/ML infrastructure, schema/persistence beyond an explicitly assigned
-contract, or scheduled work.
+Read the current Source of Truth and define only privacy-safe reproducible demo
+patterns for products, branches, history, seasonality, noise, and known expected
+patterns. The seed specification must contain no real personal or production
+data. Perform schema and expected-pattern review. Do not generate data, create a
+generator or seed script, choose an unaccepted dataset size, implement seasonality
+or noise logic, start P6-M5-T02, or begin Phase 7.
 
 Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not commit without separate authorization.
 ```
