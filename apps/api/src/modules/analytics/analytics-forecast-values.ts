@@ -1,6 +1,6 @@
 import { Temporal } from "@js-temporal/polyfill";
 
-import { Prisma } from "../../generated/prisma/client.ts";
+import { Prisma, type ProductUnit } from "../../generated/prisma/client.ts";
 import { localDateToUtcBoundary } from "./analytics-period.ts";
 
 const Decimal = Prisma.Decimal.clone({ precision: 80, rounding: 4 });
@@ -30,7 +30,7 @@ interface ForecastContext {
   organizationId: string;
   branchId: string;
   productId: string;
-  unit: string;
+  unit: ProductUnit;
   forecastVersion: typeof FORECAST_VERSION;
   generatedAt: string;
   sourceCutoff: string;
@@ -124,7 +124,7 @@ export function buildForecast(input: {
   organizationId: string;
   branchId: string;
   productId: string;
-  unit: string;
+  unit: ProductUnit;
   productStatus: "ACTIVE" | "INACTIVE";
   generatedAt: Date;
   sourceCutoff: Date;

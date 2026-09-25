@@ -1,4 +1,8 @@
-import { Prisma, type PrismaClient } from "../../generated/prisma/client.ts";
+import {
+  Prisma,
+  type PrismaClient,
+  type ProductUnit,
+} from "../../generated/prisma/client.ts";
 import type { AnalyticsScopeCandidate } from "./analytics-scope.ts";
 import { createPrismaAnalyticsScopeRepository } from "./analytics-scope-repository.ts";
 import {
@@ -11,7 +15,7 @@ import {
 interface ForecastAggregateRow {
   branchId: string;
   productId: string;
-  unit: string;
+  unit: ProductUnit;
   productStatus: "ACTIVE" | "INACTIVE";
   historyStartAt: Date | null;
   dayIndex: number;
@@ -32,6 +36,8 @@ export interface ForecastRepository {
     scope: AnalyticsScopeCandidate;
   }): Promise<ForecastRepositoryOutcome>;
 }
+
+type ForecastReadInput = Parameters<ForecastRepository["read"]>[0];
 
 function boundsSql(window: ForecastWindow): Prisma.Sql[] {
   return window.trainingDays.map(
@@ -58,26 +64,36 @@ export function createPrismaForecastRepository(
               : Prisma.sql`SELECT ${options.now()}::timestamptz AS "capturedAt"`,
           );
           const sourceCutoff = captured[0]!.capturedAt;
-          const resolved = await createPrismaAnalyticsScopeRepository(
-            tx,
-          ).resolve({
-            actorUserId: input.actorUserId,
-            analyticsKind: "forecast",
-            candidate: input.scope,
-            organizationId: input.organizationId,
-          });
-          if (resolved.kind !== "success") return resolved;
+          return readForecastInTransaction(tx, input, sourceCutoff);
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      );
+    },
+  };
+}
 
-          const window = createForecastWindow(
-            sourceCutoff,
-            resolved.reportingTimezone,
-          );
-          const branchIds = resolved.scope.branchIds.map(
-            (id) => Prisma.sql`${id}::uuid`,
-          );
-          // Sale existence is the completed-Sale fact in the current immutable model.
-          // Refunds, current stock, category, price and cost are intentionally absent.
-          const rows = await tx.$queryRaw<ForecastAggregateRow[]>(Prisma.sql`
+/** Reorder composes this read after capturing its own snapshot clock. */
+export async function readForecastInTransaction(
+  tx: Prisma.TransactionClient,
+  input: ForecastReadInput,
+  sourceCutoff: Date,
+  activeBranchOnly = false,
+): Promise<ForecastRepositoryOutcome> {
+  const resolved = await createPrismaAnalyticsScopeRepository(tx).resolve({
+    actorUserId: input.actorUserId,
+    analyticsKind: "forecast",
+    candidate: input.scope,
+    organizationId: input.organizationId,
+  });
+  if (resolved.kind !== "success") return resolved;
+
+  const window = createForecastWindow(sourceCutoff, resolved.reportingTimezone);
+  const branchIds = resolved.scope.branchIds.map(
+    (id) => Prisma.sql`${id}::uuid`,
+  );
+  // Sale existence is the completed-Sale fact in the current immutable model.
+  // Refunds, current stock, category, price and cost are intentionally absent.
+  const rows = await tx.$queryRaw<ForecastAggregateRow[]>(Prisma.sql`
           WITH day_bounds (day_index, start_inclusive, end_exclusive) AS (
             VALUES ${Prisma.join(boundsSql(window))}
           ), pairs AS (
@@ -87,6 +103,7 @@ export function createPrismaForecastRepository(
             CROSS JOIN products AS product
             WHERE branch.organization_id = ${input.organizationId}::uuid
               AND branch.id IN (${Prisma.join(branchIds)})
+              ${activeBranchOnly ? Prisma.sql`AND branch.status = 'ACTIVE'` : Prisma.empty}
               AND product.organization_id = ${input.organizationId}::uuid
               AND product.id = ${input.productId}::uuid
           )
@@ -121,38 +138,33 @@ export function createPrismaForecastRepository(
             pairs.product_status, history.first_movement_at, days.day_index
           ORDER BY pairs.branch_id, days.day_index
         `);
-          if (rows.length === 0) return { kind: "not_found" };
-          const byBranch = new Map<string, ForecastAggregateRow[]>();
-          for (const row of rows) {
-            const group = byBranch.get(row.branchId) ?? [];
-            group.push(row);
-            byBranch.set(row.branchId, group);
-          }
-          const forecasts = [...byBranch.values()].map((group) => {
-            if (
-              group.length !== 28 ||
-              group.some((row, index) => row.dayIndex !== index)
-            ) {
-              throw new Error("Forecast training buckets are incomplete.");
-            }
-            const first = group[0]!;
-            return buildForecast({
-              organizationId: input.organizationId,
-              branchId: first.branchId,
-              productId: first.productId,
-              unit: first.unit,
-              productStatus: first.productStatus,
-              generatedAt: sourceCutoff,
-              sourceCutoff,
-              historyStartAt: first.historyStartAt,
-              window,
-              training: group.map((row) => row.quantity),
-            });
-          });
-          return { kind: "success", forecasts };
-        },
-        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-      );
-    },
-  };
+  if (rows.length === 0) return { kind: "not_found" };
+  const byBranch = new Map<string, ForecastAggregateRow[]>();
+  for (const row of rows) {
+    const group = byBranch.get(row.branchId) ?? [];
+    group.push(row);
+    byBranch.set(row.branchId, group);
+  }
+  const forecasts = [...byBranch.values()].map((group) => {
+    if (
+      group.length !== 28 ||
+      group.some((row, index) => row.dayIndex !== index)
+    ) {
+      throw new Error("Forecast training buckets are incomplete.");
+    }
+    const first = group[0]!;
+    return buildForecast({
+      organizationId: input.organizationId,
+      branchId: first.branchId,
+      productId: first.productId,
+      unit: first.unit,
+      productStatus: first.productStatus,
+      generatedAt: sourceCutoff,
+      sourceCutoff,
+      historyStartAt: first.historyStartAt,
+      window,
+      training: group.map((row) => row.quantity),
+    });
+  });
+  return { kind: "success", forecasts };
 }

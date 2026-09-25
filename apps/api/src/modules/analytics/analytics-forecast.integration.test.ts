@@ -11,6 +11,8 @@ import { loadTestDatabaseEnvironment } from "../../test/database-environment.ts"
 import { createPrismaForecastRepository } from "./analytics-forecast-repository.ts";
 import { createForecastService } from "./analytics-forecast-service.ts";
 import { createForecastWindow } from "./analytics-forecast-values.ts";
+import { createPrismaReorderRepository } from "./analytics-reorder-repository.ts";
+import { createReorderService } from "./analytics-reorder-service.ts";
 
 const environment = loadTestDatabaseEnvironment();
 const prisma = createTestPrismaClient(environment);
@@ -21,7 +23,7 @@ const digest = (value: string) =>
 
 async function actor(
   organizationId: string,
-  role: "OWNER" | "BRANCH_MANAGER" | "INVENTORY_STAFF" | "CASHIER",
+  role: "OWNER" | "ADMIN" | "BRANCH_MANAGER" | "INVENTORY_STAFF" | "CASHIER",
   branchId?: string,
 ) {
   const user = await prisma.user.create({
@@ -75,6 +77,7 @@ async function movement(input: {
   actor: Awaited<ReturnType<typeof actor>>;
   occurredAt: Date;
   source?: string;
+  delta?: string;
 }) {
   return prisma.inventoryTransaction.create({
     data: {
@@ -84,7 +87,7 @@ async function movement(input: {
       actorUserId: input.actor.user.id,
       actorMembershipId: input.actor.membership.id,
       occurredAt: input.occurredAt,
-      delta: "1",
+      delta: input.delta ?? "1",
       source: input.source ?? "MANUAL_ADJUSTMENT",
       adjustmentReason: "FOUND",
       idempotencyKeyHash: digest(randomUUID()),
@@ -546,5 +549,317 @@ describe("Forecasting V1 with normalized PostgreSQL facts", () => {
         })
       ).kind,
     ).toBe("not_found");
+  });
+});
+
+describe("Reorder V1 in one forecast and inventory snapshot", () => {
+  beforeEach(async () => resetTestDatabase(environment));
+  afterAll(async () => {
+    await resetTestDatabase(environment);
+    await prisma.$disconnect();
+  });
+
+  function reorder(
+    input: {
+      actorUserId: string;
+      organizationId: string;
+      branchId: string;
+      productId: string;
+      leadTimeDays?: number;
+    },
+    afterSnapshotCaptured?: () => Promise<void>,
+  ) {
+    return createReorderService(
+      createPrismaReorderRepository(prisma, {
+        now: () => cutoff,
+        ...(afterSnapshotCaptured === undefined
+          ? {}
+          : { afterSnapshotCaptured }),
+      }),
+    ).read(input);
+  }
+
+  it("authorizes roles and scope before reporting unavailable inputs", async () => {
+    const f = await fixture();
+    const admin = await actor(f.org.id, "ADMIN");
+    const other = await fixture();
+    const request = {
+      organizationId: f.org.id,
+      branchId: f.branchA.id,
+      productId: f.product.id,
+      leadTimeDays: 0,
+    };
+    for (const allowed of [f.owner, admin, f.manager, f.staff]) {
+      expect(
+        await reorder({ ...request, actorUserId: allowed.user.id }),
+      ).toMatchObject({
+        kind: "success",
+        recommendation: { status: "UNAVAILABLE", reason: "INSUFFICIENT_DATA" },
+      });
+    }
+    expect(
+      (await reorder({ ...request, actorUserId: f.cashier.user.id })).kind,
+    ).toBe("forbidden");
+    expect(
+      (
+        await reorder({
+          ...request,
+          actorUserId: f.staff.user.id,
+          branchId: f.branchB.id,
+        })
+      ).kind,
+    ).toBe("forbidden");
+    expect(
+      (
+        await reorder({
+          ...request,
+          actorUserId: f.owner.user.id,
+          branchId: other.branchA.id,
+        })
+      ).kind,
+    ).toBe("forbidden");
+    expect(
+      (
+        await reorder({
+          ...request,
+          actorUserId: f.owner.user.id,
+          productId: other.product.id,
+        })
+      ).kind,
+    ).toBe("not_found");
+    await prisma.branch.update({
+      where: { id: f.branchA.id },
+      data: { status: "INACTIVE", deactivatedAt: cutoff },
+    });
+    expect(
+      (await reorder({ ...request, actorUserId: f.owner.user.id })).kind,
+    ).toBe("not_found");
+  });
+
+  it("uses an absent lazy balance as zero and applies lead time after forecast applicability", async () => {
+    const f = await fixture();
+    const base = {
+      organizationId: f.org.id,
+      branchId: f.branchA.id,
+      productId: f.product.id,
+      actorUserId: f.owner.user.id,
+    };
+    await movement({
+      ...base,
+      actor: f.owner,
+      occurredAt: new Date(window.trainingStartInclusive),
+    });
+    await movement({
+      ...base,
+      actor: f.owner,
+      occurredAt: new Date(window.trainingStartInclusive),
+      delta: "-1",
+    });
+    expect(await reorder({ ...base, leadTimeDays: 3 })).toMatchObject({
+      kind: "success",
+      recommendation: {
+        status: "AVAILABLE",
+        reason: null,
+        leadTimeDemand: "0.0000",
+        onHand: "0.0000",
+        rawNeed: "0.0000",
+        recommendedQuantity: "0.0000",
+        reorderVersion: "reorder-v1",
+        sourceCutoff: cutoff.toISOString(),
+      },
+    });
+    expect(
+      await reorder({ ...base, actorUserId: f.staff.user.id, leadTimeDays: 3 }),
+    ).toMatchObject({
+      kind: "success",
+      recommendation: { status: "AVAILABLE", recommendedQuantity: "0.0000" },
+    });
+    expect(await reorder(base)).toMatchObject({
+      kind: "success",
+      recommendation: { reason: "LEAD_TIME_REQUIRED" },
+    });
+    expect(await reorder({ ...base, leadTimeDays: 8 })).toMatchObject({
+      kind: "success",
+      recommendation: { reason: "UNSUPPORTED_LEAD_TIME" },
+    });
+    await prisma.product.update({
+      where: { id: f.product.id },
+      data: { status: "INACTIVE" },
+    });
+    expect(await reorder({ ...base, leadTimeDays: 8 })).toMatchObject({
+      kind: "success",
+      recommendation: { reason: "INACTIVE_PRODUCT" },
+    });
+  });
+
+  it("rejects ledger divergence and fractional stock in an integer unit", async () => {
+    const f = await fixture();
+    const base = {
+      organizationId: f.org.id,
+      branchId: f.branchA.id,
+      productId: f.product.id,
+      actorUserId: f.owner.user.id,
+      leadTimeDays: 1,
+    };
+    await movement({
+      ...base,
+      actor: f.owner,
+      occurredAt: new Date(window.trainingStartInclusive),
+    });
+    const balance = await prisma.inventoryBalance.create({
+      data: {
+        organizationId: f.org.id,
+        branchId: f.branchA.id,
+        productId: f.product.id,
+        quantity: "0",
+      },
+    });
+    expect(await reorder(base)).toMatchObject({
+      kind: "success",
+      recommendation: { reason: "INVENTORY_INTEGRITY_ERROR", onHand: null },
+    });
+    await prisma.inventoryBalance.update({
+      where: { id: balance.id },
+      data: { quantity: "1.5" },
+    });
+    expect(await reorder(base)).toMatchObject({
+      kind: "success",
+      recommendation: { reason: "INVENTORY_INTEGRITY_ERROR" },
+    });
+  });
+
+  it("sums rounded forecast days and rejects a Sale item missing its stock movement", async () => {
+    const f = await fixture();
+    const base = {
+      organizationId: f.org.id,
+      branchId: f.branchA.id,
+      productId: f.product.id,
+      actorUserId: f.owner.user.id,
+      leadTimeDays: 3,
+    };
+    await movement({
+      ...base,
+      actor: f.owner,
+      occurredAt: new Date(window.trainingStartInclusive),
+    });
+    const balance = await prisma.inventoryBalance.create({
+      data: {
+        organizationId: f.org.id,
+        branchId: f.branchA.id,
+        productId: f.product.id,
+        quantity: "1",
+      },
+    });
+    const completed = await sale({
+      organizationId: f.org.id,
+      organizationName: f.org.name,
+      branchId: f.branchA.id,
+      branchCode: f.branchA.code,
+      branchName: f.branchA.name,
+      productId: f.product.id,
+      productSku: f.product.sku,
+      productName: f.product.name,
+      productUnit: "EA",
+      actor: f.owner,
+      completedAt: new Date("2026-09-24T00:00:00Z"),
+      quantity: "1",
+    });
+    expect(await reorder(base)).toMatchObject({
+      kind: "success",
+      recommendation: { reason: "INVENTORY_INTEGRITY_ERROR" },
+    });
+    const item = await prisma.saleItem.findFirstOrThrow({
+      where: { saleId: completed.id },
+    });
+    await prisma.inventoryTransaction.create({
+      data: {
+        organizationId: f.org.id,
+        branchId: f.branchA.id,
+        productId: f.product.id,
+        actorUserId: f.owner.user.id,
+        actorMembershipId: f.owner.membership.id,
+        occurredAt: new Date("2026-09-24T00:00:00Z"),
+        delta: "-1",
+        source: "SALE",
+        saleItemId: item.id,
+      },
+    });
+    await prisma.inventoryBalance.update({
+      where: { id: balance.id },
+      data: { quantity: "0" },
+    });
+    expect(await reorder(base)).toMatchObject({
+      kind: "success",
+      recommendation: {
+        status: "AVAILABLE",
+        leadTimeDemand: "0.1071",
+        onHand: "0.0000",
+        rawNeed: "0.1071",
+        recommendedQuantity: "1.0000",
+      },
+    });
+  });
+
+  it("keeps current stock in the transaction snapshot when another transaction changes it", async () => {
+    const f = await fixture();
+    const base = {
+      organizationId: f.org.id,
+      branchId: f.branchA.id,
+      productId: f.product.id,
+      actorUserId: f.owner.user.id,
+      leadTimeDays: 1,
+    };
+    await movement({
+      ...base,
+      actor: f.owner,
+      occurredAt: new Date(window.trainingStartInclusive),
+    });
+    const balance = await prisma.inventoryBalance.create({
+      data: {
+        organizationId: f.org.id,
+        branchId: f.branchA.id,
+        productId: f.product.id,
+        quantity: "1",
+      },
+    });
+    const result = await reorder(base, async () => {
+      await prisma.$transaction(async (writer) => {
+        await writer.inventoryTransaction.create({
+          data: {
+            organizationId: f.org.id,
+            branchId: f.branchA.id,
+            productId: f.product.id,
+            actorUserId: f.owner.user.id,
+            actorMembershipId: f.owner.membership.id,
+            occurredAt: cutoff,
+            delta: "1",
+            source: "MANUAL_ADJUSTMENT",
+            adjustmentReason: "FOUND",
+            idempotencyKeyHash: digest(randomUUID()),
+            canonicalRequestHash: digest(randomUUID()),
+          },
+        });
+        await writer.inventoryBalance.update({
+          where: { id: balance.id },
+          data: { quantity: "2" },
+        });
+        await writer.product.update({
+          where: { id: f.product.id },
+          data: { status: "INACTIVE" },
+        });
+      });
+    });
+    expect(result).toMatchObject({
+      kind: "success",
+      recommendation: {
+        status: "AVAILABLE",
+        onHand: "1.0000",
+        sourceCutoff: cutoff.toISOString(),
+      },
+    });
+    expect(await read(base)).toMatchObject({
+      kind: "success",
+      forecasts: [{ status: "UNAVAILABLE", reason: "INACTIVE_PRODUCT" }],
+    });
   });
 });

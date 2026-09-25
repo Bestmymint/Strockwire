@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Prisma } from "../../generated/prisma/client.ts";
+import { Prisma, type ProductUnit } from "../../generated/prisma/client.ts";
 import {
   backtestForecast,
   buildForecast,
@@ -18,7 +18,7 @@ function forecast(
     training?: readonly Prisma.Decimal[];
     historyStartAt?: Date | null;
     productStatus?: "ACTIVE" | "INACTIVE";
-    unit?: string;
+    unit?: ProductUnit;
   } = {},
 ) {
   return buildForecast({

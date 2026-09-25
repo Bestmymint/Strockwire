@@ -6,6 +6,7 @@ import type {
   AnalyticsPeriodContext,
 } from "./analytics-period.ts";
 import { localDateToUtcBoundary } from "./analytics-period.ts";
+import { hasInventoryIntegrityError } from "./analytics-inventory-integrity.ts";
 import {
   classifyInventoryStock,
   type InventoryStockClassification,
@@ -137,13 +138,12 @@ export function buildInventoryDimension(input: {
     );
   }
   const onHand = new Decimal(first.onHand);
-  const ledger = new Decimal(first.ledgerQuantity);
-  const integralUnit = ["EA", "PACK", "BOX"].includes(first.productUnit);
-  const integrityError =
-    onHand.isNegative() ||
-    !onHand.eq(ledger) ||
-    first.invalidSourceCount > 0n ||
-    (integralUnit && !onHand.isInteger());
+  const integrityError = hasInventoryIntegrityError({
+    onHand,
+    ledgerQuantity: first.ledgerQuantity,
+    invalidSourceCount: first.invalidSourceCount,
+    unit: first.productUnit,
+  });
   const window = coverageWindow(input.period);
   const eligible =
     first.firstMovementAt !== null && first.firstMovementAt <= window.start;
