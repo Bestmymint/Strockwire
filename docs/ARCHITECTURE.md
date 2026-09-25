@@ -705,8 +705,9 @@ Implementation touching one of these areas must stop at its accepted boundary un
 Branch/Product classification. `ADR-031` closes `OQ-012` for Forecasting V1:
 on-demand normalized-table SQL/TypeScript in the existing analytics module,
 with no new schema/service. `ADR-032` separately accepts advisory Reorder V1
-policy, whose runtime remains pending. Forecast-derived stockout risk still
-needs a separate accepted policy.
+policy, implemented as an internal runtime by P6-M4-T03. Forecast-derived
+stockout risk still needs a separate accepted policy; P6-M4-T04 owns API/UI
+exposure for forecast and reorder.
 
 `ADR-029` resolves `OQ-011` and `OQ-016` with one configurable Organization IANA
 timezone, event-period attribution, canonical half-open periods, accepted Analytics V1

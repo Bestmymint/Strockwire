@@ -443,14 +443,14 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 ### UC-AN-002 — View forecast and reorder recommendation
 
 - **Status:** Forecasting V1's internal Branch/Product calculation is implemented
-  by P6-M4-T02 under `ADR-031`. The combined forecast/reorder user flow remains
-  blocked pending P6-M4-T03 runtime under accepted `ADR-032` and P6-M4-T04 API/UI.
-  Analytics time follows `ADR-029`, quantity follows `ADR-022`, and no-negative
-  stock follows `ADR-024`.
+  by P6-M4-T02 under `ADR-031`; internal advisory Reorder V1 is implemented by
+  P6-M4-T03 under `ADR-032`. The combined user flow remains pending P6-M4-T04
+  API/UI. Analytics time follows `ADR-029`, quantity follows `ADR-022`, and
+  no-negative stock follows `ADR-024`.
 - **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` within the accepted forecast/reorder scope
-- **Preconditions:** The actor has scope access; the caller supplies a bounded
-  lead-time planning input, and `ADR-032` runtime is implemented before a
-  recommendation is returned.
+- **Preconditions:** The actor has scope access and supplies a bounded lead-time
+  planning input. Internal recommendation logic follows `ADR-032`; user-facing
+  access awaits P6-M4-T04 API/UI.
 - **Trigger:** Actor opens forecast/replenishment view.
 - **Main flow:** Resolve scope/horizon; load accepted history/current/incoming data; calculate versioned forecast; apply deterministic reorder formula; return estimate, recommendation, inputs, data status, and limitations.
 - **Alternative flows:** New/insufficient Branch/Product history returns

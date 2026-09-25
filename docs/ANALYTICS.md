@@ -646,7 +646,7 @@ separately defines Forecasting V1; `ADR-032` later accepts Reorder V1 policy.
 
 ### M-107 Reorder recommendation
 
-**Status: Accepted policy by `ADR-032`; internal runtime remains P6-M4-T03 work.**
+**Status: Accepted by `ADR-032`; internal advisory `reorder-v1` runtime implemented by P6-M4-T03 in `977f33f0588fc42547a60fc6a17f28fea131cdc5`. API/UI exposure remains P6-M4-T04 work.**
 One advisory result applies to one authorized, active Branch/Product in its immutable
 Product base unit. It consumes the `ADR-031` forecast from the **same read
 snapshot**. No Organization/Product or mixed-unit quantity is produced.
@@ -732,12 +732,10 @@ result. These components explain the
 formula without generated prose; T04 must show the static excluded-pending-order
 limitation.
 
-Compute forecast, current balance/ledger reconciliation, and applicability in
-one read-only PostgreSQL `REPEATABLE READ` snapshot, with one server-captured
-`sourceCutoff`. The existing forecast repository opens its own transaction, so
-T03 must reuse its query/value primitives within a single transaction or make
-a narrow composability refactor; nesting its `read()` call does not satisfy
-this contract. Current on-hand is snapshot-current, not historical balance at
+P6-M4-T03 computes forecast, current balance/ledger reconciliation, and
+applicability in one read-only PostgreSQL `REPEATABLE READ` snapshot, with one
+server-captured `sourceCutoff`. It uses a narrow tx-bound forecast primitive
+without nesting the public forecast transaction. Current on-hand is snapshot-current, not historical balance at
 `sourceCutoff`. That cutoff is an event bound, not an exact MVCC timestamp,
 commit-visibility watermark, or multi-request snapshot token. Repeated requests may
 observe changed stock, Sales, status, or timezone. Reuse server-enforced
@@ -746,7 +744,7 @@ observe changed stock, Sales, status, or timezone. Reuse server-enforced
 no schema, persistence, scheduler, PO write, or API/UI; T04 owns transport and
 presentation. `STOCKOUT_RISK` remains outside this policy.
 
-T03 tests must cover exact Decimal formula and zero floor; just-below/equal/
+T03 runtime coverage includes exact Decimal formula and zero floor; just-below/equal/
 just-above on-hand demand; absent, negative, and ledger-divergent balance;
 zero and unavailable forecast; lead-time missing/zero/fractional/7/>7;
 integer ceiling at 0.0000/0.0001/1.0000/1.0001; fractional-unit precision;
@@ -816,9 +814,9 @@ PO quantity does not change these results, even when an `ORDERED` PO has an
   Products are excluded from these counts, including those with historical movements
   or a current projection row.
 - M-110 counts remain factual. `ADR-030` separately accepts page-current
-  Branch/Product low/normal/overstock coverage classification; stockout risk,
-  safety stock and reorder runtime follow `ADR-032`; stockout risk remains
-  blocked. A factual zero balance must not be
+  Branch/Product low/normal/overstock coverage classification; the internal
+  reorder runtime follows `ADR-032`. Stockout risk remains deferred pending a
+  separate policy. A factual zero balance must not be
   relabeled as forecast risk.
 
 ### P6-M3-T01 internal inventory result contract
@@ -1353,5 +1351,5 @@ Forecasting V1 by `ADR-031`. `ADR-030` accepts only fixed coverage-based
 `LOW_STOCK`/`NORMAL`/`OVERSTOCK` classification. Fast/slow,
 `STOCKOUT_RISK` and forecast-derived risk remain deferred/blocked until separate
 accepted decisions. `ADR-032` accepts Reorder V1's zero safety stock and
-replenishment policy; its runtime remains pending. This does not reopen
+replenishment policy; its internal runtime is implemented by P6-M4-T03. This does not reopen
 Analytics V1 metric or timezone semantics.
