@@ -21,6 +21,10 @@ import { createAnalyticsCategoryService } from "./analytics-category-service.ts"
 import { createAnalyticsContextEngine } from "./analytics-context.ts";
 import { createAnalyticsDimensionCursorCodec } from "./analytics-dimension-cursor.ts";
 import { createPrismaAnalyticsInventoryRepository } from "./analytics-inventory-repository.ts";
+import { createPrismaForecastRepository } from "./analytics-forecast-repository.ts";
+import { createForecastService } from "./analytics-forecast-service.ts";
+import { createPrismaReorderRepository } from "./analytics-reorder-repository.ts";
+import { createReorderService } from "./analytics-reorder-service.ts";
 import { createAnalyticsInventoryService } from "./analytics-inventory-service.ts";
 import { createAnalyticsRouter } from "./analytics-router.ts";
 import { createPrismaAnalyticsSalesRepository } from "./analytics-sales-repository.ts";
@@ -56,6 +60,8 @@ type Role =
   "OWNER" | "ADMIN" | "BRANCH_MANAGER" | "INVENTORY_STAFF" | "CASHIER";
 interface HttpBody {
   data: {
+    forecast: Record<string, unknown>;
+    recommendation: Record<string, unknown>;
     buckets: {
       grossSalesAmount: string;
       cost: { netCogsAmount: { value: string } };
@@ -290,6 +296,12 @@ describe("analytics HTTP API with PostgreSQL", () => {
             cursorCodec,
           ),
         }),
+        forecastService: createForecastService(
+          createPrismaForecastRepository(prisma, { now: () => analyticsNow }),
+        ),
+        reorderService: createReorderService(
+          createPrismaReorderRepository(prisma, { now: () => analyticsNow }),
+        ),
         salesService: createAnalyticsSalesService({
           contextEngine,
           repository: createPrismaAnalyticsSalesRepository(prisma),
@@ -918,5 +930,201 @@ describe("analytics HTTP API with PostgreSQL", () => {
       }),
     ]);
     expect(result.body.meta.nextCursor).toBeNull();
+  });
+
+  it("exposes scoped forecast and advisory reorder without cost or purchasing fields", async () => {
+    const fixture = await setup();
+    await start();
+    const pair = `branchId=${fixture.branches[0]!.id}&productId=${fixture.product.id}`;
+    for (const user of [
+      fixture.owner,
+      fixture.admin,
+      fixture.manager,
+      fixture.inventory,
+    ]) {
+      const result = await get(
+        fixture.organization.id,
+        `forecast?${pair}`,
+        user.cookie,
+      );
+      expect(result.status).toBe(200);
+      expect(result.body.data.forecast).toMatchObject({
+        forecastVersion: "forecast-sale-mean-28d-v1",
+        status: "UNAVAILABLE",
+        reason: "INSUFFICIENT_DATA",
+        sourceCutoff: now.toISOString(),
+        days: [],
+        horizonTotal: null,
+      });
+      expect(JSON.stringify(result.body)).not.toMatch(
+        /cost|supplier|purchaseOrder|unitPrice/i,
+      );
+    }
+    for (const user of [fixture.cashier, fixture.outsider]) {
+      expect(
+        (await get(fixture.organization.id, `forecast?${pair}`, user.cookie))
+          .status,
+      ).toBe(403);
+      expect(
+        (
+          await get(
+            fixture.organization.id,
+            `reorder-recommendations?${pair}&leadTimeDays=2`,
+            user.cookie,
+          )
+        ).status,
+      ).toBe(403);
+    }
+    const outsideBranch = `branchId=${fixture.branches[1]!.id}&productId=${fixture.product.id}`;
+    expect(
+      (
+        await get(
+          fixture.organization.id,
+          `forecast?${outsideBranch}`,
+          fixture.manager.cookie,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await get(
+          fixture.organization.id,
+          `reorder-recommendations?${outsideBranch}&leadTimeDays=2`,
+          fixture.inventory.cookie,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (await get(fixture.organization.id, `forecast?${pair}`, undefined))
+        .status,
+    ).toBe(401);
+    expect(
+      (
+        await get(
+          fixture.organization.id,
+          `forecast?branchId=bad&productId=${fixture.product.id}`,
+          fixture.owner.cookie,
+        )
+      ).status,
+    ).toBe(400);
+
+    const membership = await prisma.organizationMembership.findFirstOrThrow({
+      where: {
+        organizationId: fixture.organization.id,
+        userId: fixture.owner.id,
+      },
+    });
+    await prisma.inventoryTransaction.create({
+      data: {
+        organizationId: fixture.organization.id,
+        branchId: fixture.branches[0]!.id,
+        productId: fixture.product.id,
+        actorUserId: fixture.owner.id,
+        actorMembershipId: membership.id,
+        occurredAt: new Date("2026-08-20T00:00:00.000Z"),
+        delta: "10",
+        source: "MANUAL_ADJUSTMENT",
+        adjustmentReason: "FOUND",
+        idempotencyKeyHash: createHmac("sha256", signingKey)
+          .update(randomUUID())
+          .digest("hex"),
+        canonicalRequestHash: createHmac("sha256", signingKey)
+          .update(randomUUID())
+          .digest("hex"),
+      },
+    });
+    const forecast = await get(
+      fixture.organization.id,
+      `forecast?${pair}`,
+      fixture.owner.cookie,
+    );
+    expect(forecast.status).toBe(200);
+    expect(forecast.body.data.forecast).toMatchObject({
+      status: "AVAILABLE",
+      reason: null,
+      horizonTotal: "0.2499",
+      unit: "EA",
+    });
+    expect(forecast.body.data.forecast.days).toHaveLength(7);
+    const missing = await get(
+      fixture.organization.id,
+      `reorder-recommendations?${pair}`,
+      fixture.owner.cookie,
+    );
+    expect(missing.body.data.recommendation).toMatchObject({
+      status: "UNAVAILABLE",
+      reason: "LEAD_TIME_REQUIRED",
+    });
+    for (const leadTimeDays of ["-1", "0", "1.5", "8"]) {
+      const invalid = await get(
+        fixture.organization.id,
+        `reorder-recommendations?${pair}&leadTimeDays=${leadTimeDays}`,
+        fixture.owner.cookie,
+      );
+      expect(invalid.status).toBe(200);
+      expect(invalid.body.data.recommendation).toMatchObject({
+        status: "UNAVAILABLE",
+        reason: "UNSUPPORTED_LEAD_TIME",
+      });
+    }
+    const reorder = await get(
+      fixture.organization.id,
+      `reorder-recommendations?${pair}&leadTimeDays=2`,
+      fixture.owner.cookie,
+    );
+    expect(reorder.body.data.recommendation).toMatchObject({
+      reorderVersion: "reorder-v1",
+      forecastVersion: "forecast-sale-mean-28d-v1",
+      status: "AVAILABLE",
+      leadTimeDemand: "0.0714",
+      onHand: "9.0000",
+      rawNeed: "0.0000",
+      recommendedQuantity: "0.0000",
+      sourceCutoff: now.toISOString(),
+    });
+    expect(JSON.stringify(reorder.body)).not.toMatch(
+      /cost|supplier|purchaseOrder|unitPrice/i,
+    );
+    await prisma.inventoryBalance.update({
+      where: {
+        branchId_productId: {
+          branchId: fixture.branches[0]!.id,
+          productId: fixture.product.id,
+        },
+      },
+      data: { quantity: "8" },
+    });
+    const integrity = await get(
+      fixture.organization.id,
+      `reorder-recommendations?${pair}&leadTimeDays=2`,
+      fixture.owner.cookie,
+    );
+    expect(integrity.body.data.recommendation).toMatchObject({
+      status: "UNAVAILABLE",
+      reason: "INVENTORY_INTEGRITY_ERROR",
+      recommendedQuantity: null,
+    });
+    await prisma.product.update({
+      where: { id: fixture.product.id },
+      data: { status: "INACTIVE" },
+    });
+    expect(
+      (
+        await get(
+          fixture.organization.id,
+          `forecast?${pair}`,
+          fixture.owner.cookie,
+        )
+      ).body.data.forecast.reason,
+    ).toBe("INACTIVE_PRODUCT");
+    expect(
+      (
+        await get(
+          fixture.organization.id,
+          `reorder-recommendations?${pair}&leadTimeDays=2`,
+          fixture.owner.cookie,
+        )
+      ).body.data.recommendation.reason,
+    ).toBe("INACTIVE_PRODUCT");
   });
 });

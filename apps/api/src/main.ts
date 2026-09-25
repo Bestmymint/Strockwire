@@ -9,6 +9,10 @@ import { createAnalyticsCategoryService } from "./modules/analytics/analytics-ca
 import { createAnalyticsContextEngine } from "./modules/analytics/analytics-context.ts";
 import { createAnalyticsDimensionCursorCodec } from "./modules/analytics/analytics-dimension-cursor.ts";
 import { createPrismaAnalyticsInventoryRepository } from "./modules/analytics/analytics-inventory-repository.ts";
+import { createPrismaForecastRepository } from "./modules/analytics/analytics-forecast-repository.ts";
+import { createForecastService } from "./modules/analytics/analytics-forecast-service.ts";
+import { createPrismaReorderRepository } from "./modules/analytics/analytics-reorder-repository.ts";
+import { createReorderService } from "./modules/analytics/analytics-reorder-service.ts";
 import { createAnalyticsInventoryService } from "./modules/analytics/analytics-inventory-service.ts";
 import { createAnalyticsRouter } from "./modules/analytics/analytics-router.ts";
 import { createPrismaAnalyticsSalesRepository } from "./modules/analytics/analytics-sales-repository.ts";
@@ -274,6 +278,12 @@ async function main(): Promise<void> {
       branchService: analyticsBranchService,
       categoryService: analyticsCategoryService,
       inventoryService: analyticsInventoryService,
+      forecastService: createForecastService(
+        createPrismaForecastRepository(prisma),
+      ),
+      reorderService: createReorderService(
+        createPrismaReorderRepository(prisma),
+      ),
       salesService: analyticsSalesService,
     }),
   );

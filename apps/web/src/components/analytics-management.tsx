@@ -26,12 +26,14 @@ import {
 } from "@/analytics-api-client";
 import { resolveApplicationContext } from "@/application-context";
 import { InventoryAnalyticsView } from "@/components/inventory-analytics-view";
+import { ForecastReorderView } from "@/components/forecast-reorder-view";
 import {
   fetchAccessContext,
   type AccessibleOrganization,
 } from "@/branch-api-client";
 
-type View = "sales" | "categories" | "branches" | "inventory";
+type View =
+  "sales" | "categories" | "branches" | "inventory" | "forecast-reorder";
 
 function initialPeriod(): AnalyticsPeriod {
   const today = new Date();
@@ -449,7 +451,7 @@ export function AnalyticsManagement() {
     );
   return (
     <AnalyticsContent
-      key={`${resolved.organization.id}:${resolved.organization.role}`}
+      key={`${resolved.organization.id}:${resolved.organization.role}:${resolved.organization.branches.map((branch) => branch.id).join(",")}`}
       organization={resolved.organization}
     />
   );
@@ -503,7 +505,7 @@ function AnalyticsContent({
   const salesQuery = useQuery({
     queryKey: [...queryRoot, "sales"],
     queryFn: ({ signal }) => getAnalyticsSales(request, signal),
-    enabled: enabled && view !== "inventory",
+    enabled: enabled && view !== "inventory" && view !== "forecast-reorder",
   });
   const categoryQuery = useInfiniteQuery({
     queryKey: [...queryRoot, "categories", categoryReset],
@@ -533,6 +535,7 @@ function AnalyticsContent({
         Analytics for {organization.name}.
       </p>
       <form
+        hidden={view === "forecast-reorder"}
         className="rounded-lg border bg-card p-4 sm:p-5"
         onSubmit={(event) => {
           event.preventDefault();
@@ -622,8 +625,14 @@ function AnalyticsContent({
       </form>
       <nav aria-label="Analytics views" className="flex flex-wrap gap-2">
         {(organization.role === "INVENTORY_STAFF"
-          ? (["inventory"] as const)
-          : (["sales", "categories", "branches", "inventory"] as const)
+          ? (["inventory", "forecast-reorder"] as const)
+          : ([
+              "sales",
+              "categories",
+              "branches",
+              "inventory",
+              "forecast-reorder",
+            ] as const)
         ).map((item) => (
           <button
             key={item}
@@ -638,11 +647,15 @@ function AnalyticsContent({
                 ? "Categories"
                 : item === "branches"
                   ? "Branches"
-                  : "Inventory"}
+                  : item === "inventory"
+                    ? "Inventory"
+                    : "Forecast / Reorder"}
           </button>
         ))}
       </nav>
-      {view === "inventory" ? (
+      {view === "forecast-reorder" ? (
+        <ForecastReorderView organization={organization} />
+      ) : view === "inventory" ? (
         <InventoryAnalyticsView
           request={request}
           enabled={enabled}

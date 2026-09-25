@@ -9,6 +9,8 @@ import type { AnalyticsPeriodError } from "./analytics-period.ts";
 import { AnalyticsPeriodError as PeriodError } from "./analytics-period.ts";
 import type { AnalyticsSalesService } from "./analytics-sales-service.ts";
 import type { createAnalyticsInventoryService } from "./analytics-inventory-service.ts";
+import type { createForecastService } from "./analytics-forecast-service.ts";
+import type { createReorderService } from "./analytics-reorder-service.ts";
 import type { InventoryDimension } from "./analytics-inventory-values.ts";
 import type { InventoryBranchSummary } from "./analytics-inventory-repository.ts";
 import type { AnalyticsSalesMetricBucket } from "./analytics-sales-values.ts";
@@ -47,6 +49,19 @@ const dimensionQuerySchema = z.discriminatedUnion("scope", [
     ...pageFields,
   }),
 ]);
+const pairQuerySchema = z
+  .object({
+    branchId: z.string().uuid(),
+    productId: z.string().uuid(),
+  })
+  .strict();
+const reorderQuerySchema = pairQuerySchema.extend({
+  leadTimeDays: z
+    .string()
+    .regex(/^-?\d+(?:\.\d+)?$/)
+    .transform(Number)
+    .optional(),
+});
 
 function requestId(response: Response): string {
   const value = response.getHeader("X-Request-Id");
@@ -236,6 +251,8 @@ export function createAnalyticsRouter(input: {
   branchService: ReturnType<typeof createAnalyticsBranchService>;
   categoryService: ReturnType<typeof createAnalyticsCategoryService>;
   inventoryService: ReturnType<typeof createAnalyticsInventoryService>;
+  forecastService: ReturnType<typeof createForecastService>;
+  reorderService: ReturnType<typeof createReorderService>;
   salesService: AnalyticsSalesService;
 }): Router {
   const router = Router();
@@ -441,5 +458,85 @@ export function createAnalyticsRouter(input: {
       }
     },
   );
+  for (const kind of ["forecast", "reorder-recommendations"] as const) {
+    router.get(
+      `/organizations/:organizationId/analytics/${kind}`,
+      input.authenticationMiddleware,
+      async (request, response, next) => {
+        const actor = getTrustedAuthenticationContext(response);
+        if (actor === null)
+          return error(
+            response,
+            401,
+            "AUTHENTICATION_REQUIRED",
+            "Authentication is required.",
+          );
+        const params = paramsSchema.safeParse(request.params);
+        const query = (
+          kind === "forecast" ? pairQuerySchema : reorderQuerySchema
+        ).safeParse(request.query);
+        if (!params.success || !query.success)
+          return error(
+            response,
+            400,
+            "VALIDATION_ERROR",
+            "The request is invalid.",
+          );
+        const pair = {
+          actorUserId: actor.actor.id,
+          organizationId: params.data.organizationId,
+          branchId: query.data.branchId,
+          productId: query.data.productId,
+        };
+        try {
+          const outcome =
+            kind === "forecast"
+              ? await input.forecastService.read({
+                  actorUserId: pair.actorUserId,
+                  organizationId: pair.organizationId,
+                  productId: pair.productId,
+                  scope: { kind: "branch", branchId: pair.branchId },
+                })
+              : await input.reorderService.read({
+                  ...pair,
+                  ...("leadTimeDays" in query.data &&
+                  typeof query.data.leadTimeDays === "number"
+                    ? { leadTimeDays: query.data.leadTimeDays }
+                    : {}),
+                });
+          if (outcome.kind === "forbidden")
+            return sendAnalyticsFailure(response, "forbidden");
+          if (outcome.kind === "invalid_reporting_timezone")
+            return sendAnalyticsFailure(response, "invalid_reporting_timezone");
+          if (outcome.kind === "not_found")
+            return error(
+              response,
+              404,
+              "NOT_FOUND",
+              "The resource was not found.",
+            );
+          if (kind === "forecast") {
+            if (!("forecasts" in outcome))
+              throw new Error("Forecast outcome mismatch.");
+            const forecast = outcome.forecasts[0];
+            if (forecast === undefined || outcome.forecasts.length !== 1)
+              throw new Error("Expected one Branch/Product forecast.");
+            return response.status(200).json({
+              data: { forecast },
+              meta: { requestId: requestId(response) },
+            });
+          }
+          if (!("recommendation" in outcome))
+            throw new Error("Reorder outcome mismatch.");
+          return response.status(200).json({
+            data: { recommendation: outcome.recommendation },
+            meta: { requestId: requestId(response) },
+          });
+        } catch (cause: unknown) {
+          next(cause);
+        }
+      },
+    );
+  }
   return router;
 }

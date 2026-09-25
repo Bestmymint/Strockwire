@@ -350,6 +350,9 @@ describe("analytics management", () => {
       await screen.findByRole("region", { name: "Inventory analytics" }),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Sales" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Forecast / Reorder" }),
+    ).toBeTruthy();
     expect(screen.getByText("Out of stock")).toBeTruthy();
     expect(screen.getAllByText(/LOW STOCK/).length).toBeGreaterThan(0);
     expect(screen.getByText("6.00 days")).toBeTruthy();
@@ -588,6 +591,9 @@ describe("analytics management", () => {
       "Analytics is not available for your current access.",
     );
     expect(requests.some((url) => url.includes("/analytics/"))).toBe(false);
+    expect(
+      screen.queryByRole("button", { name: "Forecast / Reorder" }),
+    ).toBeNull();
   });
 
   it("shows cost coverage and incomplete-cost reasons only when API supplies cost", async () => {

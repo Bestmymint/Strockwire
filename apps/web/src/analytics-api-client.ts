@@ -155,6 +155,65 @@ const inventoryResponseSchema = z.object({
     nextCursor: z.string().nullable(),
   }),
 });
+const forecastDaySchema = z.object({
+  localDate: z.string(),
+  bucketStartInclusive: z.string(),
+  bucketEndExclusive: z.string(),
+  quantity: z.string(),
+});
+const forecastSchema = z.object({
+  organizationId: z.string(),
+  branchId: z.string(),
+  productId: z.string(),
+  unit: z.string(),
+  forecastVersion: z.literal("forecast-sale-mean-28d-v1"),
+  generatedAt: z.string(),
+  sourceCutoff: z.string(),
+  reportingTimezone: z.string(),
+  trainingStartInclusive: z.string(),
+  trainingEndExclusive: z.string(),
+  historyStartAt: z.string().nullable(),
+  horizonDays: z.literal(7),
+  horizonStartInclusive: z.string(),
+  horizonEndExclusive: z.string(),
+  status: z.enum(["AVAILABLE", "UNAVAILABLE"]),
+  reason: z.enum(["INSUFFICIENT_DATA", "INACTIVE_PRODUCT"]).nullable(),
+  days: z.array(forecastDaySchema),
+  horizonTotal: z.string().nullable(),
+});
+const reorderSchema = z.object({
+  branchId: z.string(),
+  productId: z.string(),
+  unit: z.string(),
+  forecastVersion: z.literal("forecast-sale-mean-28d-v1"),
+  reorderVersion: z.literal("reorder-v1"),
+  sourceCutoff: z.string(),
+  leadTimeDays: z.number().nullable(),
+  dailyForecast: z.array(forecastDaySchema).nullable(),
+  onHand: z.string().nullable(),
+  status: z.enum(["AVAILABLE", "UNAVAILABLE"]),
+  reason: z
+    .enum([
+      "INACTIVE_PRODUCT",
+      "INSUFFICIENT_DATA",
+      "LEAD_TIME_REQUIRED",
+      "UNSUPPORTED_LEAD_TIME",
+      "INVENTORY_INTEGRITY_ERROR",
+      "QUANTITY_OUT_OF_RANGE",
+    ])
+    .nullable(),
+  leadTimeDemand: z.string().nullable(),
+  rawNeed: z.string().nullable(),
+  recommendedQuantity: z.string().nullable(),
+});
+const forecastResponseSchema = z.object({
+  data: z.object({ forecast: forecastSchema }),
+});
+const reorderResponseSchema = z.object({
+  data: z.object({ recommendation: reorderSchema }),
+});
+export type AnalyticsForecast = z.infer<typeof forecastSchema>;
+export type AnalyticsReorder = z.infer<typeof reorderSchema>;
 
 export type AnalyticsSalesResponse = z.infer<typeof salesResponseSchema>;
 export type AnalyticsCategoryResponse = z.infer<typeof categoryResponseSchema>;
@@ -206,22 +265,17 @@ function queryString(input: AnalyticsRequest, cursor?: string): string {
 }
 
 async function request<T>(
-  dimension: "sales" | "categories" | "branches" | "inventory",
-  input: AnalyticsRequest,
+  path: string,
   schema: z.ZodType<T>,
   signal?: AbortSignal,
-  cursor?: string,
 ): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(
-      `/api/v1/organizations/${input.organizationId}/analytics/${dimension}?${queryString(input, cursor)}`,
-      {
-        credentials: "same-origin",
-        headers: { accept: "application/json" },
-        ...(signal ? { signal } : {}),
-      },
-    );
+    response = await fetch(path, {
+      credentials: "same-origin",
+      headers: { accept: "application/json" },
+      ...(signal ? { signal } : {}),
+    });
   } catch (error) {
     if (signal?.aborted) throw error;
     throw new AnalyticsApiError("unavailable");
@@ -258,26 +312,79 @@ export function getAnalyticsSales(
   input: AnalyticsRequest,
   signal?: AbortSignal,
 ) {
-  return request("sales", input, salesResponseSchema, signal);
+  return request(
+    `/api/v1/organizations/${input.organizationId}/analytics/sales?${queryString(input)}`,
+    salesResponseSchema,
+    signal,
+  );
 }
 export function getAnalyticsCategories(
   input: AnalyticsRequest,
   signal?: AbortSignal,
   cursor?: string,
 ) {
-  return request("categories", input, categoryResponseSchema, signal, cursor);
+  return request(
+    `/api/v1/organizations/${input.organizationId}/analytics/categories?${queryString(input, cursor)}`,
+    categoryResponseSchema,
+    signal,
+  );
 }
 export function getAnalyticsBranches(
   input: AnalyticsRequest,
   signal?: AbortSignal,
   cursor?: string,
 ) {
-  return request("branches", input, branchResponseSchema, signal, cursor);
+  return request(
+    `/api/v1/organizations/${input.organizationId}/analytics/branches?${queryString(input, cursor)}`,
+    branchResponseSchema,
+    signal,
+  );
 }
 export function getAnalyticsInventory(
   input: AnalyticsRequest,
   signal?: AbortSignal,
   cursor?: string,
 ) {
-  return request("inventory", input, inventoryResponseSchema, signal, cursor);
+  return request(
+    `/api/v1/organizations/${input.organizationId}/analytics/inventory?${queryString(input, cursor)}`,
+    inventoryResponseSchema,
+    signal,
+  );
+}
+
+export function getAnalyticsForecast(
+  input: { organizationId: string; branchId: string; productId: string },
+  signal?: AbortSignal,
+) {
+  const query = new URLSearchParams({
+    branchId: input.branchId,
+    productId: input.productId,
+  });
+  return request(
+    `/api/v1/organizations/${input.organizationId}/analytics/forecast?${query}`,
+    forecastResponseSchema,
+    signal,
+  );
+}
+
+export function getAnalyticsReorder(
+  input: {
+    organizationId: string;
+    branchId: string;
+    productId: string;
+    leadTimeDays: number | null;
+  },
+  signal?: AbortSignal,
+) {
+  const query = new URLSearchParams({
+    branchId: input.branchId,
+    productId: input.productId,
+  });
+  if (input.leadTimeDays !== null)
+    query.set("leadTimeDays", String(input.leadTimeDays));
+  return request(
+    `/api/v1/organizations/${input.organizationId}/analytics/reorder-recommendations?${query}`,
+    reorderResponseSchema,
+    signal,
+  );
 }

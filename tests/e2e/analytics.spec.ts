@@ -3,6 +3,7 @@ import AxeBuilder from "@axe-core/playwright";
 
 import {
   E2E_BRANCH_ID,
+  E2E_INVENTORY_PRODUCT_ID,
   E2E_CASHIER_EMAIL,
   E2E_ORGANIZATION_ID,
   E2E_OWNER_EMAIL,
@@ -90,6 +91,50 @@ test("cashier sees no analytics navigation and direct link remains inaccessible"
   await expect(
     page.getByRole("alert").filter({ hasText: "Analytics is not available" }),
   ).toContainText("Analytics is not available");
+});
+
+test("owner selects a Branch/Product and lead time for deterministic advisory status", async ({
+  page,
+}) => {
+  await signIn(page, E2E_OWNER_EMAIL);
+  await page.getByRole("button", { name: "Catalog E2E Store" }).click();
+  await page.getByRole("link", { name: "Analytics" }).click();
+  await page.getByRole("button", { name: "Forecast / Reorder" }).click();
+  await expect(
+    page.getByRole("region", { name: "Forecast and reorder", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "Branch", exact: true })
+    .selectOption(E2E_BRANCH_ID);
+  await page
+    .getByRole("combobox", { name: "Product", exact: true })
+    .selectOption(E2E_INVENTORY_PRODUCT_ID);
+  await page.getByLabel("Planning lead time").selectOption("2");
+  await expect(page.getByLabel("Forecast result")).toContainText(
+    "forecast-sale-mean-28d-v1",
+  );
+  await expect(page.getByLabel("Reorder result")).toContainText("reorder-v1");
+  await expect(
+    page.getByLabel("Forecast and reorder limitations"),
+  ).toContainText("never places an order");
+  await page.screenshot({
+    path: "test-results/analytics-forecast-reorder.png",
+    fullPage: true,
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
+test("cashier cannot call forecast or reorder API directly", async ({
+  page,
+}) => {
+  await signIn(page, E2E_CASHIER_EMAIL);
+  for (const path of ["forecast", "reorder-recommendations"]) {
+    const leadTime = path === "forecast" ? "" : "&leadTimeDays=2";
+    const response = await page.request.get(
+      `/api/v1/organizations/${E2E_ORGANIZATION_ID}/analytics/${path}?branchId=${E2E_BRANCH_ID}&productId=${E2E_INVENTORY_PRODUCT_ID}${leadTime}`,
+    );
+    expect(response.status()).toBe(403);
+  }
 });
 
 test("owner reads scoped inventory availability, movement, and classification", async ({
