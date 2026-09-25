@@ -273,7 +273,8 @@ Partial/over/short receipt, multiple receipt events, receiving without a PO, sup
 - Provide sales totals, units, transaction counts, average order value, category performance, branch performance, trends, and movement indicators.
 - Provide stock coverage and the fixed V1 Branch/Product `LOW_STOCK`/`NORMAL`/
   `OVERSTOCK` coverage classification under `ADR-030`. Forecast-derived
-  `STOCKOUT_RISK` and replenishment guidance require later accepted definitions.
+  `STOCKOUT_RISK` requires a later accepted definition; `ADR-032` accepts advisory
+  Reorder V1 policy, with runtime still pending P6-M4-T03.
 - Calculate forecasting in the application using TypeScript and SQL. No Python service is used now.
 - Retain reproducible metric inputs or snapshots needed for reports and experiments.
 - Compare forecast results with actual values using accepted evaluation metrics.
@@ -281,8 +282,9 @@ Partial/over/short receipt, multiple receipt events, receiving without a PO, sup
 `OQ-011`/`OQ-016` are resolved by `ADR-029`. `docs/ANALYTICS.md` is the only place
 where accepted formulas, null semantics, period boundaries, or explicit deferrals may
 be changed. `ADR-030` accepts only the fixed coverage classification; `ADR-031`
-resolves `OQ-012` for Forecasting V1. Stockout risk, safety stock, and reorder
-still require separate accepted policies before implementation.
+resolves `OQ-012` for Forecasting V1. `ADR-032` accepts Reorder V1's zero
+safety-stock and other replenishment rules; its runtime remains pending.
+Stockout risk still requires a separate accepted policy.
 
 ### 10.7 Scheduled AI summaries
 

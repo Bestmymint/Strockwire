@@ -572,7 +572,8 @@ Required logical attributes:
 - Stable identifier
 - Name
 - Contact details appropriate to the accepted product scope
-- No lead time in P4-M1-T02; it remains deferred until forecasting/reorder rules are accepted
+- No persisted lead time; `ADR-032` uses an explicit non-persisted caller
+  planning input for Reorder V1
 - Status
 - Created/updated timestamps
 

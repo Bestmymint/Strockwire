@@ -2091,6 +2091,64 @@ accepted replenishment policy before implementing those calculations; risk
 classification needs a separate decision. Future seasonal or other models need
 new identifiers and measured comparisons. T01 adds documentation only.
 
+## ADR-032 — Fix advisory Reorder V1 policy
+
+- **Date:** 2026-09-25
+- **Status:** Accepted
+- **Type:** Replenishment policy decision
+
+### Context and decision
+
+P6-M4-T03 requires a separate policy before runtime. `ADR-031` supplies an
+observed-sale forecast, not lead time or a purchasing quantity. Supplier has no
+lead-time field. PO `expectedDate` is optional and estimated, and receiving is
+all-at-once rather than partial. `docs/ANALYTICS.md` M-107 owns the exact formula,
+unavailable semantics, and output.
+
+- Produce one advisory Branch/Product result in the Product base unit. The
+  authorized caller supplies a non-persisted whole `leadTimeDays` in 1–7
+  Organization-local forecast days; missing or unsupported values make the
+  recommendation unavailable. Use the accepted forecast's four-place daily
+  serialized daily quantities for those days. Longer horizons are unavailable rather than
+  extrapolated beyond `ADR-031`'s seven days.
+- Use current reconciled `InventoryBalance.quantity`, treating an absent lazy
+  row as zero. Negative or ledger-divergent stock is unavailable. Fix safety
+  stock and accepted incoming to zero. Reuse M-102's inventory integrity
+  predicate. An `ORDERED` PO, including one with an
+  optional expected date, is not confirmed to arrive in the window; other PO
+  states cannot supply outstanding stock. Disclose with a static policy
+  limitation that pending orders are excluded; no PO query is needed.
+- Compute `rawNeed = max(0, leadTimeDemand + safetyStock - onHand -
+  acceptedIncoming)` with exact Decimal arithmetic. Round up only at the
+  orderable-unit boundary: whole units for `EA`/`PACK`/`BOX`; already four-place
+  raw need is unchanged for the other accepted Product units. No MOQ, order multiple, purchase-unit
+  conversion, or Supplier selection is inferred. Check both raw and rounded
+  quantity against `DECIMAL(18,4)`; overflow is unavailable.
+- Propagate unavailable forecast reasons; zero available forecast remains zero.
+  Inactive Product is unavailable, while inactive Branch and inaccessible pairs
+  are excluded by existing server scope. Reuse `FORECAST_REORDER_VIEW` without
+  `SALES_COST_VIEW`. Read forecast, on-hand/integrity, and applicability in one
+  read-only `REPEATABLE READ` snapshot with one server event cutoff. The
+  existing forecast repository must be composed within that transaction,
+  without nesting its current `read()` transaction. The version is `reorder-v1`.
+- Return status/reason, identity/unit/versions, cutoff, lead time,
+  forecast demand, on-hand, raw need, and rounded quantity. The two fixed
+  zero inputs come from the versioned policy rather than duplicate result fields.
+  These values suffice to explain the result. T03 is internal only. T04 owns API/UI.
+  Reorder never creates or changes a PO, reserves stock, sends an order, or
+  classifies `STOCKOUT_RISK`.
+
+### Consequences and deferrals
+
+This is a baseline planning scenario, not a supplier delivery promise. It may
+understate demand because Forecasting V1 does not correct stockout-censored
+Sales or cover the current partial day. It may overstate new purchasing need
+when an outstanding order arrives. Nonzero safety stock, confirmed arrival
+semantics, longer forecast horizons, supplier lead-time master data, MOQ/pack
+conversion, supplier choice, and automated ordering need separate accepted
+rules and evidence. No schema, migration, dependency, persistence, or
+configuration is required for this policy gate; T03 runtime is still pending.
+
 ## 2. Explicitly superseded planning directions
 
 The current ADRs supersede these earlier, unimplemented ideas:

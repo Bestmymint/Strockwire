@@ -444,18 +444,19 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 - **Status:** Forecasting V1's internal Branch/Product calculation is implemented
   by P6-M4-T02 under `ADR-031`. The combined forecast/reorder user flow remains
-  blocked pending the separate P6-M4-T03 replenishment policy and P6-M4-T04 API/UI.
+  blocked pending P6-M4-T03 runtime under accepted `ADR-032` and P6-M4-T04 API/UI.
   Analytics time follows `ADR-029`, quantity follows `ADR-022`, and no-negative
   stock follows `ADR-024`.
 - **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` within the accepted forecast/reorder scope
-- **Preconditions:** The actor has scope access; reorder inputs and policy are
-  separately accepted and implemented before a recommendation is returned.
+- **Preconditions:** The actor has scope access; the caller supplies a bounded
+  lead-time planning input, and `ADR-032` runtime is implemented before a
+  recommendation is returned.
 - **Trigger:** Actor opens forecast/replenishment view.
 - **Main flow:** Resolve scope/horizon; load accepted history/current/incoming data; calculate versioned forecast; apply deterministic reorder formula; return estimate, recommendation, inputs, data status, and limitations.
 - **Alternative flows:** New/insufficient Branch/Product history returns
   `INSUFFICIENT_DATA`; inactive Product returns `INACTIVE_PRODUCT`; eligible
-  all-zero history yields zero forecast. Reorder unavailable behavior and any
-  product/category aggregation await separate decisions.
+  all-zero history yields zero forecast. Reorder unavailable behavior follows
+  `ADR-032`; product/category aggregation remains outside V1.
 - **Error cases:** Missing/incomplete data; invalid horizon; inactive product; unavailable lead time; negative stock; stale forecast; calculation failure.
 - **Business rules:** OpenRouter does not produce values. Recommendation does not automatically create a purchase order. Model/version and uncertainty/data status are visible.
 - **Authorization:** `OWNER`/`ADMIN` may access organization-wide forecast/reorder results; `BRANCH_MANAGER`/`INVENTORY_STAFF` are limited to assigned branches; `CASHIER` has no access. Cost-sensitive inputs are filtered by permission.

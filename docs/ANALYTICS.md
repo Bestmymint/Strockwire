@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1 Source of Truth; `OQ-011`/`OQ-016` resolved by `ADR-029`, `OQ-012` resolved for Forecasting V1 by `ADR-031` |
+| Status | Architecture Freeze v1 Source of Truth; `OQ-011`/`OQ-016` resolved by `ADR-029`, `OQ-012` resolved for Forecasting V1 by `ADR-031`, Reorder V1 policy accepted by `ADR-032` |
 | Compute stack | PostgreSQL SQL + TypeScript |
 | AI boundary | OpenRouter summarizes supplied aggregates only |
 | Baseline | Architecture Freeze v1 |
@@ -14,9 +14,10 @@ This is the only authoritative document for analytics terminology, formulas, per
 
 `ADR-029` resolves the Analytics V1 metric and reporting-time contract in `OQ-011`
 and `OQ-016`. `ADR-030` accepts fixed V1 coverage-based stock classification.
-`ADR-031` resolves `OQ-012` for Forecasting V1 only. Stockout risk, safety stock,
-lead-time/reorder policy, and other deferred classifications require their own later
-accepted decisions; job timing and provider behavior remain `OQ-017` and `OQ-018`.
+`ADR-031` resolves `OQ-012` for Forecasting V1 only. `ADR-032` accepts
+Reorder V1's zero safety stock and bounded caller lead time. Stockout risk and
+other deferred classifications require later accepted decisions; job timing
+and provider behavior remain `OQ-017` and `OQ-018`.
 
 ## 2. Definition status
 
@@ -640,39 +641,137 @@ reconstruction is claimed. `INVENTORY_ANALYTICS_VIEW` governs access;
 `SALES_COST_VIEW` is not required, and classification never exposes cost/value
 fields by itself. P6-M3-T03 owns HTTP/API/UI exposure. This fixed threshold
 decision requires no schema, migration, or configuration storage. `ADR-031`
-separately defines Forecasting V1; `STOCKOUT_RISK`, safety stock, and reorder
-remain undecided.
+separately defines Forecasting V1; `ADR-032` later accepts Reorder V1 policy.
+`STOCKOUT_RISK` remains undecided.
 
 ### M-107 Reorder recommendation
 
-Proposed formula shape:
+**Status: Accepted policy by `ADR-032`; internal runtime remains P6-M4-T03 work.**
+One advisory result applies to one authorized, active Branch/Product in its immutable
+Product base unit. It consumes the `ADR-031` forecast from the **same read
+snapshot**. No Organization/Product or mixed-unit quantity is produced.
+
+The caller explicitly supplies `leadTimeDays` as a planning assumption: a whole
+number from 1 through 7 Organization-local forecast days, beginning with the
+forecast's first local day. It is not derived from Supplier or PO history and is
+not persisted. Missing lead time returns `UNAVAILABLE/LEAD_TIME_REQUIRED`;
+zero, fractional, negative, and greater-than-seven inputs return
+`UNAVAILABLE/UNSUPPORTED_LEAD_TIME`. The seven-day limit avoids claiming a
+validated forecast beyond the accepted horizon. At a non-midnight cutoff, the
+current partial local day is outside both training and lead-time demand; the
+recommendation does not cover demand before the first forecast day.
+
+For an available forecast, sum the `quantity` strings from its first
+`leadTimeDays` serialized daily outputs using exact Decimal arithmetic:
+`leadTimeDemand = sum(forecast.days[0 ... leadTimeDays - 1].quantity)`, with no
+intermediate rounding. Forecasting V1 repeats one rounded four-place daily
+expectation, so this equals that displayed daily value times `leadTimeDays`;
+never recalculate from its unrounded 28-day mean. `safetyStock = 0.0000`:
+current data supports no
+service-level or demand-variance rule. This baseline does not protect against
+forecast error, demand variability, or stockout-censored Sales.
+
+`onHand` is the current `InventoryBalance.quantity` for the pair; an absent
+lazy balance is exactly zero. Reuse M-102's same-snapshot inventory integrity
+predicate, including negative or ledger-divergent balance, invalid ledger
+source, and fractional on-hand for an integer-only unit. An integrity error
+returns `UNAVAILABLE/INVENTORY_INTEGRITY_ERROR`; never turn it into extra demand.
+`acceptedIncoming = 0.0000` for V1. Only `ORDERED` POs are outstanding under
+`ADR-026`, and one all-at-once receipt changes them to `RECEIVED`; there is no
+partial outstanding quantity. An `ORDERED` PO's optional `expectedDate` is an
+estimate, not a confirmed arrival within this window. `DRAFT`, `RECEIVED`, and
+`CANCELLED` do not count either. A static policy limitation must say pending
+orders are excluded; it does not claim whether any exist and requires no PO read.
+
+The resulting formula is:
 
 ```text
-RecommendedOrderQuantity = max(
-  0,
-  ForecastDemandDuringLeadTime
-  + SafetyStock
-  - OnHand
-  - ConfirmedIncoming
-)
+projectedAvailable = onHand + acceptedIncoming = onHand
+rawNeed = max(0, leadTimeDemand - onHand)
+recommendedQuantity = CEILING(rawNeed)                 for EA, PACK, BOX
+recommendedQuantity = rawNeed                          for KG, G, L, ML, M, CM
 ```
 
-Potential rounding:
+The raw-need line is the V1 simplification of
+`max(0, leadTimeDemand + 0.0000 - (onHand + 0.0000))`; no component pipeline
+is needed. `rawNeed` is an exact non-negative four-place Decimal before order-unit rounding.
+The recommendation never rounds below it; zero demand follows the same formula and
+may produce zero. Fractional-unit recommendations need no further rounding and use at most four places,
+consistent with `ADR-022`. No purchase unit, pack conversion, MOQ, order
+multiple, preferred Supplier, or Supplier selection exists in the current
+contract; none is inferred or added. Check both `rawNeed` and the rounded
+`recommendedQuantity` against the non-negative `DECIMAL(18,4)` maximum
+`99999999999999.9999`; either exceeding it yields
+`UNAVAILABLE/QUANTITY_OUT_OF_RANGE` before serialization. In particular,
+whole-unit ceiling can overflow even when `rawNeed` is in range.
 
-```text
-Round up to purchasing unit/case size after the raw quantity is computed.
-```
+An unavailable forecast propagates `INSUFFICIENT_DATA` or `INACTIVE_PRODUCT`
+without substituting zero demand. After authorization and scope resolution,
+reason precedence is the forecast's unavailable reason (`INACTIVE_PRODUCT`
+before `INSUFFICIENT_DATA`), missing/unsupported lead time, inventory
+integrity, then quantity overflow. This permits skipping the stock read when
+an earlier reason suffices. Inactive Branch and inaccessible pairs are outside authorized
+scope and use existing safe scope errors, not a recommendation reason. On
+available data with missing lead time, the result stays unavailable. V1 status
+is `AVAILABLE` or `UNAVAILABLE`; other reasons are `LEAD_TIME_REQUIRED`,
+`UNSUPPORTED_LEAD_TIME`, `INVENTORY_INTEGRITY_ERROR`, and
+`QUANTITY_OUT_OF_RANGE`. Invalid caller input still receives boundary
+validation at any future HTTP route owned by T04.
 
-- Status: **Blocked** pending a separate P6-M4-T03 replenishment decision;
-  `ADR-031` supplies a seven-day forecast but no lead-time demand policy.
-  Quantity representation is accepted by `ADR-022`; Purchase Order lifecycle
-  follows `ADR-026`, but expected-arrival/confirmed-incoming semantics are not set.
-- `ForecastDemandDuringLeadTime` is an unresolved input, not a conversion of
-  the seven-day observed-sale forecast to any supplier lead time.
-- Must decide lead-time source, safety-stock formula, whether/when an `ORDERED`
-  PO counts as incoming, order multiples, minimum order quantity, and
-  unavailable-data behavior.
-- Output is a recommendation, not an automatic purchase order.
+The minimal internal result carries Branch/Product IDs, unit,
+`forecastVersion`, `reorderVersion: "reorder-v1"`, forecast `sourceCutoff`,
+status/reason, nullable `leadTimeDays`, `dailyForecast`, `leadTimeDemand`,
+`onHand`, `rawNeed`, and `recommendedQuantity`. The two fixed zero policy
+inputs are defined by `reorder-v1` and need no per-result fields. Identity,
+unit, versions, cutoff, status/reason, and a supplied lead time remain visible
+when unavailable. `dailyForecast` appears
+only for an available forecast; `onHand` appears only after integrity passes;
+`leadTimeDemand`, `rawNeed`, and `recommendedQuantity` are null whenever
+unavailable. Forecast interval metadata remains available from the forecast
+result. These components explain the
+formula without generated prose; T04 must show the static excluded-pending-order
+limitation.
+
+Compute forecast, current balance/ledger reconciliation, and applicability in
+one read-only PostgreSQL `REPEATABLE READ` snapshot, with one server-captured
+`sourceCutoff`. The existing forecast repository opens its own transaction, so
+T03 must reuse its query/value primitives within a single transaction or make
+a narrow composability refactor; nesting its `read()` call does not satisfy
+this contract. Current on-hand is snapshot-current, not historical balance at
+`sourceCutoff`. That cutoff is an event bound, not an exact MVCC timestamp,
+commit-visibility watermark, or multi-request snapshot token. Repeated requests may
+observe changed stock, Sales, status, or timezone. Reuse server-enforced
+`FORECAST_REORDER_VIEW` at active Branch scope; quantity-only output needs no
+`SALES_COST_VIEW`. No PO read is needed when incoming is fixed zero. T03 adds
+no schema, persistence, scheduler, PO write, or API/UI; T04 owns transport and
+presentation. `STOCKOUT_RISK` remains outside this policy.
+
+T03 tests must cover exact Decimal formula and zero floor; just-below/equal/
+just-above on-hand demand; absent, negative, and ledger-divergent balance;
+zero and unavailable forecast; lead-time missing/zero/fractional/7/>7;
+integer ceiling at 0.0000/0.0001/1.0000/1.0001; fractional-unit precision;
+raw and post-ceiling overflow; inactive Product/Branch; authorized and denied
+scope without `SALES_COST_VIEW`; same-snapshot current reads; no PO read; and
+no purchasing mutation. No reorder accuracy metric or T04 E2E/UI test is introduced.
+
+Small boundary examples (all quantities in one Product base unit, safety stock
+and accepted incoming zero):
+
+| Daily forecast | Lead days | On-hand | Unit/state | Raw need | Result |
+| --- | ---: | ---: | --- | ---: | --- |
+| `1.5000` | 2 | `4.0000` | `EA` | `0.0000` | `0` |
+| `1.5000` | 2 | `3.0000` | `EA` | `0.0000` | `0` |
+| `1.5000` | 2 | `2.9999` | `EA` | `0.0001` | `1` |
+| `1.5000` | 2 | `2.9999` | `KG` | `0.0001` | `0.0001` |
+| `0.0000` | 2 | `0.0000` | `EA` | `0.0000` | `0` |
+| unavailable | 2 | `0.0000` | insufficient history | null | `UNAVAILABLE/INSUFFICIENT_DATA` |
+| `1.5000` | missing, 0, or 8 | `0.0000` | `EA` | null | `UNAVAILABLE/LEAD_TIME_REQUIRED` if missing; otherwise `UNAVAILABLE/UNSUPPORTED_LEAD_TIME` |
+| `1.5000` | 2 | negative/divergent | `EA` | null | `UNAVAILABLE/INVENTORY_INTEGRITY_ERROR` |
+| unavailable | 2 | any | inactive Product | null | `UNAVAILABLE/INACTIVE_PRODUCT` |
+
+An inactive Branch is outside authorized scope, not a numeric example. Pending
+PO quantity does not change these results, even when an `ORDERED` PO has an
+`expectedDate`; the excluded-incoming limitation must accompany the guidance.
 
 ### M-108 Current on-hand and movement summary
 
@@ -718,7 +817,8 @@ Round up to purchasing unit/case size after the raw quantity is computed.
   or a current projection row.
 - M-110 counts remain factual. `ADR-030` separately accepts page-current
   Branch/Product low/normal/overstock coverage classification; stockout risk,
-  safety stock, and reorder remain blocked. A factual zero balance must not be
+  safety stock and reorder runtime follow `ADR-032`; stockout risk remains
+  blocked. A factual zero balance must not be
   relabeled as forecast risk.
 
 ### P6-M3-T01 internal inventory result contract
@@ -809,7 +909,8 @@ PostgreSQL aggregation. It adds no per-Product/Branch/bucket query, index, migra
 warehouse, materialized view, or rollup by default. `ADR-030` separately accepts
 fixed low/normal/overstock coverage classification on these factual outputs;
 `ADR-031` separately defines the forecast. Fast/slow, stockout risk,
-forecast-derived risk, and reorder still require later accepted definitions.
+forecast-derived risk still requires a later accepted definition; reorder
+runtime follows `ADR-032`.
 
 ## 9. Query authority, authorization, and performance
 
@@ -1250,6 +1351,7 @@ Canonical Open Questions are in `BUILD_SPEC.md`:
 `OQ-011` and `OQ-016` are resolved by `ADR-029`; `OQ-012` is resolved for
 Forecasting V1 by `ADR-031`. `ADR-030` accepts only fixed coverage-based
 `LOW_STOCK`/`NORMAL`/`OVERSTOCK` classification. Fast/slow,
-`STOCKOUT_RISK`, forecast-derived risk, safety stock, and reorder remain
-deferred/blocked until separate accepted decisions. This does not reopen
+`STOCKOUT_RISK` and forecast-derived risk remain deferred/blocked until separate
+accepted decisions. `ADR-032` accepts Reorder V1's zero safety stock and
+replenishment policy; its runtime remains pending. This does not reopen
 Analytics V1 metric or timezone semantics.
