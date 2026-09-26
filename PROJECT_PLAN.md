@@ -4,8 +4,8 @@
 | --- | --- |
 | Project | StockWise |
 | Plan baseline | Architecture Freeze v1 |
-| Repository state | Implemented and verified through P6-M4-T04; P6-M5-T01 is next and not started |
-| Last updated | 2026-09-25 |
+| Repository state | Implemented and verified through P6-M5-T01 specification; P6-M5-T02 is next and not started |
+| Last updated | 2026-09-27 |
 
 ## 1. Plan rules
 
@@ -198,9 +198,10 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 ## Phase 6 — Analytics and forecasting
 
-Phase 6 remains IN PROGRESS. Milestone 6.4 is complete, including P6-M4-T01
-through T04. P6-M5-T01 — Synthetic data specification is the next task;
-P6-M5-T01 and P6-M5-T02 remain unchecked.
+Phase 6 remains IN PROGRESS. Milestones 6.1–6.4 are complete. Milestone 6.5
+is IN PROGRESS: P6-M5-T01 — Synthetic data specification is complete, and
+P6-M5-T02 — Generate and validate demo dataset is NEXT / NOT STARTED. T02 is
+the final remaining planned task in Phase 6.
 
 ### Milestone 6.1 — Definitions and period engine
 
@@ -246,7 +247,7 @@ accessible table rather than relying on chart coordinates.
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
-| [ ] **P6-M5-T01 — Synthetic data specification** | Define privacy-safe reproducible demo patterns | Products/branches/history, seasonality, noise, known expected patterns | Analytics definitions | Seed spec contains no real personal/production data | Schema/expected-pattern review |
+| [x] **P6-M5-T01 — Synthetic data specification** | Define privacy-safe reproducible demo patterns | Products/branches/history, seasonality, noise, known expected patterns | Analytics definitions | Seed spec contains no real personal/production data | Schema/expected-pattern review passed; specification closure passed and committed in `e8f0c71ff189280f3ca3f63f18b4b841b79b08c1` (`docs: define synthetic demo data specification`) |
 | [ ] **P6-M5-T02 — Generate and validate demo dataset** | Enable yearly/seasonal demos and experiments | Deterministic generator/seed using accepted lifecycle, documented size | T01, stable schema | Reproducible data; balances/history valid | Seed repeatability, reconciliation, analytics known-result tests |
 
 ## Phase 7 — Scheduled AI insights
@@ -360,9 +361,10 @@ recommendation** is complete: `ADR-032` accepts its policy and internal advisory
 **P6-M4-T04 — Forecast/reorder API/UI** is complete in
 `89c5d722a0088e9fb930082bd423ebdb1adc455f`; its authorized Forecast/Reorder
 endpoints and `/app/analytics` view are available. The view remains advisory and
-does not auto-order. Milestone 6.4 is complete. Phase 6 remains IN PROGRESS;
-P6-M5-T01 is next. `STOCKOUT_RISK` remains deferred/unassigned pending a separate
-accepted policy.
+does not auto-order. Milestones 6.1–6.4 are complete; Milestone 6.5 is IN
+PROGRESS. P6-M5-T01 is complete and P6-M5-T02 is NEXT / NOT STARTED, the final
+remaining planned Phase 6 task. Phase 6 remains IN PROGRESS. `STOCKOUT_RISK`
+remains deferred/unassigned pending a separate accepted policy.
 
 Current-state constraints that the next task must preserve:
 
@@ -393,14 +395,14 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P6-M5-T01 — Synthetic data specification
+Task: P6-M5-T02 — Generate and validate demo dataset
 
-Read the current Source of Truth and define only privacy-safe reproducible demo
-patterns for products, branches, history, seasonality, noise, and known expected
-patterns. The seed specification must contain no real personal or production
-data. Perform schema and expected-pattern review. Do not generate data, create a
-generator or seed script, choose an unaccepted dataset size, implement seasonality
-or noise logic, start P6-M5-T02, or begin Phase 7.
+Read the current Source of Truth and implement only the deterministic generator/
+seed for the accepted `stockwise-demo-v1` contract in `docs/ANALYTICS.md`. Use
+the accepted lifecycle and documented size. Validate repeatability, balance and
+history reconciliation, and analytics known results. Preserve the fixed clock,
+privacy, rerun, `_demo` safety, and one-transaction requirements. Do not begin
+Phase 7 or change the accepted specification without separate authorization.
 
 Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not commit without separate authorization.
 ```
