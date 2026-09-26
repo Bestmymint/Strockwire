@@ -1354,3 +1354,291 @@ Forecasting V1 by `ADR-031`. `ADR-030` accepts only fixed coverage-based
 accepted decisions. `ADR-032` accepts Reorder V1's zero safety stock and
 replenishment policy; its internal runtime is implemented by P6-M4-T03. This does not reopen
 Analytics V1 metric or timezone semantics.
+
+## 20. P6-M5-T01 synthetic demo data specification
+
+`stockwise-demo-v1` is the single P6-M5 demo fixture specification. P6-M5-T01
+freezes it; P6-M5-T02 will implement and validate it. It is application history
+for demonstrations and later time-ordered experiments, not a claim about real
+retail demand. `analytics-v1`, `stock-risk-v1`, `forecast-sale-mean-28d-v1`,
+and `reorder-v1` retain their definitions above.
+
+### Reproducibility, calendar, and privacy
+
+- Fixed seed text: `stockwise-demo-v1|20260926`. Reference cutoff: local
+  `2026-09-26 00:00:00` in the one Organization's `Asia/Bangkok` reporting
+  timezone (`2026-09-25T17:00:00.000Z`). Sale days are the 633 complete local
+  dates `[2025-01-01, 2026-09-26)`. This includes one complete calendar year
+  (2025), December seasonality, weekly/day patterns, and enough history for
+  four rolling forecast origins. This is fixed-calendar history, not a rolling
+  last-365-day fixture. Query 2025 and 2026 separately: the interactive API
+  rejects spans over 366 local days, and 2026 is partial at the reference cutoff.
+- Generate UTC event instants from these local dates with the existing IANA
+  period rules; never use machine locale or wall-clock `now`. This fixture uses
+  `Asia/Bangkok` without a DST transition; application IANA/DST rules remain
+  unchanged. Derive each persisted UUID as UUIDv5 (RFC 4122) of its UTF-8
+  logical key in DNS namespace `6ba7b810-9dad-11d1-80b4-00c04fd430c8`.
+  Keys use literal `|` separators and exact ASCII casing, with no normalization:
+  `stockwise-demo-v1|20260926|<kind>|<natural-key>`. The singular lowercase
+  `<kind>` names the persisted entity; natural-key components are ordered from
+  parent to child, using the exact `DEMO-` codes, lower-case fictional email,
+  and `YYYY-MM-DD` local date. Examples: `organization|DEMO-ORGANIZATION`,
+  `branch|DEMO-A`, `user|demo-owner@example.invalid`,
+  `purchase-order|DEMO-A|2025-01-01`, `sale|DEMO-A|2025-01-01`,
+  `sale-item|DEMO-A|2025-01-01|DEMO-STABLE`, and
+  `inventory-transaction|sale|DEMO-A|2025-01-01|DEMO-STABLE` (each prefixed
+  by the common version/seed text). The remaining fixture UUID keys are:
+  `category|<category-code>`, `supplier|DEMO-SUPPLIER`, `product|<SKU>`,
+  `membership|DEMO-ORGANIZATION|<email>`,
+  `purchase-receipt|<branch>|<receipt-date>`,
+  `purchase-order-item|<branch>|<receipt-date>|<SKU>`,
+  `purchase-receipt-item|<branch>|<receipt-date>|<SKU>`,
+  `payment|<branch>|<sale-date>`, `inventory-balance|<branch>|<SKU>`,
+  `inventory-cost-state|<branch>|<SKU>`,
+  `refund|DEMO-A|2026-09-21|2026-09-20`,
+  `refund-item|DEMO-A|2026-09-21|2026-09-20|DEMO-WEIGHT`, and
+  `refund-payment|DEMO-A|2026-09-21|2026-09-20`.
+  Receipt and refund movement keys are
+  `inventory-transaction|receipt|<branch>|<receipt-date>|<SKU>` and
+  `inventory-transaction|refund|DEMO-A|2026-09-21|2026-09-20|DEMO-WEIGHT`;
+  the two adjustments use
+  `inventory-transaction|adjustment|DEMO-A|2026-07-15|FOUND|DEMO-STABLE`
+  and the analogous `2026-07-16|DAMAGE` key. No random ID or ordinal is needed.
+  Create rows in the stated date and key order.
+  References retain the existing `PO-`, `RCPT-`, `SALE-`, and `REFUND-` UUID
+  shapes. Deterministic keys and event times, rather than database insertion
+  order, determine history and expected results. Bootstrap Organization,
+  Branches, users, onboarding/memberships, catalog, and Supplier at local
+  2024-12-30 10:00; explicitly set persisted creation/update, transition,
+  payment-confirmation, completion, and movement timestamps instead of relying
+  on database defaults. Matching receipt, Sale, and refund ledger movements use
+  their source event instant. Composite-key onboarding and Branch assignments
+  do not need generated UUIDs.
+- Every name, SKU, code, and email is an invented `DEMO-` template; user emails
+  use `@example.invalid`. Use no customer/persona records, real contacts,
+  production identifiers, scraped data, or production transaction samples.
+  T02 requires a process-supplied `DEMO_USER_PASSWORD` satisfying the accepted
+  15-128-code-point password rule, used only on the guarded `_demo` target;
+  it is development-only, must not be a real user's password, and must never
+  be printed or stored in plaintext. Hash with the accepted randomized
+  Argon2id configuration. The hash bytes/salt are excluded from the logical
+  fingerprint; reruns verify the supplied password against each stored hash
+  but do not rehash or rotate credentials.
+
+### Topology and daily facts
+
+One active Organization, `DEMO-ORGANIZATION`, has active Branches `DEMO-A` and
+`DEMO-B`, two active flat Categories (`DEMO-STAPLES`, `DEMO-MATERIALS`), one active
+Supplier (`DEMO-SUPPLIER`, with no contact details), and these six Products.
+The Supplier gives every PO/Receipt valid provenance; it adds no MOQ, order
+multiple, market behavior, or input to advisory Reorder V1.
+Names and SKUs use the listed fictional labels; each Product has its listed
+immutable base unit, THB VAT-inclusive base price, and receipt actual unit cost.
+Category `-` means a null category, not a persisted Uncategorized Category.
+
+| SKU / name | Category | Unit | Price | Cost | Branch/Product Sale quantity per local day | Current Product status |
+| --- | --- | --- | ---: | ---: | --- | --- |
+| `DEMO-STABLE` / Demo Standard Item | DEMO-STAPLES | EA | 20.0000 | 10.0000 | A: 2; B: 1 | ACTIVE |
+| `DEMO-WEEKLY` / Demo Weekend Item | DEMO-MATERIALS | EA | 30.0000 | 15.0000 | A: weekly, December, and noise rule below; B: none | ACTIVE |
+| `DEMO-WEIGHT` / Demo Measured Item | DEMO-MATERIALS | KG | 100.0000 | 40.0000 | A: 0.5000; B: none | ACTIVE |
+| `DEMO-SPARSE` / Demo Sparse Item | - | EA | 12.0000 | 6.0000 | A: 1 when zero-based day index from 2025-01-01 is divisible by 7; B: none | ACTIVE |
+| `DEMO-NEW` / Demo New Item | DEMO-MATERIALS | EA | 25.0000 | 12.0000 | A: 1 on 2026-09-12 through 2026-09-25 only | ACTIVE |
+| `DEMO-ARCHIVED` / Demo Archived Item | DEMO-MATERIALS | EA | 15.0000 | 7.0000 | None; deactivate after its first receipt | INACTIVE |
+
+For `DEMO-WEEKLY` at A, the pre-noise daily quantity is 1 on Monday-Friday or 3
+on Saturday-Sunday, plus 2 on every December date. Read the first four SHA-256
+digest bytes as an unsigned big-endian integer for the UTF-8 text
+`stockwise-demo-v1|20260926|DEMO-A|DEMO-WEEKLY|YYYY-MM-DD`; noise is that integer
+modulo 3, minus 1. The sale quantity is `max(0, preNoise + noise)` EA. This gives
+bounded `-1/0/+1` deterministic noise and no negative or fractional EA sale.
+All other daily quantities above are exact and noiseless. A zero quantity omits a
+SaleItem; it is never stored as a zero-quantity line. The weekly/December pattern
+is synthetic truth for charts and experiments, not a Forecasting V1 feature.
+
+Create exactly one completed Sale per Branch per sale day, at local 12:00, with
+that Branch's positive daily Product lines. `DEMO-STABLE` is always positive
+in both Branches, so no zero-item/zero-value Sale is needed. Thus 633 days
+times 2 Branches makes 1,266 Sales and Payments; A may have multiple lines,
+B has one. The SaleItem count is derived: 1,899 STABLE/WEIGHT base lines,
+484 positive WEEKLY days under the hash rule, 91 A/SPARSE days, and 14 NEW
+days, totaling 2,488 (ARCHIVED and B/SPARSE have no SaleItem). Use one CASH
+Payment matching the Sale total, exact tender, no customer data, and no transfer
+reference. A's checkout actor is the assigned CASHIER and B's is the OWNER.
+Configure Organization Sales VAT as `REGISTERED` at `7.000000` percent, use
+server-authoritative Product prices and the accepted VAT-inclusive document and
+line-allocation rules. Only B's 2026-09-10 Sale has an OWNER-authorized
+`AMOUNT` discount of THB `5.00` with fictional reason `Demo adjustment`.
+All other Sales have no discount. Sale existence means completion; persist each
+item snapshot and matching negative `SALE` movement in one consistent write.
+
+### Stock and exceptional events
+
+- On the first sale date and each subsequent local month start through
+  2026-09-01, create one `DRAFT -> ORDERED -> RECEIVED` PO/Receipt per Branch
+  (42 pairs). Create each PO on the previous local date at 10:00 and order
+  it at 10:01; set `orderDate` to that PO creation date and `expectedDate`
+  to null. Receive at local 08:00, before that day's Sale. A's monthly PO
+  includes STABLE, WEEKLY, WEIGHT, and SPARSE; B's includes STABLE. Add
+  ARCHIVED to A's first PO and
+  SPARSE to B's first PO. A separate A PO is created/ordered on 2026-09-11
+  at local 10:00/10:01 with that `orderDate` and null `expectedDate`, then
+  received on 2026-09-12 at 08:00; it receives 15
+  NEW units before its first Sale. The 21 month starts times two Branches plus
+  this one extra event give 43 PO/Receipt pairs and
+  `21 * (4 A lines + 1 B line) + 3 exceptional lines = 108` items.
+  Each PO line freezes one Product and exact quantity; its one receipt takes
+  precisely that full quantity at the listed actual unit cost. Use the same
+  cost as expected unit cost. Receipt VAT snapshots assert registered, with
+  null optional Input VAT rate/amount and document fields; never infer these
+  from Sales VAT. Each receipt item has exactly one positive `PURCHASE_RECEIVE`
+  movement and updates the balance/cost projection atomically.
+- For each regular monthly receipt, quantity equals that pair's generated
+  Sale quantity until its next monthly receipt (or the reference cutoff).
+  The first receipt additionally establishes a closing buffer: A STABLE 3 EA,
+  WEEKLY 110 EA, WEIGHT 0.7500 KG, SPARSE 1 EA; B STABLE 10 EA.
+  B SPARSE receives 5 EA only in the first PO; A ARCHIVED receives 1 EA
+  only in the first PO and is deactivated at local 09:00 on 2025-01-02.
+  This ensures every Sale has stock: within each receipt-to-next-receipt
+  interval, initial stock plus the receipt equals the entire remaining
+  interval's nonnegative Sale demand plus its buffer. Check every signed
+  movement prefix, not only the closing balance; FOUND precedes DAMAGE,
+  and the refund return adds stock. Every regular pair retains its buffer at
+  month end. NEW's separate receipt leaves 1 EA after its 14 Sales.
+- Add exactly two A/STABLE manual movements: `FOUND +1` at local 09:00 on
+  2026-07-15 and `DAMAGE -1` at local 09:00 on 2026-07-16. They have valid
+  actor, membership, reason, and idempotency provenance and net to zero.
+- Refund A's 2026-09-20 WEIGHT SaleItem on 2026-09-21 at local 14:00:
+  financial quantity `0.5000` KG, restock `0.2500` KG, fictional reason
+  `Demo return`, and one matching CASH RefundPayment. The original Sale and
+  Payment remain immutable. The refund has its own event period, reverses THB
+  `50.00` of Sales and `10.0000000000` of COGS, and adds exactly one positive
+  `SALE_REFUND_RETURN` movement. The return changes A/WEIGHT's final on-hand
+  from its planned `0.7500` buffer to `1.0000` KG.
+- All Branch/Product stock starts at absent/zero. Every positive stock balance
+  obtains KNOWN cost from its first authoritative receipt. No default UNKNOWN
+  cost, negative balance, ledger divergence, unlinked movement, pending PO,
+  integrity-error scenario, or fake zero-cost state belongs in this healthy
+  fixture. Keep UNKNOWN-cost and integrity anomalies in separate existing
+  tests; they would obscure normal cost and coverage demonstrations here.
+
+### Golden results at the fixed cutoff
+
+These are selected assertions, not a second definition of the metrics above.
+Freeze representative scalar amounts/quantities, the A>B comparison, explicit
+availability/classification reasons, and ledger/category reconciliations; do
+not turn every generated row into a golden constant.
+`stockwise-demo-v1` is **fixed-reference only**: T02 does not materialize a
+derived live-date variant. All current-stock assertions require an untouched
+fixture. For forecast/reorder golden validation, use the existing repository
+`now` injection with `() => new Date("2026-09-25T17:00:00.000Z")` in
+`createPrismaForecastRepository` and `createPrismaReorderRepository` (and the
+inventory repository for current-stock golden reads). This is a test/experiment
+clock, not an HTTP or browser clock override. Production HTTP uses its real
+snapshot clock and does not promise these fixed-cutoff goldens. At local
+2026-09-27 00:00, its 28-day training window includes one no-Sale day, so
+A/B STABLE daily forecasts fall to `54/28` and `27/28` before V1 rounding.
+By local 2026-10-26 (one month later), the 28-day window contains no Sales;
+at 2027-03-26 (six months) and 2027-09-26 (one year) it remains empty.
+Previously eligible active pairs then forecast zero, current-stock coverage
+has `NO_RECENT_DEMAND`, and
+positive-stock reorder needs are zero; NEW eventually becomes eligible with
+zero demand, while ARCHIVED stays inactive. `/app/analytics` still shows
+the fixed historical periods when explicitly queried, but its live
+Forecast/Reorder view ceases to demonstrate the positive fixed-cutoff cases.
+No as-of HTTP parameter, production clock override, or rolling seed mode is
+part of this task.
+
+| Case | Expected result |
+| --- | --- |
+| Full 2025 calendar-year Sales | 730 Sales, 0 refunds; STABLE Gross Sales and Sales After Discount each THB `21900.00` in DEMO-STAPLES. |
+| Full fixture STABLE quantity | A `1266.0000` EA > B `633.0000` EA; STABLE Gross Sales THB `37980.00`, discount THB `5.00`, Sales After Discount THB `37975.00`. |
+| Uncategorized Category Analytics | A/SPARSE has no Category; its 53 positive 2025 SaleItems put THB `636.00` Gross Sales/Sales After Discount in the typed `UNCATEGORIZED` row, not a synthetic Category record. Category Analytics has no quantity output. |
+| WEEKLY seasonality/noise | A's 2025 November, December, and 2026 January Sale quantities are `60.0000`, `107.0000`, and `47.0000` EA; its final 28 complete days total `49.0000` EA. |
+| Final 28-day forecasts | A/B STABLE daily `2.0000`/`1.0000`; A WEIGHT `0.5000`; A WEEKLY `1.7500`; A SPARSE `0.1429`, seven-day total `1.0003`; B SPARSE AVAILABLE with daily/total zero. |
+| Forecast unavailability | A NEW has first movement on 2026-09-12, after training start 2026-08-29: `INSUFFICIENT_DATA`; A ARCHIVED: `INACTIVE_PRODUCT` even with old movement history. |
+| Current coverage/classification | A STABLE 3 EA / 2 per day = `1.50` days `LOW_STOCK`; B STABLE 10 EA / 1 = `10.00` days `NORMAL`; A WEEKLY 110 EA / 1.75 = `62.86` days `OVERSTOCK`; B SPARSE has `NO_RECENT_DEMAND` and null classification. |
+| Reorder at fixed cutoff | With lead time 2, A STABLE recommends `1.0000` EA and B STABLE `0.0000`; with lead time 7, A SPARSE's serialized demand `1.0003` minus 1 on-hand gives `0.0003` raw need and whole-unit ceiling `1.0000`; with lead time 3, A WEIGHT recommends `0.5000` KG. B SPARSE with lead time 2 recommends zero; A NEW and A ARCHIVED with lead time 2 propagate their forecast reasons. |
+| Refund and adjustments | The 2026-09-21 refund contributes THB `50.00` refund amount, `0.5000` KG financial quantity, `0.2500` KG return, and `10.0000000000` COGS reversal in its own period. A/STABLE adjustment movements are separately +1/-1, net zero. |
+
+The fixture has 1 Organization, 2 Branches, 2 Categories, 6 Products, 1 Supplier,
+4 demo Users, 43 POs/Receipts, 108 PO/Receipt items, 1,266 Sales/Payments,
+2,488 SaleItems and matching SALE movements, 1 Refund/RefundPayment
+and RefundItem/return movement, and 2 adjustments. It is a chart and workflow
+fixture, not a load-test generator. The 108 receipt movements, 2,488 Sale
+movements, one return, and two adjustments make 2,599 ledger rows. At least
+one full local year supports yearly and monthly displays; time-ordered
+comparison can use the fixed 2025/2026 facts without leaking future days into
+any origin.
+
+### T02 execution and validation contract
+
+- Use one dedicated TypeScript fixture command in the API package with existing
+  Prisma, Decimal, period, allocation, and domain-value helpers. Current public
+  write services assign live event timestamps and some random references, so
+  the historical fixture needs a dedicated, transactionally consistent seed
+  path in one database transaction that reproduces their accepted invariants:
+  use existing pure checkout/refund/Decimal calculations, and preserve receiving
+  cost, inventory-ledger, payment, snapshot, lifecycle, and tenant rules when
+  constructing historical rows. Set every `createdAt`, `completedAt`,
+  `receivedAt`, and ledger `occurredAt` explicitly in local-day event order;
+  use existing checkout/receiving/refund idempotency-key and canonical-request
+  hash helpers with fixture-owned logical keys and canonical intents, plus
+  accepted adjustment hashing, rather than placeholder hashes;
+  do not call public writes that force live time or random references, and do
+  not write balance/cost projections without their same-transaction receipt,
+  Sale, refund, or adjustment movements. Connect Prisma directly to
+  the validated demo target. Do not expose client-supplied
+  backdating or a production clock override. T02 may reuse existing test-level
+  `now` injection for known-result reads.
+- Require an explicit process-supplied `DEMO_DATABASE_URL`, never a dotenv
+  seed authority, for a dedicated disposable PostgreSQL target. Before any
+  connection, require `postgresql://`, a loopback URL host
+  (`127.0.0.1`, `localhost`, or `[::1]`), a decoded database name ending
+  `_demo` (never `_test` or `stockwise_test`), no fragment, and at most
+  `schema=public`; reject other connection/query options, including effective
+  host/port overrides. Refuse production runtime mode. Normalize effective
+  host/port/database (including default port, loopback aliases, and encoded
+  name) and reject collision with process `DATABASE_URL`, process
+  `TEST_DATABASE_URL`, or a runtime `DATABASE_URL` loaded from root `.env`;
+  refuse unparseable comparison targets. Never print URL credentials. Verify
+  migration/schema state before writes.
+- The first run requires every business table to be empty. The deterministic
+  Organization UUID is the fixture identity candidate, not proof of completion:
+  a rerun is a no-op only when every application table (excluding Prisma's
+  migration metadata) has exactly the expected row set and all stable logical
+  fields match the version/seed manifest generated in memory. Exclude only
+  nondeterministic Argon2 hash bytes/salt; validate their presence, accepted
+  format, and the supplied password. A later login session is extra data, so
+  rerun fails closed after interactive use. Any missing/extra/changed row,
+  failed transaction, or foreign data fails closed. Generate the
+  complete fixture in one transaction so a failed first run leaves no partial
+  dataset. Rebuild uses a newly provisioned empty `_demo` database, never a
+  delete of arbitrary rows or a test-harness reset. No demo-only schema marker
+  or migration is needed.
+- Four fictional verified active users are `demo-owner@example.invalid`
+  (OWNER, all Branches), `demo-manager-a@example.invalid` (BRANCH_MANAGER,
+  A only), `demo-inventory-b@example.invalid` (INVENTORY_STAFF, B only), and
+  `demo-cashier-a@example.invalid` (CASHIER, A only). Use
+  the OWNER's valid first-Organization-onboarding record, active memberships,
+  and explicit assignments for Branch-only roles; do not
+  persist plaintext credentials. The OWNER acts for B checkouts, purchasing,
+  adjustments, and refund; the CASHIER acts for A checkouts. These accounts
+  demonstrate server-enforced scope and cost visibility, not a second tenant:
+  validate OWNER access to both Branches, A manager's authorized cost-visible
+  A analytics but not B, B inventory staff's inventory/forecast access without
+  cost or A scope, and A cashier's checkout access without analytics.
+- T02 validation must check schema and lifecycle constraints; same-tenant
+  Branch/Product/actor links; every balance against all signed ledger deltas;
+  direct receipt/Sale/return source linkage; KNOWN cost projection/value and
+  SaleItem/RefundItem cost snapshots; one Payment per Sale and RefundPayment per
+  Refund; exact money/VAT/discount allocations; no negative or non-integral EA
+  quantities; idempotent exact rerun and rejection of unsafe/foreign targets;
+  year/month/day/category/Branch and movement golden results; the listed
+  forecast, stock-risk, and reorder cases at the fixed cutoff. Freeze the
+  logical fingerprint after implementation and assert it on rerun. The existing
+  isolated security fixtures cover a second tenant and cost-ineligible access.
+
+No generic simulation engine, scenario registry/DSL, Faker dependency, customer
+persona, supplier market/pricing model, configurable duration, Monte Carlo,
+additional Product units for completeness, Phase 7 prompt/AI records, Phase 9
+experiment runner, or load-test scale is part of `stockwise-demo-v1`.
