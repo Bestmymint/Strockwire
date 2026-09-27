@@ -4,7 +4,7 @@
 | --- | --- |
 | Project | StockWise |
 | Plan baseline | Architecture Freeze v1 |
-| Repository state | Implemented and verified through P6-M5-T02; Phase 6 complete, Phase 7 decision gate in progress, P7-M1-T01 unchecked |
+| Repository state | Implemented and verified through P6-M5-T02; Phase 6 complete, Phase 7 in progress, Milestone 7.1 in progress, P7-M1-T01 complete and P7-M1-T02 next |
 | Last updated | 2026-09-27 |
 
 ## 1. Plan rules
@@ -201,8 +201,8 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 Phase 6 — Analytics and forecasting is COMPLETE. Milestone 6.5 is COMPLETE, and
 all tasks in Milestones 6.1–6.5 are complete. `STOCKOUT_RISK` remains
 deferred/unassigned; Phase 6 completion
-does not resolve or assign that separate rule. Phase 7 is IN PROGRESS at its
-decision gate under `ADR-033`; P7-M1-T01 remains unchecked.
+does not resolve or assign that separate rule. Phase 7 is IN PROGRESS under
+`ADR-033`; P7-M1-T01 is COMPLETE and P7-M1-T02 is NEXT / NOT STARTED.
 
 ### Milestone 6.1 — Definitions and period engine
 
@@ -253,15 +253,17 @@ accessible table rather than relying on chart coordinates.
 
 ## Phase 7 — Scheduled AI insights
 
-Phase 7 is IN PROGRESS at its decision gate. `ADR-033` resolves `OQ-017` and
-`OQ-018`; P7-M1-T01 remains unchecked pending final specification closure
-review and commit. P7-M1-T02 is NOT STARTED.
+Phase 7 and Milestone 7.1 are IN PROGRESS. `ADR-033` resolves `OQ-017` and
+`OQ-018`. P7-M1-T01 is COMPLETE: specification/decision commit
+`d5a8170aeb3c0fae74190695d130cef80acaba65`; final specification closure passed.
+P7-M1-T02 is NEXT / NOT STARTED. `STOCKOUT_RISK` remains deferred/unassigned;
+P0-M2-T05 remains unchecked.
 
 ### Milestone 7.1 — AI decision gate and snapshots
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
-| [ ] **P7-M1-T01 — Close schedule/provider decisions** | Define safe bounded AI operation | Resolve `OQ-017`, `OQ-018`; times, catch-up, model, fallback, timeout, budget, prompt/retention | Phase 6 | All docs/ADR/config contract updated | Failure/budget/privacy threat review |
+| [x] **P7-M1-T01 — Close schedule/provider decisions** | Define safe bounded AI operation | Resolve `OQ-017`, `OQ-018`; times, catch-up, model, fallback, timeout, budget, prompt/retention | Phase 6 | All docs/ADR/config contract updated | Failure/budget/privacy threat review passed; ADR-033 specification/decision committed in `d5a8170aeb3c0fae74190695d130cef80acaba65`; final specification closure passed |
 | [ ] **P7-M1-T02 — Analytics snapshot schema/store** | Persist versioned aggregate AI inputs | Daily/weekly/monthly/yearly scope/period, completeness, uniqueness | T01, accepted metrics | No PII/raw rows; reproducible/idempotent snapshots | Schema validator, duplicate, tenant, content audit tests |
 
 ### Milestone 7.2 — OpenRouter adapter and generation
@@ -368,8 +370,8 @@ recommendation** is complete: `ADR-032` accepts its policy and internal advisory
 endpoints and `/app/analytics` view are available. The view remains advisory and
 does not auto-order. All Phase 6 tasks, including P6-M5-T01 and P6-M5-T02, are
 complete. Phase 6 is COMPLETE. `STOCKOUT_RISK` remains deferred/unassigned
-pending a separate accepted policy. Phase 7 is IN PROGRESS at its decision
-gate; P7-M1-T01 remains unchecked pending final specification closure review.
+pending a separate accepted policy. Phase 7 and Milestone 7.1 are IN PROGRESS;
+P7-M1-T01 is COMPLETE and P7-M1-T02 is NEXT / NOT STARTED.
 
 Current-state constraints that the next task must preserve:
 
@@ -400,13 +402,12 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P7-M1-T01 — Close schedule/provider decisions
+Task: P7-M1-T02 — Analytics snapshot schema/store
 
-Read the current Source of Truth and resolve only `OQ-017` and `OQ-018` for
-scheduled AI insights. Define schedule times, catch-up, model/provider, fallback,
-timeout, budget, and prompt/retention behavior. Preserve the summary-only AI
-boundary and existing analytics contracts. Do not implement snapshots, provider
-calls, jobs, or UI in this decision task.
+Use the existing P7-M1-T02 task row as the complete task contract. Preserve its
+scope, acceptance, privacy, idempotency, and provenance requirements. ADR-033
+governs the accepted schedule/provider policy. Do not begin P7-M2 or widen the
+task beyond the existing row.
 
 Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not commit without separate authorization.
 ```
