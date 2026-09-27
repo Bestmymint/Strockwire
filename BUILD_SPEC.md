@@ -298,9 +298,9 @@ Stockout risk still requires a separate accepted policy.
 - Make scheduled generation idempotent and resilient to provider failure.
 - Preserve the last successful insight and surface stale/failed status without blocking core retail workflows.
 
-Exact schedule times, model selection, fallback policy, and retention remain open
-questions. Scheduled jobs use the Organization timezone/period rules from `ADR-029`;
-`OQ-017` still decides local run times, retries, and catch-up.
+`ADR-033` resolves `OQ-017`/`OQ-018` for schedule times, bounded catch-up,
+provider/model, fallback, budget, prompt, and retention. Scheduled jobs use the
+Organization timezone/period rules from `ADR-029`.
 
 ### 10.8 Cloud and operations
 
@@ -555,7 +555,9 @@ These decisions are mandatory gates before the affected domain implementation:
 | Forecasting V1 | `ADR-031` (`OQ-012` resolved) plus `ADR-029` reporting time and `ADR-022` quantity units |
 | Stockout risk and reorder recommendation | Separate future policy decision plus `ADR-031` forecast and accepted inventory/purchasing inputs where used |
 
-Other questions remain task-specific. In particular, exact AWS topology, scheduled-report times, OpenRouter model/fallback, audit-log hardening, and performance/recovery targets may remain open until their relevant phases; they do not block Repository Foundation or unrelated implementation.
+Other questions remain task-specific. Exact AWS topology, audit-log hardening,
+and performance/recovery targets remain open for their relevant phases;
+`ADR-033` resolves scheduled-report and OpenRouter V1 policy.
 
 ## 16. Decision and Open Questions register
 
@@ -578,6 +580,8 @@ This is the canonical list. Other documents reference these IDs and must not red
 | **OQ-011** | Use event-period operational Analytics V1 from immutable normalized facts: completed-by-existence Sales at `Sale.completedAt`; refunds at their own `completedAt`; VAT-inclusive gross/after-discount/refund/net Sales with separate discount/VAT/taxable breakouts; AOV over Sale events; distinct financial refund/restock quantities; restock-driven COGS reversal; null cost/profit/value when required cost is UNKNOWN; product/unit-safe quantities; current-category attribution; complete-period comparisons; source-separated inventory movement, 28-day velocity/coverage, current availability/value, and then-current deferral of threshold/forecast/reorder classifications (later narrowed by `ADR-030` and `ADR-031`). | `ADR-029` |
 | **OQ-012** | Forecasting V1 estimates observed `SaleItem.quantity` per Branch/Product for seven Organization-local days from the prior 28 complete local days using `forecast-sale-mean-28d-v1`. Pair history requires first inventory movement at or before the training start; eligible zero-sale days remain zero, insufficient/new pairs and inactive Products receive explicit unavailable reasons. V1 has no seasonality or stockout correction; refunds do not rewrite original Sale days. Per-pair daily MAE over four rolling-origin windows is primary, with `last-day-naive` reference and no fixed accuracy threshold. Replenishment/risk policy is separately deferred. | `ADR-031` |
 | **OQ-016** | Store server-assigned event timestamps in UTC and use one required configurable Organization IANA timezone, with explicit default `Asia/Bangkok` and no Branch timezone. Derive day/week/month/year as local-calendar half-open intervals (Monday week start) with IANA/DST rules. Current writes accept no client backdating; any future late import/repair belongs to its authoritative event-time bucket. On-demand history re-buckets under the current setting after a change; persisted snapshots retain their recorded timezone/bounds. | `ADR-029` |
+| **OQ-017** | Run daily, Monday-weekly, monthly, and yearly jobs at 06:00 Organization-local time for the immediately preceding complete period; apply IANA/DST disambiguation and automatically catch up only the two most recent due periods per cadence/scope, oldest first, under one idempotent logical report identity. | `ADR-033` |
+| **OQ-018** | Use server-only OpenRouter with exact primary/fallback models `openai/gpt-4o-mini`/`openai/gpt-4.1-mini`; 15-second attempts, at most three calls/job, 16 KiB request and 512-token output bounds, a server-versioned minimized prompt, 36-month snapshot/insight and 30-day sanitized-telemetry retention, and safe stale/failure behavior. | `ADR-033` |
 | **OQ-013** | **DEFERRED FROM MVP.** Inter-branch stock transfer remains broader/full product scope, but no transfer schema, API, UI, permission, lifecycle, ledger-source, or idempotency contract is part of the current MVP. A previously discussed `SEND → IN_TRANSIT → RECEIVE → RECEIVED` direction with exact quantity and no partial/discrepancy workflow is non-binding future guidance only and must be re-reviewed before implementation resumes. | `ADR-025` |
 | **OQ-021** | A PO is `DRAFT`, `ORDERED`, `RECEIVED`, or `CANCELLED`; only `DRAFT` is editable, and `ORDERED` freezes Supplier, Branch, Product lines, quantities, expected unit costs, and accepted commercial snapshots. One ordered PO produces at most one all-at-once immutable receipt whose quantities are server-derived from PO lines. Partial/over/short/multiple receipt, discrepancy, receiving without a PO, supplier return, receipt reversal, and receipt correction are out of MVP. | `ADR-026` |
 | **OQ-022** | Use fixed, deny-by-default RBAC with one organization role per user/organization and explicit branch assignments for branch-only roles. `OWNER`/`ADMIN` are organization-wide; `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER` are assigned-branch roles. The role, governance, delegation, capability, analytics, forecast, and AI-summary baseline in section 8 is authoritative; `ADR-028` adds the accepted refund capabilities without changing role topology. | `ADR-016`, `ADR-028` |
@@ -590,8 +594,6 @@ This is the canonical list. Other documents reference these IDs and must not red
 | ID | Question | Blocks | Priority |
 | --- | --- | --- | --- |
 | **OQ-015** | What are the exact production hosting topology, region, ingress, secret-management, IaC, availability, backup, and cost targets? | Cloud deployment | High |
-| **OQ-017** | At what local times do daily, weekly, monthly, and yearly jobs run, and how are retries/catch-up handled? | AI scheduler | Medium |
-| **OQ-018** | Which OpenRouter model, fallback policy, timeout, budget, prompt review, and retention rules are accepted? | AI integration | Medium |
 | **OQ-019** | Is a durable audit-log feature required in MVP or only production hardening? | Security/compliance | Medium |
 | **OQ-020** | Beyond the accepted narrow process-local registration, login, verification-resend, and password-reset-request limiters, what distributed/IP-aware/global/provider-wide abuse controls, proxy trust, multi-instance coordination, production DoS controls, long-term abuse telemetry, measurable performance, availability, recovery, browser-support, and data-retention targets define production readiness? | Hardening/load tests | Medium |
 

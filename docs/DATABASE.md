@@ -1093,7 +1093,8 @@ Required logical attributes:
 - Organization/branch scope duplicated or derived safely for access control
 - Cadence and period
 - Prompt/template version
-- Provider and model identifier
+- Provider and actual model identifier when a call was attempted; absent for a
+  local insufficient or pre-call failure
 - Status
 - Generated natural-language content on success
 - Failure category and safe retry metadata on failure
@@ -1102,7 +1103,9 @@ Required logical attributes:
 
 Constraints and indexes:
 
-- Unique successful/current report for the accepted `(snapshot, prompt version, locale)` identity.
+- One ordinary scheduled report per Organization/scope, cadence, timezone, and
+  exact UTC period bounds; a controlled replay may create an explicit revision
+  without replacing historical reports (`ADR-033`).
 - Provider request identity supports idempotency/retry control.
 - Content cannot become a source of numerical truth; the linked snapshot remains authoritative.
 - No raw prompt containing secrets or prohibited data is stored.
@@ -1416,8 +1419,8 @@ The canonical definitions live in `BUILD_SPEC.md`:
   contain no transfer lifecycle, source, or linkage.
 - `OQ-016` is resolved by `ADR-029`: one configurable Organization IANA timezone,
   explicit `Asia/Bangkok` default/backfill, current-timezone historical rebucketing,
-  and persisted-snapshot timezone/boundary retention. Job timing remains `OQ-017`.
-- `OQ-017` schedule affects job identity.
-- `OQ-018` provider/fallback/retention affects AI report fields.
+  and persisted-snapshot timezone/boundary retention.
+- `OQ-017`/`OQ-018` are resolved for V1 by `ADR-033`: bounded schedule/catch-up,
+  logical job identity, provider/fallback/budget, provenance, and retention.
 - `OQ-019` audit scope affects operational support records.
 - `OQ-020` retention/recovery targets affect lifecycle.

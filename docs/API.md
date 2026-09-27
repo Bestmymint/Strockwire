@@ -1246,11 +1246,11 @@ Analytics error/null semantics:
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `GET /organizations/{organizationId}/ai-insights` | Analytics/insight read | Cadence, scope, cursor | Persisted report summaries/status | Invalid cadence, forbidden scope | Planned after AI decisions |
-| `GET /organizations/{organizationId}/ai-insights/latest` | Analytics/insight read | Cadence + scope | Latest successful/stale/failed/insufficient state | No report is an explicit empty state | Planned after AI decisions |
-| `GET /organizations/{organizationId}/ai-insights/{insightId}` | Analytics/insight read | None | Content + period/freshness/provenance-safe metadata | Safe not-found/forbidden/version mismatch | Planned after AI decisions |
+| `GET /organizations/{organizationId}/ai-insights` | Analytics/insight read | Cadence, scope, cursor | Persisted report summaries/status | Invalid cadence, forbidden scope | Planned P7-M3-T02 |
+| `GET /organizations/{organizationId}/ai-insights/latest` | Analytics/insight read | Cadence + scope | Last successful content if any, with latest attempt/freshness state | No report is an explicit empty state | Planned P7-M3-T02 |
+| `GET /organizations/{organizationId}/ai-insights/{insightId}` | Analytics/insight read | None | Content + period/freshness/provenance-safe metadata | Safe not-found/forbidden/version mismatch | Planned P7-M3-T02 |
 
-There is deliberately **no end-user `POST .../generate` endpoint**. Reports are daily/weekly/monthly/yearly scheduled work. Any operational replay mechanism is internal/admin-only, auditable, rate/budget controlled, and designed after `OQ-017`/`OQ-018`.
+There is deliberately **no end-user `POST .../generate` endpoint**. Reports are daily/weekly/monthly/yearly scheduled work. Any operational replay mechanism is internal/admin-only, auditable, and subject to `ADR-033` bounds.
 
 AI read responses:
 
@@ -1330,6 +1330,6 @@ Canonical definitions live in `BUILD_SPEC.md`:
 - Analytics periods/base metrics: `ADR-029` (`OQ-011`, `OQ-016` resolved);
   fixed coverage stock classification: `ADR-030`; internal Forecasting V1:
   `ADR-031` (`OQ-012` resolved); Reorder V1: `ADR-032`; stockout risk needs a separate decision
-- AI scheduling/provider: `OQ-017`, `OQ-018`
+- AI scheduling/provider: `ADR-033` (`OQ-017`, `OQ-018` resolved)
 - Hosting, S3, operational exposure: `OQ-015`, `OQ-020`
 - Catalog normalization and lifecycle: `ADR-022`; supplier implementation remains sequenced for P4

@@ -4,7 +4,7 @@
 | --- | --- |
 | Project | StockWise |
 | Plan baseline | Architecture Freeze v1 |
-| Repository state | Implemented and verified through P6-M5-T02; Phase 6 is complete and P7-M1-T01 is next |
+| Repository state | Implemented and verified through P6-M5-T02; Phase 6 complete, Phase 7 decision gate in progress, P7-M1-T01 unchecked |
 | Last updated | 2026-09-27 |
 
 ## 1. Plan rules
@@ -54,7 +54,7 @@ Completing checks makes work ready for commit; it does not authorize a commit, p
 | [x] **P0-M2-T04 — Inventory/purchasing/sales gate** | Finalize stock, money, and cost rules before affected operations | `OQ-007` is resolved by `ADR-024`, `OQ-010`/`OQ-021` by `ADR-026`, sales-side `OQ-008` by `ADR-027`, refund behavior `OQ-009` by `ADR-028`, and `OQ-023` by `ADR-022` | Before affected inventory, purchasing, sales, and refund implementation | Worked examples and affected contracts agree; VOID is excluded and REFUND is implementation-ready | Stock, decimal, costing, checkout, receiving, and 12 refund boundary scenarios reviewed 2026-09-19 |
 | [ ] **P0-M2-T05 — Analytics/forecast gate** | Finalize numerical truth before affected analytics/forecast implementation | `OQ-011` resolved by `ADR-029`; `ADR-030` accepts fixed P6-M3-T02 coverage classification; `ADR-031` resolves `OQ-012` for Forecasting V1; `ADR-032` accepts Reorder V1 policy; stockout risk still needs a separate rule, preserving TypeScript/SQL and summary-only LLM | Before each affected Phase 6 implementation | Every implemented metric/forecast/reorder rule has one accepted definition/version | Analytics fixtures/time-boundary review completed 2026-09-20; forecast backtest design/leakage review completed 2026-09-24; Reorder V1 policy accepted 2026-09-25, stockout-risk decision remains |
 
-The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, application shells, or unrelated work. Each gate blocks only the affected business-domain implementation. Cloud/operations questions such as `OQ-015`, `OQ-017`–`OQ-020` remain open until their relevant phases.
+The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, application shells, or unrelated work. Each gate blocks only the affected business-domain implementation. `OQ-017`/`OQ-018` are resolved by `ADR-033`; `OQ-015`, `OQ-019`, and `OQ-020` remain open for their relevant phases.
 
 ## Phase 1 — Repository foundation
 
@@ -201,7 +201,8 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 Phase 6 — Analytics and forecasting is COMPLETE. Milestone 6.5 is COMPLETE, and
 all tasks in Milestones 6.1–6.5 are complete. `STOCKOUT_RISK` remains
 deferred/unassigned; Phase 6 completion
-does not resolve or assign that separate rule. Phase 7 is NEXT and NOT STARTED.
+does not resolve or assign that separate rule. Phase 7 is IN PROGRESS at its
+decision gate under `ADR-033`; P7-M1-T01 remains unchecked.
 
 ### Milestone 6.1 — Definitions and period engine
 
@@ -252,10 +253,9 @@ accessible table rather than relying on chart coordinates.
 
 ## Phase 7 — Scheduled AI insights
 
-Phase 7 is NEXT and NOT STARTED. The exact next task is P7-M1-T01 — Close
-schedule/provider decisions; its task row remains unchecked. It will resolve
-`OQ-017` and `OQ-018` and define schedule times, catch-up, provider/model,
-fallback, timeout, budget, and prompt/retention behavior.
+Phase 7 is IN PROGRESS at its decision gate. `ADR-033` resolves `OQ-017` and
+`OQ-018`; P7-M1-T01 remains unchecked pending final specification closure
+review and commit. P7-M1-T02 is NOT STARTED.
 
 ### Milestone 7.1 — AI decision gate and snapshots
 
@@ -368,8 +368,8 @@ recommendation** is complete: `ADR-032` accepts its policy and internal advisory
 endpoints and `/app/analytics` view are available. The view remains advisory and
 does not auto-order. All Phase 6 tasks, including P6-M5-T01 and P6-M5-T02, are
 complete. Phase 6 is COMPLETE. `STOCKOUT_RISK` remains deferred/unassigned
-pending a separate accepted policy. Phase 7 is NEXT; P7-M1-T01 remains NOT
-STARTED.
+pending a separate accepted policy. Phase 7 is IN PROGRESS at its decision
+gate; P7-M1-T01 remains unchecked pending final specification closure review.
 
 Current-state constraints that the next task must preserve:
 

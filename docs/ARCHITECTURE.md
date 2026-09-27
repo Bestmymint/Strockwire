@@ -514,7 +514,7 @@ sequenceDiagram
     end
 ```
 
-Dashboard reads the persisted result. Opening or refreshing the dashboard does not call OpenRouter. Scheduled job mechanics, model/fallback, and schedule times are governed by `OQ-017` and `OQ-018`.
+Dashboard reads the persisted result. Opening or refreshing the dashboard does not call OpenRouter. `ADR-033` governs V1 schedule times, bounded catch-up, provider, model, budget, and failure behavior.
 
 ## 7. Data ownership and module interactions
 
@@ -659,7 +659,7 @@ The final design must decide public/private subnets, ingress, Next.js hosting mo
 - Verification, reset, and invitation tokens are opaque, hash-only, single-use, and expiry-bound. Successful reset revokes all sessions; authorization/session checks deny disabled or deauthorized users.
 - Secrets stay in an approved secret mechanism and never in repository, images, logs, client bundles, or prompts.
 - RDS is not publicly exposed in the intended production design.
-- External calls use timeouts, bounded retries, validation, and circuit/budget safeguards appropriate to `OQ-018`.
+- OpenRouter calls use the timeout, bounded retries, validation, and budget in `ADR-033`.
 - AI inputs use data minimization. No individual customer/employee data, raw sales lines, or credentials are sent.
 - Structured logs include correlation/context identifiers but exclude sensitive content.
 - Cross-organization and unauthorized-branch tests are mandatory.
@@ -693,11 +693,9 @@ Scale in measured stages:
 
 ## 15. Architecture constraints and Open Questions
 
-This document does not answer the following canonical questions from `BUILD_SPEC.md`:
+The following canonical questions from `BUILD_SPEC.md` remain open:
 
 - `OQ-015` exact production hosting
-- `OQ-017` schedule timing
-- `OQ-018` OpenRouter model/fallback/budget
 - `OQ-020` production targets
 
 Implementation touching one of these areas must stop at its accepted boundary until the referenced question is resolved and all affected documents are updated.

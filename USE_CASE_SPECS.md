@@ -468,9 +468,9 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-AI-001 — Generate a scheduled AI insight
 
-- **Status:** Analytics periods accepted by `ADR-029`; blocked in execution detail
-  by `OQ-017` and `OQ-018`. Forecasting V1 is implemented internally by
-  P6-M4-T02 but is not a required AI input.
+- **Status:** Analytics periods accepted by `ADR-029`; V1 schedule/provider policy
+  accepted by `ADR-033`. Runtime remains unimplemented. Forecasting V1 is
+  implemented internally by P6-M4-T02 but is not a required AI input.
 - **Actor:** System scheduler/job
 - **Preconditions:** A due report identity exists; deterministic metrics for the period can be computed or marked insufficient; provider configuration is available for an attempt.
 - **Trigger:** Production EventBridge schedule or an authorized operational replay mechanism triggers the job.
@@ -490,7 +490,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-AI-002 — View a persisted AI insight
 
-- **Status:** Ready after UC-AI-001 decisions close
+- **Status:** Policy accepted by `ADR-033`; runtime remains unimplemented
 - **Actor:** Authorized analytics viewer
 - **Preconditions:** Actor may access the insight's organization/branch scope.
 - **Trigger:** Actor opens an insight/dashboard panel.
