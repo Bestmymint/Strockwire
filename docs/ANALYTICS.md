@@ -1358,7 +1358,8 @@ Analytics V1 metric or timezone semantics.
 ## 20. P6-M5-T01 synthetic demo data specification
 
 `stockwise-demo-v1` is the single P6-M5 demo fixture specification. P6-M5-T01
-freezes it; P6-M5-T02 will implement and validate it. It is application history
+freezes it; P6-M5-T02 implements and validates it as documented in
+[`DEMO_DATA.md`](DEMO_DATA.md). It is application history
 for demonstrations and later time-ordered experiments, not a claim about real
 retail demand. `analytics-v1`, `stock-risk-v1`, `forecast-sale-mean-28d-v1`,
 and `reorder-v1` retain their definitions above.

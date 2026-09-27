@@ -4,7 +4,7 @@
 | --- | --- |
 | Project | StockWise |
 | Plan baseline | Architecture Freeze v1 |
-| Repository state | Implemented and verified through P6-M5-T01 specification; P6-M5-T02 is next and not started |
+| Repository state | Implemented and verified through P6-M5-T02; Phase 6 is complete and P7-M1-T01 is next |
 | Last updated | 2026-09-27 |
 
 ## 1. Plan rules
@@ -198,10 +198,10 @@ The unchecked decision-gate tasks do **not** block Phase 1 repository/tooling, a
 
 ## Phase 6 — Analytics and forecasting
 
-Phase 6 remains IN PROGRESS. Milestones 6.1–6.4 are complete. Milestone 6.5
-is IN PROGRESS: P6-M5-T01 — Synthetic data specification is complete, and
-P6-M5-T02 — Generate and validate demo dataset is NEXT / NOT STARTED. T02 is
-the final remaining planned task in Phase 6.
+Phase 6 — Analytics and forecasting is COMPLETE. Milestone 6.5 is COMPLETE, and
+all tasks in Milestones 6.1–6.5 are complete. `STOCKOUT_RISK` remains
+deferred/unassigned; Phase 6 completion
+does not resolve or assign that separate rule. Phase 7 is NEXT and NOT STARTED.
 
 ### Milestone 6.1 — Definitions and period engine
 
@@ -248,9 +248,14 @@ accessible table rather than relying on chart coordinates.
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
 | [x] **P6-M5-T01 — Synthetic data specification** | Define privacy-safe reproducible demo patterns | Products/branches/history, seasonality, noise, known expected patterns | Analytics definitions | Seed spec contains no real personal/production data | Schema/expected-pattern review passed; specification closure passed and committed in `e8f0c71ff189280f3ca3f63f18b4b841b79b08c1` (`docs: define synthetic demo data specification`) |
-| [ ] **P6-M5-T02 — Generate and validate demo dataset** | Enable yearly/seasonal demos and experiments | Deterministic generator/seed using accepted lifecycle, documented size | T01, stable schema | Reproducible data; balances/history valid | Seed repeatability, reconciliation, analytics known-result tests |
+| [x] **P6-M5-T02 — Generate and validate demo dataset** | Enable yearly/seasonal demos and experiments | Deterministic generator/seed using accepted lifecycle, documented size | T01, stable schema | Reproducible data; balances/history valid | Implemented in `5bd524768a00fbadef54b757f15dcc4ce85a7db2` (`feat: add synthetic demo dataset`); fresh generation, exact rerun no-op, partial/foreign fail-closed, ledger/balance/cost reconciliation, and Sales/refund/Analytics/Forecast/Reorder goldens passed; demo tests 17/17, opt-in integration 1/1, focused analytics 155/155, full suite 1,023 passed across 115 files; lint/typecheck/build/Prettier/diff check passed. See `docs/ANALYTICS.md` and `docs/DEMO_DATA.md` |
 
 ## Phase 7 — Scheduled AI insights
+
+Phase 7 is NEXT and NOT STARTED. The exact next task is P7-M1-T01 — Close
+schedule/provider decisions; its task row remains unchecked. It will resolve
+`OQ-017` and `OQ-018` and define schedule times, catch-up, provider/model,
+fallback, timeout, budget, and prompt/retention behavior.
 
 ### Milestone 7.1 — AI decision gate and snapshots
 
@@ -361,10 +366,10 @@ recommendation** is complete: `ADR-032` accepts its policy and internal advisory
 **P6-M4-T04 — Forecast/reorder API/UI** is complete in
 `89c5d722a0088e9fb930082bd423ebdb1adc455f`; its authorized Forecast/Reorder
 endpoints and `/app/analytics` view are available. The view remains advisory and
-does not auto-order. Milestones 6.1–6.4 are complete; Milestone 6.5 is IN
-PROGRESS. P6-M5-T01 is complete and P6-M5-T02 is NEXT / NOT STARTED, the final
-remaining planned Phase 6 task. Phase 6 remains IN PROGRESS. `STOCKOUT_RISK`
-remains deferred/unassigned pending a separate accepted policy.
+does not auto-order. All Phase 6 tasks, including P6-M5-T01 and P6-M5-T02, are
+complete. Phase 6 is COMPLETE. `STOCKOUT_RISK` remains deferred/unassigned
+pending a separate accepted policy. Phase 7 is NEXT; P7-M1-T01 remains NOT
+STARTED.
 
 Current-state constraints that the next task must preserve:
 
@@ -390,19 +395,18 @@ Current-state constraints that the next task must preserve:
 - The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, the bounded refund workflow, and Sales/Category/Branch/Inventory/Forecast/Reorder Analytics HTTP/UI exposure are implemented. Forecasting V1 and Reorder V1 remain deterministic; forecast/reorder presentation uses server-authoritative values and statuses. AI, AWS resources, deployment, and release automation remain unimplemented.
 - Git metadata is present, but P1-M1-T05 did not create a commit or perform any remote action.
 
-### Handoff prompt
+### Next task handoff prompt
 
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P6-M5-T02 — Generate and validate demo dataset
+Task: P7-M1-T01 — Close schedule/provider decisions
 
-Read the current Source of Truth and implement only the deterministic generator/
-seed for the accepted `stockwise-demo-v1` contract in `docs/ANALYTICS.md`. Use
-the accepted lifecycle and documented size. Validate repeatability, balance and
-history reconciliation, and analytics known results. Preserve the fixed clock,
-privacy, rerun, `_demo` safety, and one-transaction requirements. Do not begin
-Phase 7 or change the accepted specification without separate authorization.
+Read the current Source of Truth and resolve only `OQ-017` and `OQ-018` for
+scheduled AI insights. Define schedule times, catch-up, model/provider, fallback,
+timeout, budget, and prompt/retention behavior. Preserve the summary-only AI
+boundary and existing analytics contracts. Do not implement snapshots, provider
+calls, jobs, or UI in this decision task.
 
 Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not commit without separate authorization.
 ```

@@ -1134,8 +1134,8 @@ printable refund document.
 ## 12. Analytics endpoints
 
 `ADR-029` accepts Analytics V1 metric and reporting-time semantics. The Sales,
-Category, and Branch endpoints are implemented by P6-M2-T03; Forecast and Reorder
-are implemented by P6-M4-T04. Other later Phase 6 endpoints remain planned. Every
+Category, and Branch endpoints are implemented by P6-M2-T03; Inventory by
+P6-M3-T03; Forecast and Reorder by P6-M4-T04. Phase 6 API work is complete. Every
 response returns the metadata required by `docs/ANALYTICS.md` and only metrics
 marked Accepted.
 
@@ -1147,7 +1147,7 @@ branchId=<allowed branch when branch scope>
 from=YYYY-MM-DD                 # Organization-local, inclusive
 to=YYYY-MM-DD                   # Organization-local, exclusive
 granularity=day|week|month|year
-cursor=<opaque>                 # Implemented Category/Branch pages; planned inventory dimension pages
+cursor=<opaque>                 # Implemented Category/Branch/Inventory dimension pages
 limit=1..100                    # Dimension pages; default 25
 ```
 

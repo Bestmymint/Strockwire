@@ -414,7 +414,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-AN-001 — View sales and inventory analytics
 
-- **Status:** Metric/time contract ready under `ADR-029`; runtime planned in Phase 6
+- **Status:** Metric/time contract accepted under `ADR-029`; analytics runtime implemented in Phase 6
 - **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` within the accepted analytics scope
 - **Preconditions:** Actor has access to requested branch or aggregate; relevant operational data exists or an explicit empty state can be returned.
 - **Trigger:** Actor opens dashboard or changes period/scope.
