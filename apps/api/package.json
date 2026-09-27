@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "pnpm run prisma:generate && tsc --project tsconfig.build.json",
+    "demo:seed": "pnpm run build && node dist/demo/demo-main.js",
     "dev": "node --env-file-if-exists=../../.env --watch src/main.ts",
     "lint": "eslint .",
     "prisma:connectivity-check": "pnpm run build && node --env-file-if-exists=../../.env dist/prisma/connectivity-smoke.js",

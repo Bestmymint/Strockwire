@@ -341,7 +341,7 @@ function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
-function adjustmentRequestHash(input: {
+export function adjustmentRequestHash(input: {
   actorUserId: string;
   branchId: string;
   delta: string;
