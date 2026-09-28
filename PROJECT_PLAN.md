@@ -4,8 +4,8 @@
 | --- | --- |
 | Project | StockWise |
 | Plan baseline | Architecture Freeze v1 |
-| Repository state | Implemented and verified through P6-M5-T02; Phase 6 complete, Phase 7 in progress, Milestone 7.1 in progress, P7-M1-T01 complete and P7-M1-T02 next |
-| Last updated | 2026-09-27 |
+| Repository state | Implemented and verified through P7-M1-T02; Phase 6 complete, Phase 7 in progress, Milestone 7.1 complete and Milestone 7.2 next; P7-M2-T01 next/not started |
+| Last updated | 2026-09-28 |
 
 ## 1. Plan rules
 
@@ -202,7 +202,7 @@ Phase 6 — Analytics and forecasting is COMPLETE. Milestone 6.5 is COMPLETE, an
 all tasks in Milestones 6.1–6.5 are complete. `STOCKOUT_RISK` remains
 deferred/unassigned; Phase 6 completion
 does not resolve or assign that separate rule. Phase 7 is IN PROGRESS under
-`ADR-033`; P7-M1-T01 is COMPLETE and P7-M1-T02 is NEXT / NOT STARTED.
+`ADR-033`; Milestone 7.1 is COMPLETE and Milestone 7.2 is next.
 
 ### Milestone 6.1 — Definitions and period engine
 
@@ -253,20 +253,30 @@ accessible table rather than relying on chart coordinates.
 
 ## Phase 7 — Scheduled AI insights
 
-Phase 7 and Milestone 7.1 are IN PROGRESS. `ADR-033` resolves `OQ-017` and
-`OQ-018`. P7-M1-T01 is COMPLETE: specification/decision commit
-`d5a8170aeb3c0fae74190695d130cef80acaba65`; final specification closure passed.
-P7-M1-T02 is NEXT / NOT STARTED. `STOCKOUT_RISK` remains deferred/unassigned;
-P0-M2-T05 remains unchecked.
+Phase 7 is IN PROGRESS under `ADR-033`, which resolves `OQ-017` and `OQ-018`.
+Milestone 7.1 is COMPLETE: P7-M1-T01 and P7-M1-T02 are complete. P7-M1-T01's
+specification/decision commit is `d5a8170aeb3c0fae74190695d130cef80acaba65`;
+final specification closure passed. P7-M1-T02 was implemented in `506f690`
+(`feat: add analytics snapshot store`): versioned deterministic Organization/
+Branch aggregate snapshots cover daily/weekly/monthly/yearly periods, persist no
+PII or raw rows, and use an immutable idempotent store. Historical Branch
+due-instant authority supports ADR-033 eligibility, with prehistory unavailable.
+Closure passed, including 14 migrations from zero and demo generation plus exact
+no-op rerun with manifest, reconciliation, and Analytics/Forecast/Reorder
+goldens; focused tests 38/38 and full suite 1,031 passed, 1 skipped across 118
+files; Prisma validate/generate, lint, typecheck, build, Prettier, and diff check
+passed. Milestone 7.2 is NEXT / NOT STARTED: P7-M2-T01 is NEXT / NOT STARTED;
+P7-M2-T02 and P7-M2-T03 are NOT STARTED. Milestone 7.3 is NOT STARTED.
+`STOCKOUT_RISK` remains deferred/unassigned; P0-M2-T05 remains unchecked.
 
-### Milestone 7.1 — AI decision gate and snapshots
+### Milestone 7.1 — AI decision gate and snapshots (COMPLETE)
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
 | [x] **P7-M1-T01 — Close schedule/provider decisions** | Define safe bounded AI operation | Resolve `OQ-017`, `OQ-018`; times, catch-up, model, fallback, timeout, budget, prompt/retention | Phase 6 | All docs/ADR/config contract updated | Failure/budget/privacy threat review passed; ADR-033 specification/decision committed in `d5a8170aeb3c0fae74190695d130cef80acaba65`; final specification closure passed |
-| [ ] **P7-M1-T02 — Analytics snapshot schema/store** | Persist versioned aggregate AI inputs | Daily/weekly/monthly/yearly scope/period, completeness, uniqueness | T01, accepted metrics | No PII/raw rows; reproducible/idempotent snapshots | Schema validator, duplicate, tenant, content audit tests |
+| [x] **P7-M1-T02 — Analytics snapshot schema/store** | Persist versioned aggregate AI inputs | Daily/weekly/monthly/yearly scope/period, completeness, uniqueness | T01, accepted metrics | No PII/raw rows; reproducible/idempotent snapshots | Implemented in `506f690` (`feat: add analytics snapshot store`); immutable/idempotent Organization/Branch aggregates with no PII/raw rows; historical Branch due-instant authority for ADR-033. Closure passed: 14 migrations from zero, demo generation and exact no-op rerun with manifest/reconciliation/Analytics/Forecast/Reorder goldens, focused 38/38, full suite 1,031 passed and 1 skipped across 118 files, Prisma validate/generate, lint, typecheck, build, Prettier, and diff check |
 
-### Milestone 7.2 — OpenRouter adapter and generation
+### Milestone 7.2 — OpenRouter adapter and generation (NEXT; NOT STARTED)
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
@@ -274,7 +284,7 @@ P0-M2-T05 remains unchecked.
 | [ ] **P7-M2-T02 — Prompt version and data minimization** | Ensure summary-only behavior | Versioned prompt, snapshot allow-list, prose/content validation | T01 | No prohibited fields; prompt forbids invented calculations | Snapshot privacy fixtures and adversarial content tests |
 | [ ] **P7-M2-T03 — Idempotent insight job** | Generate/persist one scheduled report | Claim, snapshot, provider, persisted success/failure/provenance/retry | T01–T02 | Duplicate trigger bounded; core system unaffected by failure | Concurrency, crash-point, retry, provider failure tests |
 
-### Milestone 7.3 — Four cadences and dashboard
+### Milestone 7.3 — Four cadences and dashboard (NOT STARTED)
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
@@ -370,8 +380,9 @@ recommendation** is complete: `ADR-032` accepts its policy and internal advisory
 endpoints and `/app/analytics` view are available. The view remains advisory and
 does not auto-order. All Phase 6 tasks, including P6-M5-T01 and P6-M5-T02, are
 complete. Phase 6 is COMPLETE. `STOCKOUT_RISK` remains deferred/unassigned
-pending a separate accepted policy. Phase 7 and Milestone 7.1 are IN PROGRESS;
-P7-M1-T01 is COMPLETE and P7-M1-T02 is NEXT / NOT STARTED.
+pending a separate accepted policy. Phase 7 is IN PROGRESS; Milestone 7.1 is
+COMPLETE and Milestone 7.2 is NEXT / NOT STARTED. P7-M2-T01 is NEXT / NOT
+STARTED; P7-M2-T02 and P7-M2-T03 are NOT STARTED. Milestone 7.3 is NOT STARTED.
 
 Current-state constraints that the next task must preserve:
 
@@ -402,12 +413,11 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P7-M1-T02 — Analytics snapshot schema/store
+Task: P7-M2-T01 — AI provider abstraction/OpenRouter client
 
-Use the existing P7-M1-T02 task row as the complete task contract. Preserve its
-scope, acceptance, privacy, idempotency, and provenance requirements. ADR-033
-governs the accepted schedule/provider policy. Do not begin P7-M2 or widen the
-task beyond the existing row.
+Use the existing P7-M2-T01 task row as the complete task contract. Preserve its
+scope and acceptance requirements. ADR-033 governs the accepted provider
+policy. Do not begin P7-M2-T02 or widen the task beyond the existing row.
 
 Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not commit without separate authorization.
 ```
