@@ -2176,6 +2176,10 @@ periods; `BUILD_SPEC.md` owns role scope. This decision resolves `OQ-017` and
   `ADR-029` and includes historical facts from inactive Branches. Do not
   generate per user or for inactive Branches; retain their earlier reports
   for authorized Organization-wide readers after deactivation.
+  Branch eligibility for catch-up or replay uses immutable lifecycle history at
+  the original due instant. For a pre-history due instant whose Branch status
+  cannot be established, skip Branch generation rather than infer eligibility
+  from current status. This does not change Organization aggregate scope.
 - On each scheduler scan, consider only the **two most recent due completed
   periods per cadence and scope** before dispatch, oldest first. Older missed
   periods are skipped automatically, not drained on later scans; a controlled operational

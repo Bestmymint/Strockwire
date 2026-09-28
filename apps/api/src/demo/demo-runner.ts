@@ -64,6 +64,8 @@ const tables = [
   "refund_payments",
   "organization_memberships",
   "branches",
+  "branch_status_events",
+  "analytics_snapshots",
   "inventory_balances",
   "inventory_cost_states",
   "inventory_transactions",
@@ -171,6 +173,7 @@ async function verifyManifest(
   const expectedCounts = new Map<string, number>([
     ["organizations", fixture.organization.length],
     ["branches", fixture.branchRows.length],
+    ["branch_status_events", fixture.branchRows.length],
     ["users", fixture.userRows.length],
     ["organization_memberships", fixture.memberships.length],
     ["branch_assignments", fixture.assignments.length],
@@ -203,6 +206,23 @@ async function verifyManifest(
     await tx.organization.findMany(),
   );
   equalRows("branches", fixture.branchRows, await tx.branch.findMany());
+  equalRows(
+    "branch_status_events",
+    fixture.branchRows.map((branch) => ({
+      branchId: branch.id,
+      organizationId: branch.organizationId,
+      status: branch.status ?? "ACTIVE",
+      effectiveAt: branch.createdAt,
+    })),
+    await tx.branchStatusEvent.findMany({
+      select: {
+        branchId: true,
+        organizationId: true,
+        status: true,
+        effectiveAt: true,
+      },
+    }),
+  );
   const userRows = await tx.user.findMany();
   equalRows("users", fixture.userRows, userRows);
   for (const user of userRows) {

@@ -136,9 +136,21 @@ describe("identity and tenancy database schema", () => {
         finished: true,
         active: true,
       },
+      {
+        migrationName: "20260928120000_add_analytics_snapshots",
+        finished: true,
+        active: true,
+      },
+      {
+        migrationName: "20260928130000_add_branch_status_history",
+        finished: true,
+        active: true,
+      },
     ]);
     expect(tables.map(({ tableName }) => tableName)).toEqual([
+      "analytics_snapshots",
       "branch_assignments",
+      "branch_status_events",
       "branches",
       "categories",
       "email_verification_tokens",

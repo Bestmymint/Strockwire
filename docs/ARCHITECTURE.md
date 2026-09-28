@@ -488,7 +488,8 @@ warehouse, OLAP service, stream, materialized view, scheduled rollup, or summary
 is introduced before measured need. P6-M3-T01 uses set-based ledger/balance/cost
 queries and reconciles the current projection against all ledger deltas visible in
 that same read snapshot; it does not compare current balance to an earlier
-event-cutoff subset. Scheduled AI snapshots remain a later concern.
+event-cutoff subset. P7-M1-T02 persists completed-period Sales aggregates as
+immutable, versioned AI input snapshots; insight generation remains later work.
 
 ### 6.7 Scheduled AI insight
 
@@ -515,6 +516,10 @@ sequenceDiagram
 ```
 
 Dashboard reads the persisted result. Opening or refreshing the dashboard does not call OpenRouter. `ADR-033` governs V1 schedule times, bounded catch-up, provider, model, budget, and failure behavior.
+An internal Branch status-history lookup supplies due-instant eligibility from
+immutable events. Pre-migration history is unknown, so Branch generation skips
+due instants before its first trustworthy event; Organization aggregation keeps
+its existing historical Branch scope.
 
 ## 7. Data ownership and module interactions
 

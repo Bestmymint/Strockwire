@@ -148,6 +148,22 @@ enum MembershipAccessEventType {
   @@map("membership_access_event_type")
 }
 
+enum AnalyticsSnapshotScope {
+  ORGANIZATION
+  BRANCH
+
+  @@map("analytics_snapshot_scope")
+}
+
+enum AnalyticsSnapshotCadence {
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+
+  @@map("analytics_snapshot_cadence")
+}
+
 model User {
   id                String     @id @default(uuid()) @db.Uuid
   email             String     @unique(map: "users_email_key") @db.VarChar(320)
@@ -200,6 +216,8 @@ model Organization {
   inventoryBalances     InventoryBalance[]
   inventoryCostStates   InventoryCostState[]
   inventoryTransactions InventoryTransaction[]
+  branchStatusEvents     BranchStatusEvent[]
+  analyticsSnapshots     AnalyticsSnapshot[]
 
   @@map("organizations")
 }
@@ -639,11 +657,54 @@ model Branch {
   purchaseReceipts            PurchaseReceipt[]
   sales                       Sale[]
   saleRefunds                 SaleRefund[]
+  statusEvents                BranchStatusEvent[]
+  analyticsSnapshots          AnalyticsSnapshot[]
 
   @@unique([organizationId, code], map: "branches_organization_id_code_key")
   @@unique([id, organizationId], map: "branches_id_organization_id_key")
   @@index([organizationId, status], map: "branches_organization_id_status_idx")
   @@map("branches")
+}
+
+model BranchStatusEvent {
+  id             BigInt       @id @default(autoincrement())
+  organizationId String       @map("organization_id") @db.Uuid
+  branchId       String       @map("branch_id") @db.Uuid
+  status         BranchStatus
+  effectiveAt    DateTime     @map("effective_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  branch       Branch       @relation(fields: [branchId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([branchId, effectiveAt(sort: Desc), id(sort: Desc)], map: "branch_status_events_branch_effective_idx")
+  @@map("branch_status_events")
+}
+
+model AnalyticsSnapshot {
+  id                      String                   @id @default(uuid()) @db.Uuid
+  organizationId          String                   @map("organization_id") @db.Uuid
+  branchId                String?                  @map("branch_id") @db.Uuid
+  scope                   AnalyticsSnapshotScope
+  scopeKey                String                   @map("scope_key") @db.VarChar(36)
+  cadence                 AnalyticsSnapshotCadence
+  reportingTimezone       String                   @map("reporting_timezone") @db.VarChar(255)
+  localFromInclusive      String                   @map("local_from_inclusive") @db.VarChar(10)
+  localToExclusive        String                   @map("local_to_exclusive") @db.VarChar(10)
+  periodStartInclusive    DateTime                 @map("period_start_inclusive") @db.Timestamptz(3)
+  periodEndExclusive      DateTime                 @map("period_end_exclusive") @db.Timestamptz(3)
+  schemaVersion           String                   @map("schema_version") @db.VarChar(64)
+  metricDefinitionVersion String                   @map("metric_definition_version") @db.VarChar(64)
+  sourceCutoff            DateTime                 @map("source_cutoff") @db.Timestamptz(3)
+  dataStatus              String                   @map("data_status") @db.VarChar(16)
+  payload                 Json
+  createdAt               DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  branch       Branch?      @relation(fields: [branchId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([organizationId, scopeKey, cadence, reportingTimezone, periodStartInclusive, periodEndExclusive, schemaVersion, metricDefinitionVersion], map: "analytics_snapshots_identity_key")
+  @@index([organizationId, branchId, cadence, periodEndExclusive], map: "analytics_snapshots_scope_period_idx")
+  @@map("analytics_snapshots")
 }
 
 model InventoryBalance {

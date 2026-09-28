@@ -1254,6 +1254,18 @@ This is a semantic envelope, not an implemented JSON contract. The scope label
 is generic; no Organization/Branch name or ID is provider-visible. Blocked
 metrics remain null/omitted until accepted.
 
+P7-M1-T02's persisted `analytics-snapshot-v1` uses a deliberately smaller
+closed payload: one completed period's Sales `netSalesAmount`, `saleCount`,
+`refundAmount`, `refundCount`, `averageOrderValue`, `netSalesGrowthPercent`,
+`grossProfitAmount`, `grossMarginPercent`, and `costCoverage`. Nullable metrics
+retain accepted reason codes, and monetary/percent values retain the existing
+two- or ten-place Decimal strings. The API's Sales aggregate remains numerical
+authority. Forecasting V1 is not a required AI input (`UC-AI-001`); Forecast,
+Reorder, current inventory state, and paginated dimensions are excluded from
+this snapshot version. The store retains internal tenant/scope keys for integrity;
+the later provider adapter must serialize only the strict allow-list and generic
+scope label. An empty period's zero counts and money are valid aggregate facts.
+
 ### Prohibited AI input
 
 - Customer or employee names, emails, phones, addresses, identifiers, or credentials

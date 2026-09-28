@@ -321,6 +321,22 @@ Constraints and indexes:
   ineffective while inactive and effective again after reactivation if the
   assignment and membership remain active.
 
+`BranchStatusEvent` is the append-only authority for historical Branch activity.
+An insert records the initial status at `createdAt`; a status change records its
+new status at the same `updatedAt` instant used by the lifecycle transaction.
+Database triggers write these events atomically with Branch changes and reject
+event updates/deletes. The `(Branch, effectiveAt DESC, id DESC)` index gives a
+stable latest-event lookup, and a composite Branch/Organization FK enforces
+tenancy. Same-state requests and ordinary Branch edits add no event.
+
+The forward migration records each existing Branch's *current* status only at
+the migration baseline instant. Earlier deactivate/reactivate history cannot be
+recovered: a due instant before the first event returns unavailable, never a
+guessed status. Branch-scoped scheduled generation or replay requires an event
+at or before the original due instant; an unavailable result skips that Branch
+report. The Organization aggregate still includes historical facts from inactive
+Branches under `ADR-029`.
+
 #### `BranchAssignment`
 
 Purpose: grants a user with a branch-only organization role access to one explicit branch.
@@ -1057,6 +1073,29 @@ metadata is modeled in MVP.
 #### `AnalyticsSnapshot`
 
 Purpose: versioned, reproducible aggregate facts for a report scope and period.
+
+P7-M1-T02 persists this as `analytics_snapshots`. One row has a UUID ID, tenant
+FK, nullable composite tenant/Branch FK, `ORGANIZATION`/`BRANCH` scope, and a
+non-null `scope_key` (`organization` or the Branch UUID). The database checks
+that the key, kind, and nullable Branch agree. `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY`,
+the Organization IANA timezone, local date bounds, exact UTC half-open bounds,
+`analytics-snapshot-v1`, `analytics-v1`, source cutoff, complete-period status, and a
+strictly validated JSONB aggregate payload are retained. A unique index covers
+tenant, scope key, cadence, timezone, UTC bounds, schema version, and metric
+version. A database trigger rejects UPDATE; deletion is reserved for later
+retention work after 36 months from period end and only when no retained insight
+references the snapshot.
+
+The V1 payload contains only the existing deterministic Sales aggregate's net
+sales, sale/refund counts, refund amount, average order value, growth, gross
+profit/margin, and cost coverage/null reasons for one completed period. The
+store reuses exact matching content and fails on changed content at the same
+identity. Provider serialization is a later, separate allow-list and must omit
+internal tenant/Branch IDs. No provider, prompt, or model field is stored here.
+The internal builder accepts an existing tenant-owned Branch even after
+deactivation so catch-up can use a scope that was active when due; the later
+scheduled job must use the historical Branch status lookup at the original due
+instant and skip unavailable history.
 
 Required logical attributes:
 

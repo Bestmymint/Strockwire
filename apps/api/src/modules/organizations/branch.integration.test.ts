@@ -17,6 +17,7 @@ import { branchCreateRequestSchema } from "./branch-schemas.ts";
 import { createPrismaBranchRepository } from "./branch-repository.ts";
 import { createBranchRouter } from "./branch-router.ts";
 import { createBranchService } from "./branch-service.ts";
+import { isBranchActiveAt } from "./branch-status-history.ts";
 
 const environment = loadTestDatabaseEnvironment();
 const prisma = createTestPrismaClient(environment);
@@ -271,6 +272,184 @@ describe("branch management with PostgreSQL", () => {
       code: "MAIN",
       name: "Main",
     });
+    const created = await prisma.branch.findFirstOrThrow();
+    expect(
+      await prisma.branchStatusEvent.findMany({
+        where: { branchId: created.id },
+        select: { status: true, effectiveAt: true },
+      }),
+    ).toEqual([{ status: "ACTIVE", effectiveAt: created.createdAt }]);
+  });
+
+  it("preserves historical Branch state through repeated lifecycle changes", async () => {
+    const organization = await prisma.organization.create({
+      data: { name: "History Store" },
+    });
+    const owner = await user("owner-history@example.com");
+    await membership(organization.id, owner.id, "OWNER");
+    const [branch, safety] = await Promise.all([
+      prisma.branch.create({
+        data: {
+          code: "HISTORY",
+          name: "History",
+          organizationId: organization.id,
+        },
+      }),
+      prisma.branch.create({
+        data: {
+          code: "SAFETY",
+          name: "Safety",
+          organizationId: organization.id,
+        },
+      }),
+    ]);
+    const at = (instant: Date) =>
+      isBranchActiveAt(prisma, organization.id, branch.id, instant);
+    expect(await at(new Date(branch.createdAt.getTime() - 1))).toBeNull();
+    expect(await at(branch.createdAt)).toBe(true);
+    expect(
+      await isBranchActiveAt(
+        prisma,
+        organization.id,
+        safety.id,
+        safety.createdAt,
+      ),
+    ).toBe(true);
+
+    const change = async (status: "ACTIVE" | "INACTIVE", version: Date) => {
+      const result = await repository.setLifecycle({
+        actorUserId: owner.id,
+        branchId: branch.id,
+        expectedUpdatedAt: version,
+        organizationId: organization.id,
+        status,
+      });
+      if (result.kind !== "success") throw new Error(`Expected ${status}.`);
+      return new Date(result.branch.updatedAt);
+    };
+    const inactiveAt = await change("INACTIVE", branch.updatedAt);
+    expect(await at(new Date(inactiveAt.getTime() - 1))).toBe(true);
+    expect(await at(inactiveAt)).toBe(false);
+    const activeAt = await change("ACTIVE", inactiveAt);
+    expect(await at(new Date(activeAt.getTime() - 1))).toBe(false);
+    expect(await at(activeAt)).toBe(true);
+    const inactiveAgainAt = await change("INACTIVE", activeAt);
+    const activeAgainAt = await change("ACTIVE", inactiveAgainAt);
+    expect(await at(inactiveAgainAt)).toBe(false);
+    expect(await at(activeAgainAt)).toBe(true);
+    expect(
+      await prisma.branchStatusEvent.count({ where: { branchId: branch.id } }),
+    ).toBe(5);
+    expect(
+      (await prisma.branch.findUniqueOrThrow({ where: { id: branch.id } }))
+        .deactivatedAt,
+    ).toBeNull();
+
+    const duplicate = await repository.setLifecycle({
+      actorUserId: owner.id,
+      branchId: branch.id,
+      expectedUpdatedAt: activeAgainAt,
+      organizationId: organization.id,
+      status: "ACTIVE",
+    });
+    expect(duplicate.kind).toBe("success");
+    expect(
+      await prisma.branchStatusEvent.count({ where: { branchId: branch.id } }),
+    ).toBe(5);
+    const races = await Promise.all(
+      [0, 1].map(() =>
+        repository.setLifecycle({
+          actorUserId: owner.id,
+          branchId: branch.id,
+          expectedUpdatedAt: activeAgainAt,
+          organizationId: organization.id,
+          status: "INACTIVE",
+        }),
+      ),
+    );
+    expect(races.map((result) => result.kind).sort()).toEqual([
+      "stale",
+      "success",
+    ]);
+    expect(
+      await prisma.branchStatusEvent.count({ where: { branchId: branch.id } }),
+    ).toBe(6);
+    const foreign = await prisma.organization.create({
+      data: { name: "Foreign" },
+    });
+    expect(
+      await isBranchActiveAt(prisma, foreign.id, branch.id, activeAgainAt),
+    ).toBeNull();
+    await expect(
+      prisma.branchStatusEvent.create({
+        data: {
+          branchId: branch.id,
+          organizationId: foreign.id,
+          status: "ACTIVE",
+          effectiveAt: activeAgainAt,
+        },
+      }),
+    ).rejects.toThrow();
+    const event = await prisma.branchStatusEvent.findFirstOrThrow({
+      where: { branchId: branch.id },
+    });
+    await expect(
+      prisma.branchStatusEvent.update({
+        where: { id: event.id },
+        data: { status: "INACTIVE" },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      prisma.branchStatusEvent.delete({ where: { id: event.id } }),
+    ).rejects.toThrow();
+  });
+
+  it("rolls Branch mutations and status events back together", async () => {
+    const organization = await prisma.organization.create({
+      data: { name: "Atomic" },
+    });
+    const branch = await prisma.branch.create({
+      data: { code: "ATOMIC", name: "Atomic", organizationId: organization.id },
+    });
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await tx.branch.update({
+          where: { id: branch.id },
+          data: {
+            status: "INACTIVE",
+            deactivatedAt: new Date(branch.updatedAt.getTime() + 1),
+            updatedAt: new Date(branch.updatedAt.getTime() + 1),
+          },
+        });
+        throw new Error("abort");
+      }),
+    ).rejects.toThrow("abort");
+    expect(
+      (await prisma.branch.findUniqueOrThrow({ where: { id: branch.id } }))
+        .status,
+    ).toBe("ACTIVE");
+    expect(
+      await prisma.branchStatusEvent.count({ where: { branchId: branch.id } }),
+    ).toBe(1);
+    await prisma.branch.update({
+      where: { id: branch.id },
+      data: {
+        status: "INACTIVE",
+        deactivatedAt: branch.createdAt,
+        updatedAt: branch.createdAt,
+      },
+    });
+    expect(
+      await isBranchActiveAt(
+        prisma,
+        organization.id,
+        branch.id,
+        branch.createdAt,
+      ),
+    ).toBe(false);
+    expect(
+      await prisma.branchStatusEvent.count({ where: { branchId: branch.id } }),
+    ).toBe(2);
   });
 
   it("enforces exact optimistic versions and immutable code", async () => {
