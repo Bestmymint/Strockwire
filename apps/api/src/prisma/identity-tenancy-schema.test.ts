@@ -146,8 +146,15 @@ describe("identity and tenancy database schema", () => {
         finished: true,
         active: true,
       },
+      {
+        migrationName: "20260928140000_add_ai_insight_jobs",
+        finished: true,
+        active: true,
+      },
     ]);
     expect(tables.map(({ tableName }) => tableName)).toEqual([
+      "ai_insight_attempts",
+      "ai_insight_reports",
       "analytics_snapshots",
       "branch_assignments",
       "branch_status_events",

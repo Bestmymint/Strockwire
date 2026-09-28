@@ -66,6 +66,8 @@ const tables = [
   "branches",
   "branch_status_events",
   "analytics_snapshots",
+  "ai_insight_reports",
+  "ai_insight_attempts",
   "inventory_balances",
   "inventory_cost_states",
   "inventory_transactions",

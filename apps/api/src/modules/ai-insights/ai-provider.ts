@@ -41,6 +41,19 @@ export type AiProviderResult =
       attempts: readonly AiProviderAttempt[];
     }>;
 
+export type AiProviderAttemptObserver = Readonly<{
+  beforeAttempt(
+    attempt: Pick<
+      AiProviderAttempt,
+      "provider" | "requestedModel" | "attemptNumber"
+    >,
+  ): Promise<void>;
+  afterAttempt(attempt: AiProviderAttempt): Promise<void>;
+}>;
+
 export interface AiProvider {
-  generate(input: Readonly<{ text: string }>): Promise<AiProviderResult>;
+  generate(
+    input: Readonly<{ text: string }>,
+    observer?: AiProviderAttemptObserver,
+  ): Promise<AiProviderResult>;
 }

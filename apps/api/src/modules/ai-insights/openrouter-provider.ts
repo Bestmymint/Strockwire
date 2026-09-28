@@ -3,6 +3,7 @@ import { z } from "zod";
 import type {
   AiProvider,
   AiProviderAttempt,
+  AiProviderAttemptObserver,
   AiProviderFailureCategory,
   AiProviderResult,
   AiProviderUsage,
@@ -132,7 +133,10 @@ export function createOpenRouterProvider({
   fetchImplementation?: typeof fetch;
 }): AiProvider {
   return {
-    async generate(input): Promise<AiProviderResult> {
+    async generate(
+      input,
+      observer?: AiProviderAttemptObserver,
+    ): Promise<AiProviderResult> {
       const attempts: AiProviderAttempt[] = [];
       if (apiKey === undefined || !/^[\x21-\x7e]+$/.test(apiKey)) {
         return { ok: false, failureCategory: "AUTHENTICATION", attempts };
@@ -153,6 +157,12 @@ export function createOpenRouterProvider({
         model: AiProviderAttempt["requestedModel"],
         body: string,
       ): Promise<AiProviderResult> {
+        const attemptNumber = attempts.length + 1;
+        await observer?.beforeAttempt({
+          provider: "openrouter",
+          requestedModel: model,
+          attemptNumber,
+        });
         const started = performance.now();
         const signal = AbortSignal.timeout(TIMEOUT_MILLISECONDS);
         let status: number | undefined;
@@ -221,7 +231,7 @@ export function createOpenRouterProvider({
         attempts.push({
           provider: "openrouter",
           requestedModel: model,
-          attemptNumber: attempts.length + 1,
+          attemptNumber,
           durationMilliseconds: performance.now() - started,
           ...(status === undefined ? {} : { httpStatus: status }),
           ...(failureCategory === undefined ? {} : { failureCategory }),
@@ -232,6 +242,7 @@ export function createOpenRouterProvider({
                 ...(usage === undefined ? {} : { usage }),
               }),
         });
+        await observer?.afterAttempt(attempts.at(-1)!);
 
         if (completion !== undefined) {
           return {

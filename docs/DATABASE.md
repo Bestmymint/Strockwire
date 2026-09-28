@@ -1126,6 +1126,28 @@ Lifecycle:
 
 Purpose: persisted OpenRouter summary derived from one analytics snapshot.
 
+P7-M2-T03 persists this as `ai_insight_reports` with a non-null normalized
+`scope_key` (`organization` or Branch UUID), so the ordinary identity unique
+index also covers Organization scope despite nullable `branch_id`. Composite
+Branch/Organization and snapshot/Organization foreign keys enforce tenancy.
+Each row pins snapshot ID, schema/metric versions, source cutoff, and prompt
+version at creation; a trigger rejects changes to that authority and all
+updates after a terminal result. States are `IN_PROGRESS`, `SUCCEEDED`, `FAILED`, and
+`INSUFFICIENT`. The current Sales snapshot always has valid facts, including
+zero, so T03 creates no artificial insufficient result.
+
+`ai_insight_attempts` reserves an ordinal 1–3 before each external call and
+records safe requested/actual model, start/finish times, category, and validated
+usage/cost when available. A pending reservation makes the report's
+`attempt_count` null to represent an unknown external outcome; completed calls
+restore the known count. An expired claim with no reservation can be reclaimed;
+an expired claim after provider activity becomes `FAILED/INTERRUPTED` without
+another call. This bounds ordinary execution even after a crash, while
+acknowledging that PostgreSQL cannot prove exactly-once external delivery.
+Detailed HTTP telemetry and raw prompts, responses, errors, and credentials are
+not stored. Later retention work must preserve report/snapshot references for
+36 months after period end; there is no cleanup worker in T03.
+
 Required logical attributes:
 
 - Analytics snapshot identifier

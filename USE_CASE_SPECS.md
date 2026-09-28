@@ -469,7 +469,8 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 ### UC-AI-001 — Generate a scheduled AI insight
 
 - **Status:** Analytics periods accepted by `ADR-029`; V1 schedule/provider policy
-  accepted by `ADR-033`. Runtime remains unimplemented. Forecasting V1 is
+  accepted by `ADR-033`. The internal P7-M2-T03 job implements claim, generation,
+  and persistence; due-period orchestration remains P7-M3. Forecasting V1 is
   implemented internally by P6-M4-T02 but is not a required AI input.
 - **Actor:** System scheduler/job
 - **Preconditions:** A due report identity exists; deterministic metrics for the period can be computed or marked insufficient; provider configuration is available for an attempt.

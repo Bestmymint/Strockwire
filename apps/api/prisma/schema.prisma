@@ -164,6 +164,29 @@ enum AnalyticsSnapshotCadence {
   @@map("analytics_snapshot_cadence")
 }
 
+enum AiInsightState {
+  IN_PROGRESS
+  SUCCEEDED
+  FAILED
+  INSUFFICIENT
+
+  @@map("ai_insight_state")
+}
+
+enum AiInsightFailureCategory {
+  TIMEOUT
+  TRANSPORT
+  RATE_LIMITED
+  PROVIDER_UNAVAILABLE
+  AUTHENTICATION
+  INVALID_REQUEST
+  INVALID_RESPONSE
+  PROVIDER_ERROR
+  INTERRUPTED
+
+  @@map("ai_insight_failure_category")
+}
+
 model User {
   id                String     @id @default(uuid()) @db.Uuid
   email             String     @unique(map: "users_email_key") @db.VarChar(320)
@@ -216,8 +239,9 @@ model Organization {
   inventoryBalances     InventoryBalance[]
   inventoryCostStates   InventoryCostState[]
   inventoryTransactions InventoryTransaction[]
-  branchStatusEvents     BranchStatusEvent[]
-  analyticsSnapshots     AnalyticsSnapshot[]
+  branchStatusEvents    BranchStatusEvent[]
+  analyticsSnapshots    AnalyticsSnapshot[]
+  aiInsightReports      AiInsightReport[]
 
   @@map("organizations")
 }
@@ -659,6 +683,7 @@ model Branch {
   saleRefunds                 SaleRefund[]
   statusEvents                BranchStatusEvent[]
   analyticsSnapshots          AnalyticsSnapshot[]
+  aiInsightReports            AiInsightReport[]
 
   @@unique([organizationId, code], map: "branches_organization_id_code_key")
   @@unique([id, organizationId], map: "branches_id_organization_id_key")
@@ -699,12 +724,73 @@ model AnalyticsSnapshot {
   payload                 Json
   createdAt               DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  branch       Branch?      @relation(fields: [branchId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  branch           Branch?           @relation(fields: [branchId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
+  aiInsightReports AiInsightReport[]
 
+  @@unique([id, organizationId], map: "analytics_snapshots_id_organization_id_key")
   @@unique([organizationId, scopeKey, cadence, reportingTimezone, periodStartInclusive, periodEndExclusive, schemaVersion, metricDefinitionVersion], map: "analytics_snapshots_identity_key")
   @@index([organizationId, branchId, cadence, periodEndExclusive], map: "analytics_snapshots_scope_period_idx")
   @@map("analytics_snapshots")
+}
+
+model AiInsightReport {
+  id                      String                    @id @default(uuid()) @db.Uuid
+  organizationId          String                    @map("organization_id") @db.Uuid
+  branchId                String?                   @map("branch_id") @db.Uuid
+  scope                   AnalyticsSnapshotScope
+  scopeKey                String                    @map("scope_key") @db.VarChar(36)
+  cadence                 AnalyticsSnapshotCadence
+  reportingTimezone       String                    @map("reporting_timezone") @db.VarChar(255)
+  periodStartInclusive    DateTime                  @map("period_start_inclusive") @db.Timestamptz(3)
+  periodEndExclusive      DateTime                  @map("period_end_exclusive") @db.Timestamptz(3)
+  snapshotId              String                    @map("snapshot_id") @db.Uuid
+  schemaVersion           String                    @map("schema_version") @db.VarChar(64)
+  metricDefinitionVersion String                    @map("metric_definition_version") @db.VarChar(64)
+  sourceCutoff            DateTime                  @map("source_cutoff") @db.Timestamptz(3)
+  promptVersion           String                    @map("prompt_version") @db.VarChar(64)
+  state                   AiInsightState            @default(IN_PROGRESS)
+  claimToken              String?                   @map("claim_token") @db.Uuid
+  claimExpiresAt          DateTime?                 @map("claim_expires_at") @db.Timestamptz(3)
+  claimedAt               DateTime                  @default(now()) @map("claimed_at") @db.Timestamptz(3)
+  attemptCount            Int?                      @default(0) @map("attempt_count")
+  provider                String?                   @db.VarChar(32)
+  actualModel             String?                   @map("actual_model") @db.VarChar(128)
+  content                 String?
+  failureCategory         AiInsightFailureCategory? @map("failure_category")
+  generatedAt             DateTime?                 @map("generated_at") @db.Timestamptz(3)
+  completedAt             DateTime?                 @map("completed_at") @db.Timestamptz(3)
+  createdAt               DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  branch       Branch?            @relation(fields: [branchId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
+  snapshot     AnalyticsSnapshot  @relation(fields: [snapshotId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
+  attempts     AiInsightAttempt[]
+
+  @@unique([organizationId, scopeKey, cadence, reportingTimezone, periodStartInclusive, periodEndExclusive], map: "ai_insight_reports_identity_key")
+  @@index([organizationId, branchId, cadence, periodEndExclusive], map: "ai_insight_reports_scope_period_idx")
+  @@map("ai_insight_reports")
+}
+
+model AiInsightAttempt {
+  id               String                    @id @default(uuid()) @db.Uuid
+  reportId         String                    @map("report_id") @db.Uuid
+  ordinal          Int
+  provider         String                    @db.VarChar(32)
+  requestedModel   String                    @map("requested_model") @db.VarChar(128)
+  actualModel      String?                   @map("actual_model") @db.VarChar(128)
+  startedAt        DateTime                  @default(now()) @map("started_at") @db.Timestamptz(3)
+  finishedAt       DateTime?                 @map("finished_at") @db.Timestamptz(3)
+  failureCategory  AiInsightFailureCategory? @map("failure_category")
+  promptTokens     BigInt?                   @map("prompt_tokens")
+  completionTokens BigInt?                   @map("completion_tokens")
+  totalTokens      BigInt?                   @map("total_tokens")
+  cost             String?                   @db.VarChar(64)
+
+  report AiInsightReport @relation(fields: [reportId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([reportId, ordinal], map: "ai_insight_attempts_report_ordinal_key")
+  @@map("ai_insight_attempts")
 }
 
 model InventoryBalance {

@@ -525,11 +525,20 @@ tenant/Branch/snapshot IDs, names, raw rows, and arbitrary JSON never enter the
 prompt. V1 always has available counts and amounts, even for an empty period,
 so its all-zero snapshot is not locally insufficient. The output contract is
 plain Unicode prose: reject empty, malformed, control-laden, JSON-like,
-prompt-marker, or HTML-like text before later persistence; the UI must escape
+prompt-marker, or HTML-like text before persistence; the UI must escape
 it as text. This validator cannot prove factual accuracy or detect every
 invented number; the authoritative snapshot and explicit no-calculation prompt
-remain separate controls. Only the prompt version, not its raw text, is later
+remain separate controls. Only the prompt version, not its raw text, is
 persisted as provenance.
+P7-M2-T03 now provides an internal, single-identity report job. It reuses the
+immutable AnalyticsSnapshot, pins its schema/metric/source cutoff and prompt
+version at claim, and reserves each of at most three provider attempts in
+PostgreSQL before network I/O. Completed calls record only safe provenance;
+success stores T02-validated plain text. A duplicate observes the existing job.
+An expired claim with no reserved call can be reclaimed, while any reserved or
+completed provider activity fails closed as `INTERRUPTED` after a crash because
+external delivery cannot be proven exactly once. Network I/O never holds a
+database transaction open. Due-period discovery and public reads remain P7-M3.
 An internal Branch status-history lookup supplies due-instant eligibility from
 immutable events. Pre-migration history is unknown, so Branch generation skips
 due instants before its first trustworthy event; Organization aggregation keeps

@@ -52,6 +52,37 @@ function requestedModels(
 afterEach(() => vi.restoreAllMocks());
 
 describe("OpenRouter AI provider", () => {
+  it("reserves before each HTTP call and stops when attempt persistence fails", async () => {
+    const { fetchImplementation, provider } = client([
+      new Response("", { status: 503 }),
+      success(),
+    ]);
+    const events: string[] = [];
+    await expect(
+      provider.generate(input, {
+        beforeAttempt: async ({ attemptNumber }) => {
+          events.push(`before-${attemptNumber}`);
+        },
+        afterAttempt: async ({ attemptNumber }) => {
+          events.push(`after-${attemptNumber}`);
+          throw new Error("persistence unavailable");
+        },
+      }),
+    ).rejects.toThrow("persistence unavailable");
+    expect(events).toEqual(["before-1", "after-1"]);
+    expect(fetchImplementation).toHaveBeenCalledOnce();
+
+    await expect(
+      provider.generate(input, {
+        beforeAttempt: async () => {
+          throw new Error("reservation unavailable");
+        },
+        afterAttempt: async () => undefined,
+      }),
+    ).rejects.toThrow("reservation unavailable");
+    expect(fetchImplementation).toHaveBeenCalledOnce();
+  });
+
   it("sends one bounded primary call and returns model and reported usage", async () => {
     const { fetchImplementation, provider } = client([success()]);
     const result = await provider.generate(input);
