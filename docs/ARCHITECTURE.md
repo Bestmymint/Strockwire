@@ -516,6 +516,20 @@ sequenceDiagram
 ```
 
 Dashboard reads the persisted result. Opening or refreshing the dashboard does not call OpenRouter. `ADR-033` governs V1 schedule times, bounded catch-up, provider, model, budget, and failure behavior.
+P7-M2-T02 prepares `ai-business-summary-prompt-v1` transiently from the supported
+`analytics-snapshot-v1`/`analytics-v1` Sales payload. Its provider projection uses
+only the generic Organization/Branch summary label, cadence, reporting timezone,
+persisted local and UTC period bounds, source cutoff, complete status, and the
+nine validated Sales fields (including nullable values and reasons). Internal
+tenant/Branch/snapshot IDs, names, raw rows, and arbitrary JSON never enter the
+prompt. V1 always has available counts and amounts, even for an empty period,
+so its all-zero snapshot is not locally insufficient. The output contract is
+plain Unicode prose: reject empty, malformed, control-laden, JSON-like,
+prompt-marker, or HTML-like text before later persistence; the UI must escape
+it as text. This validator cannot prove factual accuracy or detect every
+invented number; the authoritative snapshot and explicit no-calculation prompt
+remain separate controls. Only the prompt version, not its raw text, is later
+persisted as provenance.
 An internal Branch status-history lookup supplies due-instant eligibility from
 immutable events. Pre-migration history is unknown, so Branch generation skips
 due instants before its first trustworthy event; Organization aggregation keeps
