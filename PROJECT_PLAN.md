@@ -292,6 +292,30 @@ P7-M2-T02 and P7-M2-T03 are NOT STARTED. Milestone 7.3 is NOT STARTED.
 | [ ] **P7-M3-T02 — Persisted insight API** | Read reports without provider calls | List/latest/detail, safe status/provenance, scope | T01 | Zero provider calls on reads; safe stale/failure states | API/security/empty/stale/version tests |
 | [ ] **P7-M3-T03 — Insight dashboard UI** | Present summaries responsibly | Cadence/scope/freshness/data-state/content-safe rendering | T02 | AI labeled as summary; deterministic metrics accessible | UI/E2E/accessibility/XSS-safe rendering tests |
 
+### Milestone 7.4 — Pre-Cloud Readiness (PLANNED / NOT STARTED)
+
+This is a PRE-CLOUD LOCAL gate to establish and validate the final local
+application baseline before AWS. Delivery sequence: Phase 7 feature implementation
+→ Milestone 7.4 Stable/LTS baseline → automated local regression → full manual
+local UAT → PRE-CLOUD READY → Phase 8 AWS cloud delivery. Phase 8 remains NOT
+STARTED and owns AWS infrastructure and integration testing. This milestone is not production
+hardening, AWS security validation, production-like testing, cloud load testing,
+or the final dependency/container/IaC security audit. Those remain Phase 9 work.
+
+| Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
+| --- | --- | --- | --- | --- | --- |
+| [ ] **P7-M4-T01 — Stable/LTS runtime and dependency baseline** | Establish the supported pre-cloud runtime/dependency baseline | Review current Node.js, pnpm, Next.js, React, Express, Prisma, Zod, Vitest, Playwright, TypeScript, PostgreSQL, Docker images, and other relevant direct runtime/build dependencies. Prefer supported stable/LTS and compatible, justified patch/minor versions; do not chase a major version solely because it is newer; no beta/RC/canary/preview. Pin/reproduce versions and inspect deprecations/compatibility; major upgrades require explicit justification and impact review. | Phase 7 feature implementation | Document accepted versions; no knowingly obsolete/unsupported critical runtime; review compatibility; exact changes reviewable before regression testing | Targeted version, deprecation, and compatibility validation only; full regression belongs to T02 |
+| [ ] **P7-M4-T02 — Post-baseline automated regression** | Prove the accepted Stable/LTS baseline did not break StockWise | Reproducible install; Prisma validate/generate; migrations from zero on a fresh guarded database; lint, typecheck, build, full automated suite and relevant E2E; demo fixture; container startup/smoke; authentication and business-critical regressions as applicable. | T01; completed application features | Automated gates pass on the final local baseline; migrations/schema remain reproducible; no unresolved baseline-induced regression; exact accepted versions are those carried into Manual UAT | Full automated regression and applicable guarded database, E2E, demo, and container checks |
+| [ ] **P7-M4-T03 — Full local manual business UAT** | Manually validate feature-complete StockWise business workflows locally before AWS complexity | Human-executed UAT plan covering identity, email verification where configured, password lifecycle, onboarding, invitations, memberships, branch context; OWNER/ADMIN/BRANCH_MANAGER/INVENTORY_STAFF/CASHIER permissions and tenant/Branch isolation; Category/Product, Supplier, Inventory/adjustments, Purchasing/PO/Receiving, POS/payment, Sales History/receipt/refund/restock; Sales/Category/Branch/Inventory analytics, Forecast, Reorder; and scheduled AI snapshot generation plus provider/job/persisted insight flows once Phase 7.2/7.3 exist. Each case records prerequisite, actor/role, steps, expected UI/API result, expected business/database effect where relevant, negative/auth test, edge cases, and pass/fail evidence. | T02; feature-complete local application | Critical accepted flows manually exercised; failures resolved or explicitly blocking; no known blocker to AWS deployment; local application declared PRE-CLOUD READY | Human-executed plan with recorded outcomes and evidence; this task defines the plan, not UAT tooling |
+
+P7-M4-T01, P7-M4-T02, and P7-M4-T03 are PLANNED / NOT STARTED. This local
+compatibility/regression/UAT gate does not replace **P9-M1-T02 — Dependency/
+container/IaC security review**, the final security-oriented audit in deployed/
+cloud context, or **P9-M4-T01 — End-to-end regression**, the complete regression
+in a production-like environment after cloud/hardening. Phase 9 retains production/
+cloud hardening, security, resilience, performance, experiments, and final
+production-readiness.
+
 ## Phase 8 — AWS cloud delivery
 
 ### Milestone 8.1 — Production architecture and IaC decision gate
