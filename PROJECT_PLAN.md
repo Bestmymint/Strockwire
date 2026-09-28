@@ -4,7 +4,7 @@
 | --- | --- |
 | Project | StockWise |
 | Plan baseline | Architecture Freeze v1 |
-| Repository state | Implemented and verified through P7-M2-T01; Phase 6 complete, Phase 7 in progress, Milestones 7.1 complete and 7.2 in progress; P7-M2-T02 next/not started |
+| Repository state | Implemented and verified through P7-M2-T02; Phase 6 complete, Phase 7 in progress, Milestones 7.1 complete and 7.2 in progress; P7-M2-T03 next/not started |
 | Last updated | 2026-09-28 |
 
 ## 1. Plan rules
@@ -266,8 +266,9 @@ no-op rerun with manifest, reconciliation, and Analytics/Forecast/Reorder
 goldens; focused tests 38/38 and full suite 1,031 passed, 1 skipped across 118
 files; Prisma validate/generate, lint, typecheck, build, Prettier, and diff check
 passed. Milestone 7.2 is IN PROGRESS: P7-M2-T01 is COMPLETE in
-`227303f` (`feat: add OpenRouter AI provider`); P7-M2-T02 is NEXT / NOT
-STARTED, and P7-M2-T03 is NOT STARTED. Milestone 7.3 is NOT STARTED.
+`227303f` (`feat: add OpenRouter AI provider`); P7-M2-T02 is COMPLETE in
+`2ff4832` (`feat: add AI summary prompt policy`); P7-M2-T03 is NEXT / NOT
+STARTED. Milestone 7.3 is NOT STARTED.
 `STOCKOUT_RISK` remains deferred/unassigned; P0-M2-T05 remains unchecked.
 
 ### Milestone 7.1 — AI decision gate and snapshots (COMPLETE)
@@ -282,7 +283,7 @@ STARTED, and P7-M2-T03 is NOT STARTED. Milestone 7.3 is NOT STARTED.
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
 | [x] **P7-M2-T01 — AI provider abstraction/OpenRouter client** | Isolate provider safely | Typed internal provider boundary; fixed OpenRouter Chat Completions adapter; explicit primary/retry/fallback, 15-second per-call timeout, three-call maximum, request/output bounds, server-only optional key; no database dependency or router model | P7-M1 | Provider cannot access DB; invalid output rejected | Implemented in `227303f` (`feat: add OpenRouter AI provider`); focused 38/38, full suite 1,064 passed and 1 skipped; lint/typecheck/build passed |
-| [ ] **P7-M2-T02 — Prompt version and data minimization** | Ensure summary-only behavior | Versioned prompt, snapshot allow-list, prose/content validation | T01 | No prohibited fields; prompt forbids invented calculations | Snapshot privacy fixtures and adversarial content tests |
+| [x] **P7-M2-T02 — Prompt version and data minimization** | Ensure summary-only behavior | Versioned prompt, snapshot allow-list, prose/content validation | T01 | No prohibited fields; prompt forbids invented calculations | Implemented in `2ff4832` (`feat: add AI summary prompt policy`): server-owned V1 prompt, strict aggregate allow-list, generic scope labels, no IDs/PII/raw rows, plain-text validation; focused 54/54, full suite 1,085 passed and 1 skipped, lint/typecheck/build passed; no dependencies added |
 | [ ] **P7-M2-T03 — Idempotent insight job** | Generate/persist one scheduled report | Claim, snapshot, provider, persisted success/failure/provenance/retry | T01–T02 | Duplicate trigger bounded; core system unaffected by failure | Concurrency, crash-point, retry, provider failure tests |
 
 ### Milestone 7.3 — Four cadences and dashboard (NOT STARTED)
@@ -406,8 +407,8 @@ endpoints and `/app/analytics` view are available. The view remains advisory and
 does not auto-order. All Phase 6 tasks, including P6-M5-T01 and P6-M5-T02, are
 complete. Phase 6 is COMPLETE. `STOCKOUT_RISK` remains deferred/unassigned
 pending a separate accepted policy. Phase 7 is IN PROGRESS; Milestone 7.1 is
-COMPLETE and Milestone 7.2 is IN PROGRESS. P7-M2-T01 is COMPLETE;
-P7-M2-T02 is NEXT / NOT STARTED and P7-M2-T03 is NOT STARTED.
+COMPLETE and Milestone 7.2 is IN PROGRESS. P7-M2-T01 and P7-M2-T02 are
+COMPLETE; P7-M2-T03 is NEXT / NOT STARTED.
 Milestone 7.3 is NOT STARTED.
 
 Current-state constraints that the next task must preserve:
@@ -431,7 +432,7 @@ Current-state constraints that the next task must preserve:
   `OQ-020` remains open beyond its narrow application-level limiter exceptions.
 - `OQ-013` is resolved by `ADR-025` as **DEFERRED FROM MVP**. Stock transfer remains broader/full future scope, but no transfer schema, API, UI, permission, lifecycle, ledger-source, or idempotency contract is implemented or frozen.
 - `apps/api` contains the Express app/server bootstrap, safe transport/errors, Prisma client, all accepted authentication endpoints, first onboarding, `GET /me/access-context`, branch lifecycle endpoints, invitation/member workflows, Catalog, Inventory, Supplier, Purchase Order, Receiving, Sales, and the Analytics period/scope/base-Sales/Category/Branch/Inventory/Forecast/Reorder repositories and services with authenticated analytics endpoints. Metrics use set-based PostgreSQL statements and exact Decimal derivation. Sales includes bounded Organization VAT configuration, completed Sale/SaleItem/Payment snapshots and constraints, `SALE_CHECKOUT` hashes, tenant-safe negative `SALE` ledger provenance, atomic checkout, POS reads/checkout transport, branch-scoped history/detail reads with field-level cost permission, and immutable linked SaleRefund/SaleRefundItem/RefundPayment compensation with optional positive `SALE_REFUND_RETURN` stock/cost effects. Existing protected writes continue to derive the verified actor, re-evaluate centralized policy and tenant scope, and serialize their accepted invariants.
-- The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, the bounded refund workflow, and Sales/Category/Branch/Inventory/Forecast/Reorder Analytics HTTP/UI exposure are implemented. Forecasting V1 and Reorder V1 remain deterministic; forecast/reorder presentation uses server-authoritative values and statuses. P7-M2-T01 implements the OpenRouter provider adapter; prompt construction, insight generation/jobs, scheduling, AWS resources, deployment, and release automation remain unimplemented.
+- The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, the bounded refund workflow, and Sales/Category/Branch/Inventory/Forecast/Reorder Analytics HTTP/UI exposure are implemented. Forecasting V1 and Reorder V1 remain deterministic; forecast/reorder presentation uses server-authoritative values and statuses. P7-M2-T01 implements the OpenRouter provider adapter and P7-M2-T02 implements prompt preparation; insight job/persistence and scheduling remain unimplemented.
 - Git metadata is present, but P1-M1-T05 did not create a commit or perform any remote action.
 
 ### Next task handoff prompt
@@ -439,12 +440,13 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P7-M2-T02 — Prompt version and data minimization
+Task: P7-M2-T03 — Idempotent insight job
 
-Use the existing P7-M2-T02 task row as the complete task contract. Preserve its
-scope and acceptance requirements. ADR-033 governs the accepted prompt and data
-minimization policy. P7-M2-T01's OpenRouter provider adapter is implemented in
-`227303f`. Do not begin P7-M2-T03 or widen the task beyond the existing row.
+Use the existing P7-M2-T03 task row as the complete task contract. Preserve its
+scope and acceptance requirements. ADR-033 governs the accepted job policy;
+P7-M2-T01's OpenRouter provider adapter is implemented in `227303f`, and
+P7-M2-T02's versioned prompt and data-minimization layer is implemented in
+`2ff4832`. Do not widen the task beyond the existing row.
 
 Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not commit without separate authorization.
 ```
