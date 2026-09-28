@@ -21,6 +21,10 @@ const analyticsCursorKeySchema = z
 export const apiEnvironmentSchema = z
   .object({
     DATABASE_URL: databaseUrlSchema,
+    OPENROUTER_API_KEY: z
+      .string()
+      .regex(/^[\x21-\x7e]+$/)
+      .optional(),
     RESEND_API_KEY: z.string().min(1).optional(),
     STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY: analyticsCursorKeySchema,
     STOCKWISE_RUNTIME_ENV: z.enum(["development", "test", "production"]),
@@ -99,6 +103,7 @@ export function loadApiEnvironment(
 ): ApiEnvironment {
   return apiEnvironmentSchema.parse({
     DATABASE_URL: environment.DATABASE_URL,
+    OPENROUTER_API_KEY: environment.OPENROUTER_API_KEY,
     RESEND_API_KEY: environment.RESEND_API_KEY,
     STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY:
       environment.STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY,

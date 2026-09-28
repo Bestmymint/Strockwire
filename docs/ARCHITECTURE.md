@@ -583,6 +583,13 @@ Prisma-backed persistence and external adapters
 - Persistence adapters issue scoped queries and translate database errors.
 - External adapters isolate OpenRouter, S3, scheduler, logging, and time.
 
+The internal AI provider accepts only already-approved text and returns validated
+text, actual model, optional reported usage, and sanitized attempt metadata. Its
+OpenRouter adapter has a fixed endpoint and model sequence, no database access,
+and no startup call. OpenRouter's generic HTTP 404 does not reliably identify a
+model-specific unavailable condition; the adapter stops on 404 instead of
+guessing that fallback is permitted.
+
 Avoid a generic repository abstraction that erases query semantics, tenant scope, locking, or transaction requirements.
 
 ## 10. Data consistency strategy

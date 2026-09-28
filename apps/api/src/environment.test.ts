@@ -144,4 +144,33 @@ describe("API environment boundary", () => {
       ),
     ).toThrow();
   });
+
+  it("keeps the optional OpenRouter key server-only and rejects blank or malformed values", () => {
+    const base = {
+      DATABASE_URL:
+        "postgresql://local-user:local-password@127.0.0.1:5432/local-database",
+      STOCKWISE_API_PORT: "3001",
+      STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY: analyticsKey,
+      STOCKWISE_PUBLIC_WEB_ORIGIN: "http://localhost:3000",
+      STOCKWISE_RUNTIME_ENV: "development",
+    };
+    expect(loadApiEnvironment(base).OPENROUTER_API_KEY).toBeUndefined();
+    expect(
+      loadApiEnvironment({ ...base, OPENROUTER_API_KEY: "server-only-key" })
+        .OPENROUTER_API_KEY,
+    ).toBe("server-only-key");
+    for (const key of ["", " ", "key\nsecret"]) {
+      expect(() =>
+        loadApiEnvironment({ ...base, OPENROUTER_API_KEY: key }),
+      ).toThrow();
+    }
+    let error: unknown;
+    try {
+      loadApiEnvironment({ ...base, OPENROUTER_API_KEY: "secret\nvalue" });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeDefined();
+    expect(String(error)).not.toContain("secret\nvalue");
+  });
 });
