@@ -1,0 +1,393 @@
+// @vitest-environment jsdom
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { AccessibleOrganization } from "@/branch-api-client";
+import { AiInsightView } from "./ai-insight-view";
+
+const ORG = "10000000-0000-4000-8000-000000000001";
+const A = "20000000-0000-4000-8000-000000000001";
+const B = "20000000-0000-4000-8000-000000000002";
+const OLD = "20000000-0000-4000-8000-000000000003";
+const text = "<script>alert('x')</script>\n<b>hello</b>";
+const success = {
+  id: "30000000-0000-4000-8000-000000000001",
+  cadence: "DAILY",
+  reportingTimezone: "Asia/Bangkok",
+  periodStartInclusive: "2026-09-26T17:00:00.000Z",
+  periodEndExclusive: "2026-09-27T17:00:00.000Z",
+  state: "SUCCEEDED",
+  content: text,
+  failureCategory: null,
+  generatedAt: "2026-09-27T23:01:00.000Z",
+  completedAt: "2026-09-27T23:01:00.000Z",
+};
+const newer = {
+  ...success,
+  id: "30000000-0000-4000-8000-000000000002",
+  periodStartInclusive: "2026-09-27T17:00:00.000Z",
+  periodEndExclusive: "2026-09-28T17:00:00.000Z",
+  state: "FAILED",
+  content: null,
+  failureCategory: "PROVIDER_ERROR",
+  generatedAt: null,
+};
+
+let result: { latest: unknown; lastSuccess: unknown; stale: boolean };
+let requests: { url: string; method: string }[];
+let pending = false;
+let pendingBranches = false;
+let responseStatus = 200;
+
+function organization(
+  role: AccessibleOrganization["role"] = "OWNER",
+): AccessibleOrganization {
+  return {
+    id: ORG,
+    name: "Store One",
+    role,
+    branches: [
+      { id: A, code: "A", name: "Alpha" },
+      { id: B, code: "B", name: "Beta" },
+    ],
+  };
+}
+
+function renderView(role: AccessibleOrganization["role"] = "OWNER") {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <AiInsightView organization={organization(role)} selectedBranchId={A} />
+    </QueryClientProvider>,
+  );
+}
+
+beforeEach(() => {
+  result = { latest: success, lastSuccess: success, stale: false };
+  requests = [];
+  pending = false;
+  pendingBranches = false;
+  responseStatus = 200;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, method: init?.method ?? "GET" });
+      if (pending && url.includes("ai-insights")) return new Promise(() => {});
+      if (url.includes("/branches?includeInactive=true")) {
+        if (pendingBranches) return new Promise(() => {});
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: A,
+                  code: "A",
+                  name: "Alpha",
+                  status: "ACTIVE",
+                  organizationId: ORG,
+                  address: null,
+                  phone: null,
+                  updatedAt: "2026-09-01T00:00:00.000Z",
+                },
+                {
+                  id: B,
+                  code: "B",
+                  name: "Beta",
+                  status: "ACTIVE",
+                  organizationId: ORG,
+                  address: null,
+                  phone: null,
+                  updatedAt: "2026-09-01T00:00:00.000Z",
+                },
+                {
+                  id: OLD,
+                  code: "OLD",
+                  name: "Old",
+                  status: "INACTIVE",
+                  organizationId: ORG,
+                  address: null,
+                  phone: null,
+                  updatedAt: "2026-09-01T00:00:00.000Z",
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify(
+            responseStatus === 200
+              ? { data: result }
+              : { error: { code: "FORBIDDEN" } },
+          ),
+          { status: responseStatus },
+        ),
+      );
+    }),
+  );
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+describe("persisted AI insight view", () => {
+  it("shows a successful period and renders provider text literally", async () => {
+    renderView();
+    expect(await screen.findByText("Latest report succeeded")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Successful AI summary" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/AI generated summaries of persisted data/),
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: "analytics views" })).toBeTruthy();
+    expect(
+      screen.getByText(/Report period: Sep 27, 2026–Sep 27, 2026/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.tagName === "P" && element.textContent === text,
+      ).textContent,
+    ).toBe(text);
+    expect(document.querySelector("script")).toBeNull();
+    expect(document.querySelector("article b")).toBeNull();
+    expect(screen.getByText(/deterministic/)).toBeTruthy();
+    expect(requests.every((request) => request.method === "GET")).toBe(true);
+    expect(
+      requests.some((request) => request.url.includes("/ai-insights/latest?")),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["FAILED", "Latest scheduled report failed"],
+    ["INSUFFICIENT", "Latest period had insufficient data for a report"],
+    ["IN_PROGRESS", "Latest report is being prepared"],
+  ])(
+    "shows newer %s while clearly labeling the older success",
+    async (state, label) => {
+      result = {
+        latest: { ...newer, state },
+        lastSuccess: success,
+        stale: true,
+      };
+      renderView();
+      expect(await screen.findByText(label)).toBeTruthy();
+      expect(
+        screen.getByText(/Latest period: Sep 28, 2026–Sep 28, 2026/),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(/Report period: Sep 27, 2026–Sep 27, 2026/),
+      ).toBeTruthy();
+      expect(screen.getByText(/previous successful report/)).toBeTruthy();
+      expect(
+        screen.getByText(
+          (_, element) =>
+            element?.tagName === "P" && element.textContent === text,
+        ),
+      ).toBeTruthy();
+    },
+  );
+
+  it.each([
+    ["FAILED", "Latest scheduled report failed"],
+    ["INSUFFICIENT", "Latest period had insufficient data for a report"],
+  ])("shows %s without fabricated content", async (state, label) => {
+    result = { latest: { ...newer, state }, lastSuccess: null, stale: true };
+    renderView();
+    expect(await screen.findByText(label)).toBeTruthy();
+    expect(screen.queryByText("Successful AI summary")).toBeNull();
+    expect(screen.queryByText(/credentials|expired/i)).toBeNull();
+  });
+
+  it("treats an empty result as normal", async () => {
+    result = { latest: null, lastSuccess: null, stale: false };
+    renderView();
+    expect(await screen.findByText(/No persisted insight yet/)).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("distinguishes loading and a safe access error", async () => {
+    pending = true;
+    renderView();
+    expect(screen.getByText("Loading persisted insight…")).toBeTruthy();
+    cleanup();
+    pending = false;
+    responseStatus = 403;
+    renderView();
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      "AI insights are not available for your current access.",
+    );
+  });
+
+  it("announces historical Branch choices while they load", () => {
+    pendingBranches = true;
+    renderView();
+    expect(screen.getByText("Loading historical branch choices…")).toBeTruthy();
+  });
+
+  it.each([
+    [
+      "DAILY",
+      "Asia/Bangkok",
+      "2026-09-26T17:00:00.000Z",
+      "2026-09-27T17:00:00.000Z",
+      "Sep 27, 2026–Sep 27, 2026",
+    ],
+    [
+      "WEEKLY",
+      "America/New_York",
+      "2026-03-02T05:00:00.000Z",
+      "2026-03-09T04:00:00.000Z",
+      "Mar 2, 2026–Mar 8, 2026",
+    ],
+    [
+      "MONTHLY",
+      "America/New_York",
+      "2026-03-01T05:00:00.000Z",
+      "2026-04-01T04:00:00.000Z",
+      "Mar 1, 2026–Mar 31, 2026",
+    ],
+    [
+      "YEARLY",
+      "America/New_York",
+      "2026-01-01T05:00:00.000Z",
+      "2027-01-01T05:00:00.000Z",
+      "Jan 1, 2026–Dec 31, 2026",
+    ],
+  ])(
+    "uses reporting timezone for %s half-open period",
+    async (
+      cadence,
+      reportingTimezone,
+      periodStartInclusive,
+      periodEndExclusive,
+      label,
+    ) => {
+      const report = {
+        ...success,
+        cadence,
+        reportingTimezone,
+        periodStartInclusive,
+        periodEndExclusive,
+      };
+      result = { latest: report, lastSuccess: report, stale: false };
+      renderView();
+      fireEvent.change(screen.getByLabelText("Insight cadence"), {
+        target: { value: cadence },
+      });
+      expect(await screen.findByText(`Latest period: ${label}`)).toBeTruthy();
+      expect(
+        screen.getByText(new RegExp(`Report period: ${label}`)),
+      ).toBeTruthy();
+    },
+  );
+
+  it("isolates organization, branches, inactive history, and cadences in GET requests", async () => {
+    renderView();
+    await screen.findByText("Latest report succeeded");
+    const scope = screen.getByLabelText("Insight scope");
+    await screen.findByRole("option", { name: "OLD — Old (inactive)" });
+    fireEvent.change(scope, { target: { value: A } });
+    await waitFor(() =>
+      expect(
+        requests.some(
+          ({ url }) =>
+            url.includes(`scope=branch`) && url.includes(`branchId=${A}`),
+        ),
+      ).toBe(true),
+    );
+    fireEvent.change(scope, { target: { value: B } });
+    await waitFor(() =>
+      expect(requests.some(({ url }) => url.includes(`branchId=${B}`))).toBe(
+        true,
+      ),
+    );
+    fireEvent.change(scope, { target: { value: OLD } });
+    await waitFor(() =>
+      expect(requests.some(({ url }) => url.includes(`branchId=${OLD}`))).toBe(
+        true,
+      ),
+    );
+    fireEvent.change(scope, { target: { value: "organization" } });
+    fireEvent.change(screen.getByLabelText("Insight cadence"), {
+      target: { value: "WEEKLY" },
+    });
+    await waitFor(() =>
+      expect(
+        requests.some(
+          ({ url }) =>
+            url.includes("scope=organization") &&
+            url.includes("cadence=WEEKLY") &&
+            !url.includes("branchId="),
+        ),
+      ).toBe(true),
+    );
+    fireEvent.change(screen.getByLabelText("Insight cadence"), {
+      target: { value: "MONTHLY" },
+    });
+    await waitFor(() =>
+      expect(requests.some(({ url }) => url.includes("cadence=MONTHLY"))).toBe(
+        true,
+      ),
+    );
+    fireEvent.change(screen.getByLabelText("Insight cadence"), {
+      target: { value: "YEARLY" },
+    });
+    await waitFor(() =>
+      expect(requests.some(({ url }) => url.includes("cadence=YEARLY"))).toBe(
+        true,
+      ),
+    );
+    expect(requests.every(({ method }) => method === "GET")).toBe(true);
+  });
+
+  it("limits a branch manager to assigned active branch choices", async () => {
+    renderView("BRANCH_MANAGER");
+    await screen.findByText("Latest report succeeded");
+    expect(
+      screen.queryByRole("option", { name: "All organization branches" }),
+    ).toBeNull();
+    expect(screen.queryByRole("option", { name: /inactive/ })).toBeNull();
+    expect(requests.some(({ url }) => url.includes("includeInactive"))).toBe(
+      false,
+    );
+  });
+
+  it("clears prior report content while another branch or cadence loads", async () => {
+    renderView();
+    await screen.findByText("Successful AI summary");
+    pending = true;
+    fireEvent.change(screen.getByLabelText("Insight scope"), {
+      target: { value: A },
+    });
+    expect(screen.getByText("Loading persisted insight…")).toBeTruthy();
+    expect(screen.queryByText("Successful AI summary")).toBeNull();
+    pending = false;
+    fireEvent.change(screen.getByLabelText("Insight scope"), {
+      target: { value: "organization" },
+    });
+    await screen.findByText("Successful AI summary");
+    pending = true;
+    fireEvent.change(screen.getByLabelText("Insight cadence"), {
+      target: { value: "MONTHLY" },
+    });
+    expect(screen.getByText("Loading persisted insight…")).toBeTruthy();
+    expect(screen.queryByText("Successful AI summary")).toBeNull();
+  });
+});

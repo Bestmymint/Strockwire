@@ -143,6 +143,12 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
         },
       }),
     );
+  if (url.includes("/branches?includeInactive=true"))
+    return Promise.resolve(json({ data: [] }));
+  if (url.includes("/ai-insights/latest?"))
+    return Promise.resolve(
+      json({ data: { latest: null, lastSuccess: null, stale: false } }),
+    );
   if (url.includes("/analytics/sales?") && salesError)
     return Promise.resolve(
       json({ error: { code: salesError.code } }, salesError.status),
@@ -343,6 +349,57 @@ afterEach(() => {
 });
 
 describe("analytics management", () => {
+  it("keeps deterministic Sales and its scope available after viewing AI insights", async () => {
+    renderPage();
+    expect(
+      await screen.findByRole("region", { name: "Sales analytics" }),
+    ).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Analytics scope"), {
+      target: { value: BRANCH },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "AI insights" }));
+    expect(screen.getByRole("region", { name: "AI insights" })).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "AI insights" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Sales" }));
+    expect(
+      await screen.findByRole("region", { name: "Sales analytics" }),
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Analytics scope")).toHaveProperty(
+      "value",
+      BRANCH,
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Sales" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it.each(["OWNER", "ADMIN", "BRANCH_MANAGER"])(
+    "offers persisted AI insights to %s",
+    async (allowedRole) => {
+      role = allowedRole;
+      renderPage();
+      expect(
+        await screen.findByRole("button", { name: "AI insights" }),
+      ).toBeTruthy();
+    },
+  );
+
+  it.each(["INVENTORY_STAFF", "CASHIER"])(
+    "hides persisted AI insights from %s",
+    async (deniedRole) => {
+      role = deniedRole;
+      renderPage();
+      await screen.findByRole("heading", { name: "Analytics" });
+      expect(screen.queryByRole("button", { name: "AI insights" })).toBeNull();
+    },
+  );
+
   it("shows inventory facts and opaque continuation without cost for staff", async () => {
     role = "INVENTORY_STAFF";
     renderPage();

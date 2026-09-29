@@ -25,6 +25,7 @@ import {
   getAnalyticsSales,
 } from "@/analytics-api-client";
 import { resolveApplicationContext } from "@/application-context";
+import { AiInsightView } from "@/components/ai-insight-view";
 import { InventoryAnalyticsView } from "@/components/inventory-analytics-view";
 import { ForecastReorderView } from "@/components/forecast-reorder-view";
 import {
@@ -33,7 +34,12 @@ import {
 } from "@/branch-api-client";
 
 type View =
-  "sales" | "categories" | "branches" | "inventory" | "forecast-reorder";
+  | "sales"
+  | "categories"
+  | "branches"
+  | "inventory"
+  | "forecast-reorder"
+  | "insights";
 
 function initialPeriod(): AnalyticsPeriod {
   const today = new Date();
@@ -453,14 +459,17 @@ export function AnalyticsManagement() {
     <AnalyticsContent
       key={`${resolved.organization.id}:${resolved.organization.role}:${resolved.organization.branches.map((branch) => branch.id).join(",")}`}
       organization={resolved.organization}
+      selectedBranchId={resolved.branch?.id ?? null}
     />
   );
 }
 
 function AnalyticsContent({
   organization,
+  selectedBranchId,
 }: {
   organization: AccessibleOrganization;
+  selectedBranchId: string | null;
 }) {
   const [draftPeriod, setDraftPeriod] =
     useState<AnalyticsPeriod>(initialPeriod);
@@ -505,7 +514,11 @@ function AnalyticsContent({
   const salesQuery = useQuery({
     queryKey: [...queryRoot, "sales"],
     queryFn: ({ signal }) => getAnalyticsSales(request, signal),
-    enabled: enabled && view !== "inventory" && view !== "forecast-reorder",
+    enabled:
+      enabled &&
+      view !== "inventory" &&
+      view !== "forecast-reorder" &&
+      view !== "insights",
   });
   const categoryQuery = useInfiniteQuery({
     queryKey: [...queryRoot, "categories", categoryReset],
@@ -535,7 +548,7 @@ function AnalyticsContent({
         Analytics for {organization.name}.
       </p>
       <form
-        hidden={view === "forecast-reorder"}
+        hidden={view === "forecast-reorder" || view === "insights"}
         className="rounded-lg border bg-card p-4 sm:p-5"
         onSubmit={(event) => {
           event.preventDefault();
@@ -632,6 +645,7 @@ function AnalyticsContent({
               "branches",
               "inventory",
               "forecast-reorder",
+              "insights",
             ] as const)
         ).map((item) => (
           <button
@@ -649,11 +663,19 @@ function AnalyticsContent({
                   ? "Branches"
                   : item === "inventory"
                     ? "Inventory"
-                    : "Forecast / Reorder"}
+                    : item === "insights"
+                      ? "AI insights"
+                      : "Forecast / Reorder"}
           </button>
         ))}
       </nav>
-      {view === "forecast-reorder" ? (
+      {view === "insights" ? (
+        <AiInsightView
+          key={selectedBranchId ?? ""}
+          organization={organization}
+          selectedBranchId={selectedBranchId}
+        />
+      ) : view === "forecast-reorder" ? (
         <ForecastReorderView organization={organization} />
       ) : view === "inventory" ? (
         <InventoryAnalyticsView
