@@ -349,7 +349,7 @@ abuse and stronger production timing controls remain under `OQ-020`.
 - Do not reveal account existence through materially different messages/timing where practical.
 - Apply rate limiting and security telemetry without logging submitted email or password values.
 - Do not return raw session, verification, reset, or invitation tokens in persisted resources, logs, or general response payloads.
-- Verification, reset, and invitation delivery use the provider abstraction. Local/test adapters are non-delivery; production uses the Resend adapter.
+- Verification, reset, and invitation delivery use the provider abstraction. Development defaults to non-delivery and may explicitly select Resend for manual UAT; test rejects Resend; production defaults to Resend and rejects non-delivery.
 - Forgot-password and resend responses are account-safe and non-disclosing. Verification and reset tokens are single-use and expiry-bound; successful reset revokes every user session.
 
 ### Login and authenticated-session contract
@@ -437,8 +437,9 @@ to later onboarding and access-management work.
   completion returns `200` with `data.status = "verified"`; reset completion
   returns `200` with `data.status = "password_reset"`.
 - Production uses Resend through the API-owned provider interface. Development
-  uses a no-op non-delivery adapter and tests inject a deterministic recording
-  adapter. The provider request has a ten-second timeout and no automatic retry;
+  defaults to a no-op non-delivery adapter and may explicitly select Resend;
+  tests inject a deterministic recording adapter and cannot select Resend.
+  The provider request has a ten-second timeout and no automatic retry;
   provider response bodies, message payloads, API keys, and complete sensitive
   links are not logged.
 

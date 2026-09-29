@@ -242,7 +242,8 @@ verification behavior.
 P2-M2-T03 implements verification issuance through the account-safe resend
 endpoint and password recovery through the same identity module. Use cases
 depend only on an `IdentityEmailProvider`; runtime selection binds production
-to Resend and development/test to non-delivery/recording adapters. A provider
+to Resend, development by default to non-delivery with an explicit Resend opt-in,
+and test to non-delivery/recording adapters. A provider
 call occurs only after the token transaction commits. Provider failure is
 non-disclosing and triggers a conditional revocation of the just-issued token;
 there is no outbox or generic messaging framework in this MVP boundary.
@@ -625,10 +626,9 @@ Prisma-backed persistence and external adapters
 
 The internal AI provider accepts only already-approved text and returns validated
 text, actual model, optional reported usage, and sanitized attempt metadata. Its
-OpenRouter adapter has a fixed endpoint and model sequence, no database access,
-and no startup call. OpenRouter's generic HTTP 404 does not reliably identify a
-model-specific unavailable condition; the adapter stops on 404 instead of
-guessing that fallback is permitted.
+OpenRouter adapter has a fixed endpoint and requests `openrouter/free` for every
+attempt, with no database access or startup call. It retains the valid routed
+model identifier as provenance. OpenRouter's generic HTTP 404 is non-retryable.
 
 Avoid a generic repository abstraction that erases query semantics, tenant scope, locking, or transaction requirements.
 
@@ -707,7 +707,7 @@ The final design must decide public/private subnets, ingress, Next.js hosting mo
   `memoryCost=65536` KiB, `timeCost=3`, and `parallelism=4`; plaintext never
   leaves the identity boundary.
 - Browser sessions are opaque, hash-only PostgreSQL records carried in HttpOnly cookies; no browser JWT or refresh-token flow exists.
-- Email verification, reset, and invitation delivery are routed through the email-provider abstraction; Resend is the production adapter and local/test adapters do not deliver mail.
+- Email verification, reset, and invitation delivery are routed through the email-provider abstraction; production uses Resend, development may explicitly select Resend for manual UAT, and test never delivers mail.
 - Verification, reset, and invitation tokens are opaque, hash-only, single-use, and expiry-bound. Successful reset revokes all sessions; authorization/session checks deny disabled or deauthorized users.
 - Secrets stay in an approved secret mechanism and never in repository, images, logs, client bundles, or prompts.
 - RDS is not publicly exposed in the intended production design.
@@ -725,7 +725,7 @@ The implementation should emit signals for:
 - Checkout/receipt success, rollback, conflict, and idempotent replay
 - Database connectivity, pool saturation, slow queries, and transaction failures
 - Scheduled job start, claim, duration, retry, success, and missed periods
-- OpenRouter latency, timeout, failure, invalid response, token/cost usage where available, and fallback
+- OpenRouter latency, timeout, failure, invalid response, token/cost usage where available, and free-router retries
 - Snapshot/insight age shown to users
 
 Exact SLOs and alert thresholds are blocked by `OQ-020`. CloudWatch is the accepted production destination.

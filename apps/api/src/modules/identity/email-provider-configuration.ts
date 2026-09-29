@@ -8,10 +8,10 @@ import {
 export function createIdentityEmailProvider(
   environment: Pick<
     ApiEnvironment,
-    "RESEND_API_KEY" | "STOCKWISE_EMAIL_FROM" | "STOCKWISE_RUNTIME_ENV"
+    "RESEND_API_KEY" | "STOCKWISE_EMAIL_FROM" | "STOCKWISE_EMAIL_PROVIDER"
   >,
 ): IdentityEmailProvider {
-  if (environment.STOCKWISE_RUNTIME_ENV !== "production") {
+  if (environment.STOCKWISE_EMAIL_PROVIDER === "non_delivery") {
     return nonDeliveryEmailProvider;
   }
 
@@ -19,7 +19,7 @@ export function createIdentityEmailProvider(
     environment.RESEND_API_KEY === undefined ||
     environment.STOCKWISE_EMAIL_FROM === undefined
   ) {
-    throw new Error("Production email configuration is incomplete.");
+    throw new Error("Resend email configuration is incomplete.");
   }
 
   return createResendEmailProvider({

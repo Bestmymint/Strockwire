@@ -10,8 +10,7 @@ import type {
 } from "./ai-provider.ts";
 
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
-const PRIMARY_MODEL = "openai/gpt-4o-mini";
-const FALLBACK_MODEL = "openai/gpt-4.1-mini";
+const MODEL = "openrouter/free";
 const TIMEOUT_MILLISECONDS = 15_000;
 const REQUEST_LIMIT_BYTES = 16 * 1024;
 const RESPONSE_TEXT_LIMIT_BYTES = 4 * 1024;
@@ -56,9 +55,9 @@ const completionSchema = z.object({
   usage: usageSchema.optional(),
 });
 
-function bodyFor(model: AiProviderAttempt["requestedModel"], text: string) {
+function bodyFor(text: string) {
   return JSON.stringify({
-    model,
+    model: MODEL,
     messages: [{ role: "user", content: text }],
     max_tokens: 512,
     usage: { include: true },
@@ -144,23 +143,16 @@ export function createOpenRouterProvider({
       if (typeof input.text !== "string" || input.text.trim().length === 0) {
         return { ok: false, failureCategory: "INVALID_REQUEST", attempts };
       }
-      const primaryBody = bodyFor(PRIMARY_MODEL, input.text);
-      const fallbackBody = bodyFor(FALLBACK_MODEL, input.text);
-      if (
-        Buffer.byteLength(primaryBody, "utf8") > REQUEST_LIMIT_BYTES ||
-        Buffer.byteLength(fallbackBody, "utf8") > REQUEST_LIMIT_BYTES
-      ) {
+      const body = bodyFor(input.text);
+      if (Buffer.byteLength(body, "utf8") > REQUEST_LIMIT_BYTES) {
         return { ok: false, failureCategory: "INVALID_REQUEST", attempts };
       }
 
-      async function call(
-        model: AiProviderAttempt["requestedModel"],
-        body: string,
-      ): Promise<AiProviderResult> {
+      async function call(): Promise<AiProviderResult> {
         const attemptNumber = attempts.length + 1;
         await observer?.beforeAttempt({
           provider: "openrouter",
-          requestedModel: model,
+          requestedModel: MODEL,
           attemptNumber,
         });
         const started = performance.now();
@@ -182,8 +174,7 @@ export function createOpenRouterProvider({
           });
           status = response.status;
           if (!response.ok) {
-            // OpenRouter does not document a stable model-specific unavailable
-            // code; a generic 404 cannot safely trigger model fallback.
+            // A generic 404 is not a transient failure; do not retry it.
             failureCategory = classifyStatus(status);
           } else {
             const raw = await readBounded(response);
@@ -199,16 +190,6 @@ export function createOpenRouterProvider({
               if (failureCategory === undefined) {
                 const checked = completionSchema.safeParse(parsed);
                 if (!checked.success) {
-                  failureCategory = "INVALID_RESPONSE";
-                } else if (
-                  // The accepted fallback alias has this canonical slug in
-                  // OpenRouter's public model record; no arbitrary suffixes.
-                  checked.data.model !== model &&
-                  !(
-                    model === FALLBACK_MODEL &&
-                    checked.data.model === "openai/gpt-4.1-mini-2025-04-14"
-                  )
-                ) {
                   failureCategory = "INVALID_RESPONSE";
                 } else if (
                   Buffer.byteLength(
@@ -230,7 +211,7 @@ export function createOpenRouterProvider({
         const usage = normalizeUsage(completion?.usage);
         attempts.push({
           provider: "openrouter",
-          requestedModel: model,
+          requestedModel: MODEL,
           attemptNumber,
           durationMilliseconds: performance.now() - started,
           ...(status === undefined ? {} : { httpStatus: status }),
@@ -248,7 +229,7 @@ export function createOpenRouterProvider({
           return {
             ok: true,
             text: completion.choices[0]!.message.content,
-            requestedModel: model,
+            requestedModel: MODEL,
             actualModel: completion.model,
             ...(usage === undefined ? {} : { usage }),
             attempts,
@@ -261,21 +242,21 @@ export function createOpenRouterProvider({
         };
       }
 
-      const first = await call(PRIMARY_MODEL, primaryBody);
+      const first = await call();
       if (
         first.ok ||
         !retryable(first.failureCategory, first.attempts.at(-1)?.httpStatus)
       )
         return first;
 
-      const second = await call(PRIMARY_MODEL, primaryBody);
+      const second = await call();
       if (
         second.ok ||
         !retryable(second.failureCategory, second.attempts.at(-1)?.httpStatus)
       )
         return second;
 
-      return call(FALLBACK_MODEL, fallbackBody);
+      return call();
     },
   };
 }

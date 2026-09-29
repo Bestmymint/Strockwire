@@ -508,12 +508,13 @@ Do not use JWT for browser authentication, store tokens in `localStorage` or `se
 ## ADR-014 — Use a provider-abstracted Resend email lifecycle
 
 - **Date:** 2026-08-22
+- **Amended:** 2026-09-30 for explicit development delivery opt-in
 - **Status:** Accepted
 - **Type:** Security and integration architecture
 
 ### Context
 
-Email/password accounts require verification, safe password recovery, and invitation delivery. Production delivery must be replaceable without coupling identity-domain behavior to a specific provider, while local development and automated tests must not deliver real email.
+Email/password accounts require verification, safe password recovery, and invitation delivery. Production delivery must be replaceable without coupling identity-domain behavior to a specific provider. Automated tests must not deliver real email; local development defaults to non-delivery.
 
 ### Alternatives considered
 
@@ -523,7 +524,7 @@ Email/password accounts require verification, safe password recovery, and invita
 
 ### Decision
 
-Use Resend as the MVP production email adapter behind an email-provider abstraction. Local development and automated tests use non-delivery/test adapters. AWS SES may replace the production adapter later without changing identity-domain behavior.
+Use Resend as the MVP production email adapter behind an email-provider abstraction. `STOCKWISE_EMAIL_PROVIDER` accepts `non_delivery` or `resend`: development defaults to non-delivery and may explicitly opt into Resend for manual UAT; test always uses non-delivery and rejects Resend; production defaults to Resend and rejects non-delivery. Resend selection requires `RESEND_API_KEY` and `STOCKWISE_EMAIL_FROM`. Development keeps its HTTP cookie/session behavior when Resend is selected. AWS SES may replace the production adapter later without changing identity-domain behavior.
 
 Email verification, password reset, and invitations use opaque cryptographically random tokens whose cryptographic hash alone is stored. They are single use and expire after 24 hours, 30 minutes, and seven days respectively. Resending verification or reissuing an invitation invalidates the prior active token. Forgot-password responses never reveal whether an account exists; a successful reset revokes all existing sessions.
 
@@ -536,7 +537,7 @@ verification behavior.
 
 - The abstraction prevents provider concerns from leaking into identity rules.
 - Hash-only, single-use, expiry-bound tokens limit replay and database-disclosure risk.
-- Non-delivery adapters make local and automated verification deterministic and safe.
+- Default non-delivery and test adapters make local and automated verification deterministic and safe.
 
 ### Consequences
 
@@ -2152,6 +2153,7 @@ configuration is required for this policy gate; T03 runtime is still pending.
 ## ADR-033 — Bound scheduled AI insight generation
 
 - **Date:** 2026-09-27
+- **Amended:** 2026-09-30 for free-only OpenRouter routing
 - **Status:** Accepted
 - **Type:** Scheduled AI timing, provider, privacy, and lifecycle decision gate
 
@@ -2197,23 +2199,20 @@ periods; `BUILD_SPEC.md` owns role scope. This decision resolves `OQ-017` and
   V1 has one server-controlled report language and no per-user locale setting.
   P7-M2-T03 owns crash-safe claim and attempt accounting.
 - The Express-owned internal provider boundary has **OpenRouter** as its sole
-  V1 external provider. Keep `OPENROUTER_API_KEY` server-only. Use exact
-  server-side deployment model IDs: primary `openai/gpt-4o-mini`, fallback
-  `openai/gpt-4.1-mini`; no `auto` model, user/Organization switching, browser
-  access, or provider call on reads. V1 configuration must use these IDs;
-  changing them requires a new policy decision. They were present in OpenRouter's
-  public model catalog on 2026-09-27; P7-M2-T01 must recheck availability
-  before implementation. A fallback may change wording, never snapshot facts.
+  V1 external provider. Keep `OPENROUTER_API_KEY` server-only. Every attempt
+  requests `openrouter/free`; OpenRouter selects the underlying free model.
+  StockWise performs no paid-model fallback, user/Organization model switching,
+  browser access, or provider call on reads. Preserve the actual routed model
+  identifier in attempt and result provenance when supplied by a valid response.
+  This free-only routing is an intentional cost-control choice for the current
+  project stage.
 - Each provider attempt has a **15-second timeout**. At most **three calls per
-  logical job**: initial primary; one same-primary retry only after a transient
-  failure; then one fallback if the primary still fails transiently. A
-  model-specific unavailable result at either primary attempt goes straight
-  to the fallback. Transient means timeout/transport failure, rate limiting,
-  or provider 5xx.
-  Do not retry/fallback for invalid input, missing credentials, auth/permission
-  failure, prohibited data, or malformed/unsafe output. Stop after exhaustion
-  and persist safe failure. Failed calls and fallback consume the same budget;
-  scheduler duplicates cannot reset it.
+  logical job**, all requesting `openrouter/free`: the initial call and up to
+  two retries after transient failures. Transient means timeout/transport
+  failure, rate limiting, or provider 5xx. Do not retry for invalid input,
+  missing credentials, auth/permission failure, prohibited data, or
+  malformed/unsafe output. Stop after exhaustion and persist safe failure.
+  Failed calls consume the same budget; scheduler duplicates cannot reset it.
 - The complete serialized provider-visible request body, including every
   message, instruction, server prompt, and snapshot, must be at most
   **16 KiB UTF-8**; request at most **512 output tokens** and accept at most
@@ -2285,8 +2284,7 @@ regenerating history; explicit replay retains revision control.
 `OQ-017` and `OQ-018` are resolved for V1. P7-M1-T02 owns physical snapshot
 schema/store; P7-M2 owns provider, prompt, and idempotent job implementation;
 P7-M3 owns orchestration and persisted API/UI. `STOCKOUT_RISK` remains
-deferred/unassigned, and P0-M2-T05 remains unchecked. This decision adds no
-runtime, migration, dependency, environment variable, or provider call.
+deferred/unassigned, and P0-M2-T05 remains unchecked.
 
 ## 2. Explicitly superseded planning directions
 

@@ -192,10 +192,10 @@ describe("AI insight cadence orchestration", () => {
         providerCalls++;
         const attempt = {
           provider: "openrouter" as const,
-          requestedModel: "openai/gpt-4o-mini" as const,
+          requestedModel: "openrouter/free" as const,
           attemptNumber: 1,
           durationMilliseconds: 1,
-          actualModel: "openai/gpt-4o-mini",
+          actualModel: "example/routed-free-model",
         };
         await observer?.beforeAttempt(attempt);
         await observer?.afterAttempt(attempt);

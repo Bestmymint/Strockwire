@@ -274,6 +274,9 @@ passed. Milestone 7.2 is COMPLETE: P7-M2-T01 is COMPLETE in
 are COMPLETE. Milestone 7.3 is COMPLETE. Milestone 7.4 is IN PROGRESS, with
 P7-M4-T01 NEXT / NOT STARTED; P7-M4-T02 and P7-M4-T03 remain NOT STARTED.
 `STOCKOUT_RISK` remains deferred/unassigned; P0-M2-T05 remains unchecked.
+The 2026-09-30 pre-baseline amendment to `ADR-033` now requests
+`openrouter/free` on every attempt without paid-model fallback; historical
+P7-M1/P7-M2 task rows below record their original completion scope.
 
 ### Milestone 7.1 — AI decision gate and snapshots (COMPLETE)
 
@@ -358,7 +361,7 @@ production-readiness.
 | [ ] **P9-M1-T01 — Threat model and authorization audit** | Validate tenant/branch/security design | Assets, trust boundaries, abuse cases, RBAC endpoints/jobs/S3/AI | Deployed feature-complete MVP | High risks remediated/tracked; permission matrix verified | Cross-tenant/branch/role adversarial suite |
 | [ ] **P9-M1-T02 — Dependency/container/IaC security review** | Remove known avoidable risk | Dependency audit, image scan, IaC policy, secret scan | Phase 8 | No unresolved critical finding without owner acceptance | Repeatable CI scans + false-positive review |
 | [ ] **P9-M1-T03 — Backup/restore and disaster recovery validation** | Prove data recoverability | RDS restore, app recovery, RPO/RTO evidence, runbook | `OQ-020`, RDS | Restore succeeds within accepted targets | Timed restore/reconciliation drill |
-| [ ] **P9-M1-T04 — AI privacy and failure audit** | Verify summary-only boundary | Snapshot data inventory, prompt/output/log review, budget/fallback/outage | Phase 7/8 | No prohibited data; outage isolation demonstrated | Static fixtures + provider outage/invalid output tests |
+| [ ] **P9-M1-T04 — AI privacy and failure audit** | Verify summary-only boundary | Snapshot data inventory, prompt/output/log review, retry budget/outage | Phase 7/8 | No prohibited data; outage isolation demonstrated | Static fixtures + provider outage/invalid output tests |
 
 ### Milestone 9.2 — Performance and UX hardening
 

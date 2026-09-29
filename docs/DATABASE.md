@@ -1482,6 +1482,6 @@ The canonical definitions live in `BUILD_SPEC.md`:
   explicit `Asia/Bangkok` default/backfill, current-timezone historical rebucketing,
   and persisted-snapshot timezone/boundary retention.
 - `OQ-017`/`OQ-018` are resolved for V1 by `ADR-033`: bounded schedule/catch-up,
-  logical job identity, provider/fallback/budget, provenance, and retention.
+  logical job identity, free-only provider retries/budget, provenance, and retention.
 - `OQ-019` audit scope affects operational support records.
 - `OQ-020` retention/recovery targets affect lifecycle.

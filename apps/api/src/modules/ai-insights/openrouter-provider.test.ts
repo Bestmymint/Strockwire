@@ -5,7 +5,7 @@ import { createOpenRouterProvider } from "./openrouter-provider.ts";
 const key = "test-key-placeholder";
 const input = { text: "Approved aggregate summary only" };
 
-function success(model = "openai/gpt-4o-mini", text = "Summary") {
+function success(model = "example/routed-free-model", text = "Summary") {
   return new Response(
     JSON.stringify({
       object: "chat.completion",
@@ -83,14 +83,16 @@ describe("OpenRouter AI provider", () => {
     expect(fetchImplementation).toHaveBeenCalledOnce();
   });
 
-  it("sends one bounded primary call and returns model and reported usage", async () => {
-    const { fetchImplementation, provider } = client([success()]);
+  it("requests the free router and retains the routed model and reported usage", async () => {
+    const { fetchImplementation, provider } = client([
+      success("example/routed-model:free"),
+    ]);
     const result = await provider.generate(input);
     expect(result).toMatchObject({
       ok: true,
       text: "Summary",
-      requestedModel: "openai/gpt-4o-mini",
-      actualModel: "openai/gpt-4o-mini",
+      requestedModel: "openrouter/free",
+      actualModel: "example/routed-model:free",
       usage: {
         promptTokens: 12,
         completionTokens: 3,
@@ -113,7 +115,7 @@ describe("OpenRouter AI provider", () => {
     });
     expect(options?.signal).toBeInstanceOf(AbortSignal);
     expect(body).toEqual({
-      model: "openai/gpt-4o-mini",
+      model: "openrouter/free",
       messages: [{ role: "user", content: input.text }],
       max_tokens: 512,
       usage: { include: true },
@@ -147,8 +149,8 @@ describe("OpenRouter AI provider", () => {
     expect(AbortSignal.timeout).toHaveBeenNthCalledWith(1, 15_000);
     expect(AbortSignal.timeout).toHaveBeenNthCalledWith(2, 15_000);
     expect(requestedModels(fetchImplementation)).toEqual([
-      "openai/gpt-4o-mini",
-      "openai/gpt-4o-mini",
+      "openrouter/free",
+      "openrouter/free",
     ]);
   });
 
@@ -179,27 +181,27 @@ describe("OpenRouter AI provider", () => {
       httpStatus: status,
     });
     expect(requestedModels(fetchImplementation)).toEqual([
-      "openai/gpt-4o-mini",
-      "openai/gpt-4o-mini",
+      "openrouter/free",
+      "openrouter/free",
     ]);
   });
 
-  it("uses exactly one fallback after two transient primary failures", async () => {
+  it("retries the free router three times after transient failures", async () => {
     const { fetchImplementation, provider } = client([
       new Response("", { status: 429 }),
       new Response("", { status: 502 }),
-      success("openai/gpt-4.1-mini-2025-04-14"),
+      success("example/another-free-model:free"),
     ]);
     const result = await provider.generate(input);
     expect(result).toMatchObject({
       ok: true,
-      requestedModel: "openai/gpt-4.1-mini",
-      actualModel: "openai/gpt-4.1-mini-2025-04-14",
+      requestedModel: "openrouter/free",
+      actualModel: "example/another-free-model:free",
     });
     expect(requestedModels(fetchImplementation)).toEqual([
-      "openai/gpt-4o-mini",
-      "openai/gpt-4o-mini",
-      "openai/gpt-4.1-mini",
+      "openrouter/free",
+      "openrouter/free",
+      "openrouter/free",
     ]);
     expect(result.attempts.map((attempt) => attempt.attemptNumber)).toEqual([
       1, 2, 3,
@@ -254,14 +256,14 @@ describe("OpenRouter AI provider", () => {
   });
 
   it("accepts a 16 KiB serialized request and rejects one byte more", async () => {
-    const emptyFallbackBody = JSON.stringify({
-      model: "openai/gpt-4.1-mini",
+    const emptyBody = JSON.stringify({
+      model: "openrouter/free",
       messages: [{ role: "user", content: "" }],
       max_tokens: 512,
       usage: { include: true },
     });
-    const text = "x".repeat(16 * 1024 - Buffer.byteLength(emptyFallbackBody));
-    expect(Buffer.byteLength(emptyFallbackBody) + text.length).toBe(16 * 1024);
+    const text = "x".repeat(16 * 1024 - Buffer.byteLength(emptyBody));
+    expect(Buffer.byteLength(emptyBody) + text.length).toBe(16 * 1024);
     const accepted = client([success()]);
     expect((await accepted.provider.generate({ text })).ok).toBe(true);
     expect(accepted.fetchImplementation).toHaveBeenCalledOnce();
@@ -294,22 +296,22 @@ describe("OpenRouter AI provider", () => {
       expect(fetchImplementation).toHaveBeenCalledTimes(count);
       expect(requestedModels(fetchImplementation)).toEqual(
         count === 3
-          ? ["openai/gpt-4o-mini", "openai/gpt-4o-mini", "openai/gpt-4.1-mini"]
-          : ["openai/gpt-4o-mini", "openai/gpt-4o-mini"],
+          ? ["openrouter/free", "openrouter/free", "openrouter/free"]
+          : ["openrouter/free", "openrouter/free"],
       );
     },
   );
 
   it("accepts exactly 4 KiB of text and rejects one additional byte", async () => {
     const accepted = await client([
-      success("openai/gpt-4o-mini", "\0".repeat(4096)),
+      success("openrouter/free", "\0".repeat(4096)),
     ]).provider.generate(input);
     expect(accepted.ok).toBe(true);
     if (accepted.ok)
       expect(Buffer.byteLength(accepted.text, "utf8")).toBe(4096);
 
     const rejected = await client([
-      success("openai/gpt-4o-mini", "x".repeat(4097)),
+      success("openrouter/free", "x".repeat(4097)),
     ]).provider.generate(input);
     expect(rejected).toMatchObject({
       ok: false,
@@ -318,14 +320,14 @@ describe("OpenRouter AI provider", () => {
   });
 
   it.each([
-    success("openai/gpt-4o-mini", "é".repeat(2049)),
+    success("openrouter/free", "é".repeat(2049)),
     new Response(JSON.stringify({ choices: [] }), { status: 200 }),
     new Response("not JSON", { status: 200 }),
-    success("openai/gpt-4o-mini", ""),
+    success("openrouter/free", ""),
     new Response(
       JSON.stringify({
         object: "chat.completion",
-        model: "openai/gpt-4o-mini",
+        model: "openrouter/free",
         choices: [
           {
             index: 0,
@@ -364,7 +366,7 @@ describe("OpenRouter AI provider", () => {
     }
   });
 
-  it("rejects a truncated completion and an unapproved dated model", async () => {
+  it("rejects a truncated completion but accepts a valid routed model", async () => {
     const truncated = JSON.parse(await success().text());
     truncated.choices[0].finish_reason = "length";
     const incomplete = await client([
@@ -375,12 +377,13 @@ describe("OpenRouter AI provider", () => {
       failureCategory: "INVALID_RESPONSE",
     });
 
-    const unapproved = await client([
-      success("openai/gpt-4o-mini-2024-07-18"),
+    const routed = await client([
+      success("example/dated-free-model-2024-07-18:free"),
     ]).provider.generate(input);
-    expect(unapproved).toMatchObject({
-      ok: false,
-      failureCategory: "INVALID_RESPONSE",
+    expect(routed).toMatchObject({
+      ok: true,
+      requestedModel: "openrouter/free",
+      actualModel: "example/dated-free-model-2024-07-18:free",
     });
   });
 
@@ -393,7 +396,7 @@ describe("OpenRouter AI provider", () => {
     if (result.ok) expect(result.usage).toBeUndefined();
   });
 
-  it("omits null usage values and rejects an unexpected returned model", async () => {
+  it("omits null usage values and rejects a malformed returned model", async () => {
     const raw = JSON.parse(await success().text());
     raw.usage.cost = null;
     const valid = await client([
@@ -402,7 +405,7 @@ describe("OpenRouter AI provider", () => {
     expect(valid.ok).toBe(true);
     if (valid.ok) expect(valid.usage?.cost).toBeUndefined();
 
-    raw.model = "other/model";
+    raw.model = "invalid model";
     const invalid = await client([
       new Response(JSON.stringify(raw)),
     ]).provider.generate(input);

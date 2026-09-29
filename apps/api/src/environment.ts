@@ -27,6 +27,7 @@ export const apiEnvironmentSchema = z
       .optional(),
     RESEND_API_KEY: z.string().min(1).optional(),
     STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY: analyticsCursorKeySchema,
+    STOCKWISE_EMAIL_PROVIDER: z.enum(["non_delivery", "resend"]).optional(),
     STOCKWISE_RUNTIME_ENV: z.enum(["development", "test", "production"]),
     STOCKWISE_API_PORT: z.coerce.number().int().min(1).max(65_535),
     STOCKWISE_EMAIL_FROM: z.string().min(1).max(320).optional(),
@@ -55,19 +56,39 @@ export const apiEnvironmentSchema = z
       .default(15),
   })
   .strict()
+  .transform((environment) => ({
+    ...environment,
+    STOCKWISE_EMAIL_PROVIDER:
+      environment.STOCKWISE_EMAIL_PROVIDER ??
+      (environment.STOCKWISE_RUNTIME_ENV === "production"
+        ? "resend"
+        : "non_delivery"),
+  }))
   .superRefine((environment, context) => {
-    if (environment.STOCKWISE_RUNTIME_ENV === "production") {
+    if (
+      (environment.STOCKWISE_RUNTIME_ENV === "production" &&
+        environment.STOCKWISE_EMAIL_PROVIDER !== "resend") ||
+      (environment.STOCKWISE_RUNTIME_ENV === "test" &&
+        environment.STOCKWISE_EMAIL_PROVIDER !== "non_delivery")
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Email provider is not allowed in this runtime.",
+        path: ["STOCKWISE_EMAIL_PROVIDER"],
+      });
+    }
+    if (environment.STOCKWISE_EMAIL_PROVIDER === "resend") {
       if (environment.RESEND_API_KEY === undefined) {
         context.addIssue({
           code: "custom",
-          message: "Resend API key is required in production.",
+          message: "Resend API key is required for email delivery.",
           path: ["RESEND_API_KEY"],
         });
       }
       if (environment.STOCKWISE_EMAIL_FROM === undefined) {
         context.addIssue({
           code: "custom",
-          message: "Email sender is required in production.",
+          message: "Email sender is required for email delivery.",
           path: ["STOCKWISE_EMAIL_FROM"],
         });
       }
@@ -107,6 +128,7 @@ export function loadApiEnvironment(
     RESEND_API_KEY: environment.RESEND_API_KEY,
     STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY:
       environment.STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY,
+    STOCKWISE_EMAIL_PROVIDER: environment.STOCKWISE_EMAIL_PROVIDER,
     STOCKWISE_RUNTIME_ENV: environment.STOCKWISE_RUNTIME_ENV,
     STOCKWISE_API_PORT: environment.STOCKWISE_API_PORT,
     STOCKWISE_EMAIL_FROM: environment.STOCKWISE_EMAIL_FROM,

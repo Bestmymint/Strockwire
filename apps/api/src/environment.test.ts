@@ -23,6 +23,7 @@ describe("API environment boundary", () => {
       DATABASE_URL:
         "postgresql://local-user:local-password@127.0.0.1:5432/local-database",
       STOCKWISE_RUNTIME_ENV: "development",
+      STOCKWISE_EMAIL_PROVIDER: "non_delivery",
       STOCKWISE_API_PORT: 3001,
       STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY: analyticsKey,
       STOCKWISE_PUBLIC_WEB_ORIGIN: "http://localhost:3000",
@@ -49,6 +50,7 @@ describe("API environment boundary", () => {
       }),
     ).toMatchObject({
       STOCKWISE_RUNTIME_ENV: "production",
+      STOCKWISE_EMAIL_PROVIDER: "resend",
       STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY: analyticsKey,
       RESEND_API_KEY: "server-only-resend-key",
       STOCKWISE_EMAIL_FROM: "StockWise <verified@example.com>",
@@ -142,6 +144,94 @@ describe("API environment boundary", () => {
       databaseUrlSchema.parse(
         "mysql://local-user@127.0.0.1:3306/local-database",
       ),
+    ).toThrow();
+  });
+
+  it("resolves email provider defaults and rejects unsafe runtime combinations", () => {
+    const base = {
+      DATABASE_URL:
+        "postgresql://local-user:local-password@127.0.0.1:5432/local-database",
+      STOCKWISE_API_PORT: "3001",
+      STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY: analyticsKey,
+      STOCKWISE_PUBLIC_WEB_ORIGIN: "http://localhost:3000",
+      RESEND_API_KEY: "placeholder-key",
+      STOCKWISE_EMAIL_FROM: "StockWise <no-reply@example.com>",
+    };
+    for (const runtime of ["development", "test"] as const) {
+      expect(
+        loadApiEnvironment({ ...base, STOCKWISE_RUNTIME_ENV: runtime })
+          .STOCKWISE_EMAIL_PROVIDER,
+      ).toBe("non_delivery");
+    }
+    expect(
+      loadApiEnvironment({
+        ...base,
+        STOCKWISE_RUNTIME_ENV: "development",
+        STOCKWISE_EMAIL_PROVIDER: "non_delivery",
+      }).STOCKWISE_EMAIL_PROVIDER,
+    ).toBe("non_delivery");
+    expect(
+      loadApiEnvironment({
+        ...base,
+        STOCKWISE_RUNTIME_ENV: "development",
+        STOCKWISE_EMAIL_PROVIDER: "resend",
+      }).STOCKWISE_EMAIL_PROVIDER,
+    ).toBe("resend");
+    for (const missing of ["RESEND_API_KEY", "STOCKWISE_EMAIL_FROM"] as const) {
+      expect(() =>
+        loadApiEnvironment({
+          ...base,
+          [missing]: undefined,
+          STOCKWISE_RUNTIME_ENV: "development",
+          STOCKWISE_EMAIL_PROVIDER: "resend",
+        }),
+      ).toThrow();
+    }
+    expect(() =>
+      loadApiEnvironment({
+        ...base,
+        STOCKWISE_RUNTIME_ENV: "test",
+        STOCKWISE_EMAIL_PROVIDER: "resend",
+      }),
+    ).toThrow();
+    expect(
+      loadApiEnvironment({ ...base, STOCKWISE_RUNTIME_ENV: "production" })
+        .STOCKWISE_EMAIL_PROVIDER,
+    ).toBe("resend");
+    expect(
+      loadApiEnvironment({
+        ...base,
+        STOCKWISE_RUNTIME_ENV: "production",
+        STOCKWISE_EMAIL_PROVIDER: "resend",
+      }).STOCKWISE_EMAIL_PROVIDER,
+    ).toBe("resend");
+    expect(() =>
+      loadApiEnvironment({
+        ...base,
+        STOCKWISE_RUNTIME_ENV: "production",
+        STOCKWISE_EMAIL_PROVIDER: "non_delivery",
+      }),
+    ).toThrow();
+    expect(() =>
+      loadApiEnvironment({
+        ...base,
+        STOCKWISE_RUNTIME_ENV: "production",
+        RESEND_API_KEY: undefined,
+      }),
+    ).toThrow();
+    expect(() =>
+      loadApiEnvironment({
+        ...base,
+        STOCKWISE_RUNTIME_ENV: "production",
+        STOCKWISE_EMAIL_FROM: undefined,
+      }),
+    ).toThrow();
+    expect(() =>
+      loadApiEnvironment({
+        ...base,
+        STOCKWISE_RUNTIME_ENV: "development",
+        STOCKWISE_EMAIL_PROVIDER: "other",
+      }),
     ).toThrow();
   });
 

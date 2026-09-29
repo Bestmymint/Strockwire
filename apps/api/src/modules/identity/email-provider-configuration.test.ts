@@ -1,36 +1,49 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createIdentityEmailProvider } from "./email-provider-configuration.ts";
 import { nonDeliveryEmailProvider } from "./email-provider.ts";
 
 describe("identity email provider selection", () => {
-  it.each(["development", "test"] as const)(
-    "uses non-delivery in %s even when credentials are present",
-    (runtime) => {
-      expect(
-        createIdentityEmailProvider({
-          RESEND_API_KEY: "must-not-be-used",
-          STOCKWISE_EMAIL_FROM: "verified@example.com",
-          STOCKWISE_RUNTIME_ENV: runtime,
-        }),
-      ).toBe(nonDeliveryEmailProvider);
-    },
-  );
+  afterEach(() => vi.unstubAllGlobals());
 
-  it("requires complete production Resend configuration", () => {
+  it("uses non-delivery when selected", () => {
+    expect(
+      createIdentityEmailProvider({
+        RESEND_API_KEY: "must-not-be-used",
+        STOCKWISE_EMAIL_FROM: "verified@example.com",
+        STOCKWISE_EMAIL_PROVIDER: "non_delivery",
+      }),
+    ).toBe(nonDeliveryEmailProvider);
+  });
+
+  it("requires complete Resend configuration", () => {
     expect(() =>
       createIdentityEmailProvider({
         RESEND_API_KEY: undefined,
         STOCKWISE_EMAIL_FROM: undefined,
-        STOCKWISE_RUNTIME_ENV: "production",
+        STOCKWISE_EMAIL_PROVIDER: "resend",
       }),
-    ).toThrow("Production email configuration is incomplete.");
-    expect(
-      createIdentityEmailProvider({
-        RESEND_API_KEY: "server-only-key",
-        STOCKWISE_EMAIL_FROM: "verified@example.com",
-        STOCKWISE_RUNTIME_ENV: "production",
-      }),
-    ).not.toBe(nonDeliveryEmailProvider);
+    ).toThrow("Resend email configuration is incomplete.");
+  });
+
+  it("selects the Resend adapter without outbound I/O", async () => {
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchImplementation);
+    const provider = createIdentityEmailProvider({
+      RESEND_API_KEY: "placeholder-key",
+      STOCKWISE_EMAIL_FROM: "StockWise <no-reply@example.com>",
+      STOCKWISE_EMAIL_PROVIDER: "resend",
+    });
+    await provider.send({
+      kind: "verification",
+      recipient: "user@example.com",
+      url: "http://localhost:3000/verify-email?token=placeholder",
+    });
+    expect(fetchImplementation).toHaveBeenCalledOnce();
+    expect(fetchImplementation.mock.calls[0]?.[0]).toBe(
+      "https://api.resend.com/emails",
+    );
   });
 });

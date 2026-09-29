@@ -17,7 +17,7 @@ export type AiProviderUsage = Readonly<{
 
 export type AiProviderAttempt = Readonly<{
   provider: "openrouter";
-  requestedModel: "openai/gpt-4o-mini" | "openai/gpt-4.1-mini";
+  requestedModel: "openrouter/free";
   attemptNumber: number;
   durationMilliseconds: number;
   httpStatus?: number;

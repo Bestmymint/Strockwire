@@ -53,7 +53,7 @@ function input(
 }
 
 function completion(
-  model = "openai/gpt-4o-mini",
+  model = "example/routed-free-model",
   text = "Sales were zero for the completed period.",
   usage = true,
 ) {
@@ -111,7 +111,7 @@ describe("idempotent AI insight job", () => {
     const run = createAiInsightJob(prisma, external.adapter);
     const first = await run(input(organization.id));
     const second = await run(input(organization.id));
-    const changedProvider = provider([completion("openai/gpt-4.1-mini")]);
+    const changedProvider = provider([completion("example/other-free-model")]);
     const afterDeployment = await createAiInsightJob(
       prisma,
       changedProvider.adapter,
@@ -128,7 +128,7 @@ describe("idempotent AI insight job", () => {
       metricDefinitionVersion: "analytics-v1",
       promptVersion: "ai-business-summary-prompt-v1",
       provider: "openrouter",
-      actualModel: "openai/gpt-4o-mini",
+      actualModel: "example/routed-free-model",
       attemptCount: 1,
       content: "Sales were zero for the completed period.",
     });
@@ -150,8 +150,8 @@ describe("idempotent AI insight job", () => {
     expect(attempt).toMatchObject({
       ordinal: 1,
       provider: "openrouter",
-      requestedModel: "openai/gpt-4o-mini",
-      actualModel: "openai/gpt-4o-mini",
+      requestedModel: "openrouter/free",
+      actualModel: "example/routed-free-model",
       promptTokens: 12n,
       completionTokens: 8n,
       totalTokens: 20n,
@@ -293,12 +293,12 @@ describe("idempotent AI insight job", () => {
     expect(external.calls).toHaveLength(4);
   });
 
-  it("records the primary retry and fallback as exactly three known calls", async () => {
+  it("records three free-router calls and the actual routed model", async () => {
     const { organization } = await setup();
     const external = provider([
       new Response("", { status: 503 }),
       new Response("", { status: 503 }),
-      completion("openai/gpt-4.1-mini-2025-04-14", "Sales were zero.", false),
+      completion("example/third-free-model:free", "Sales were zero.", false),
     ]);
     const result = await createAiInsightJob(
       prisma,
@@ -307,12 +307,12 @@ describe("idempotent AI insight job", () => {
     expect(result).toMatchObject({
       state: "SUCCEEDED",
       attemptCount: 3,
-      actualModel: "openai/gpt-4.1-mini-2025-04-14",
+      actualModel: "example/third-free-model:free",
     });
     expect(external.calls.map((body) => JSON.parse(body).model)).toEqual([
-      "openai/gpt-4o-mini",
-      "openai/gpt-4o-mini",
-      "openai/gpt-4.1-mini",
+      "openrouter/free",
+      "openrouter/free",
+      "openrouter/free",
     ]);
     const attempts = await prisma.aiInsightAttempt.findMany({
       orderBy: { ordinal: "asc" },
@@ -322,7 +322,7 @@ describe("idempotent AI insight job", () => {
       "PROVIDER_UNAVAILABLE",
       null,
     ]);
-    expect(attempts[2]?.actualModel).toBe("openai/gpt-4.1-mini-2025-04-14");
+    expect(attempts[2]?.actualModel).toBe("example/third-free-model:free");
     expect(attempts[2]?.cost).toBeNull();
     expect(attempts[2]?.totalTokens).toBeNull();
   });
@@ -331,7 +331,7 @@ describe("idempotent AI insight job", () => {
     const { organization } = await setup();
     const external = provider([
       new Response("", { status: 503 }),
-      completion("openai/gpt-4o-mini", "Sales were zero.", false),
+      completion("example/routed-free-model", "Sales were zero.", false),
     ]);
     const report = await createAiInsightJob(
       prisma,
@@ -343,7 +343,7 @@ describe("idempotent AI insight job", () => {
       (
         await prisma.aiInsightAttempt.findMany({ orderBy: { ordinal: "asc" } })
       ).map((attempt) => attempt.requestedModel),
-    ).toEqual(["openai/gpt-4o-mini", "openai/gpt-4o-mini"]);
+    ).toEqual(["openrouter/free", "openrouter/free"]);
   });
 
   it("persists safe pre-call, nonretryable, and invalid-prose failures", async () => {
@@ -391,7 +391,10 @@ describe("idempotent AI insight job", () => {
 
     const invalid = await setup();
     const invalidOutput = provider([
-      completion("openai/gpt-4o-mini", "<script>private raw output</script>"),
+      completion(
+        "example/routed-free-model",
+        "<script>private raw output</script>",
+      ),
     ]);
     const invalidReport = await createAiInsightJob(
       prisma,
@@ -506,7 +509,7 @@ describe("idempotent AI insight job", () => {
       generate: async (_input, observer) => {
         await observer?.beforeAttempt({
           provider: "openrouter",
-          requestedModel: "openai/gpt-4o-mini",
+          requestedModel: "openrouter/free",
           attemptNumber: 1,
         });
         throw new Error("private result unknown");
@@ -544,10 +547,10 @@ describe("idempotent AI insight job", () => {
       generate: async (_input, observer) => {
         const attempt = {
           provider: "openrouter" as const,
-          requestedModel: "openai/gpt-4o-mini" as const,
+          requestedModel: "openrouter/free" as const,
           attemptNumber: 1,
           durationMilliseconds: 1,
-          actualModel: "openai/gpt-4o-mini",
+          actualModel: "openrouter/free",
         };
         await observer?.beforeAttempt(attempt);
         await observer?.afterAttempt(attempt);
