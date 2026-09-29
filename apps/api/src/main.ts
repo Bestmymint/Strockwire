@@ -15,6 +15,8 @@ import { createPrismaReorderRepository } from "./modules/analytics/analytics-reo
 import { createReorderService } from "./modules/analytics/analytics-reorder-service.ts";
 import { createAnalyticsInventoryService } from "./modules/analytics/analytics-inventory-service.ts";
 import { createAnalyticsRouter } from "./modules/analytics/analytics-router.ts";
+import { createAiInsightRouter } from "./modules/ai-insights/ai-insight-router.ts";
+import { createPrismaAiInsightReader } from "./modules/ai-insights/ai-insight-store.ts";
 import { createPrismaAnalyticsSalesRepository } from "./modules/analytics/analytics-sales-repository.ts";
 import { createAnalyticsSalesService } from "./modules/analytics/analytics-sales-service.ts";
 import { createPrismaAnalyticsScopeRepository } from "./modules/analytics/analytics-scope-repository.ts";
@@ -285,6 +287,12 @@ async function main(): Promise<void> {
         createPrismaReorderRepository(prisma),
       ),
       salesService: analyticsSalesService,
+    }),
+  );
+  apiRouter.use(
+    createAiInsightRouter({
+      authenticationMiddleware,
+      reader: createPrismaAiInsightReader(prisma),
     }),
   );
 
