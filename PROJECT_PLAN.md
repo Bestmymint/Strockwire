@@ -4,7 +4,7 @@
 | --- | --- |
 | Project | StockWise |
 | Plan baseline | Architecture Freeze v1 |
-| Repository state | Implemented and verified through P7-M3-T02; Phase 6 complete, Phase 7 in progress, Milestones 7.1 and 7.2 complete, Milestone 7.3 in progress; P7-M3-T03 next/not started |
+| Repository state | Implemented and verified through P7-M3-T03; Phase 6 complete, Phase 7 in progress, Milestones 7.1–7.3 complete, Milestone 7.4 in progress; P7-M4-T01 next/not started |
 | Last updated | 2026-09-29 |
 
 ## 1. Plan rules
@@ -202,8 +202,9 @@ Phase 6 — Analytics and forecasting is COMPLETE. Milestone 6.5 is COMPLETE, an
 all tasks in Milestones 6.1–6.5 are complete. `STOCKOUT_RISK` remains
 deferred/unassigned; Phase 6 completion
 does not resolve or assign that separate rule. Phase 7 is IN PROGRESS under
-`ADR-033`; Milestones 7.1 and 7.2 are COMPLETE. P7-M3-T01 and P7-M3-T02 are
-COMPLETE; Milestone 7.3 is IN PROGRESS, with P7-M3-T03 NEXT / NOT STARTED.
+`ADR-033`; Milestones 7.1, 7.2, and 7.3 are COMPLETE. P7-M3-T01, P7-M3-T02,
+and P7-M3-T03 are COMPLETE. Milestone 7.4 is IN PROGRESS, with P7-M4-T01
+NEXT / NOT STARTED; P7-M4-T02 and P7-M4-T03 are NOT STARTED.
 
 ### Milestone 6.1 — Definitions and period engine
 
@@ -270,7 +271,8 @@ passed. Milestone 7.2 is COMPLETE: P7-M2-T01 is COMPLETE in
 `227303f` (`feat: add OpenRouter AI provider`); P7-M2-T02 is COMPLETE in
 `2ff4832` (`feat: add AI summary prompt policy`); P7-M2-T03 is COMPLETE in
 `69f61be` (`feat: add idempotent AI insight job`). P7-M3-T01 and P7-M3-T02
-are COMPLETE. Milestone 7.3 is IN PROGRESS, with P7-M3-T03 NEXT / NOT STARTED.
+are COMPLETE. Milestone 7.3 is COMPLETE. Milestone 7.4 is IN PROGRESS, with
+P7-M4-T01 NEXT / NOT STARTED; P7-M4-T02 and P7-M4-T03 remain NOT STARTED.
 `STOCKOUT_RISK` remains deferred/unassigned; P0-M2-T05 remains unchecked.
 
 ### Milestone 7.1 — AI decision gate and snapshots (COMPLETE)
@@ -288,15 +290,15 @@ are COMPLETE. Milestone 7.3 is IN PROGRESS, with P7-M3-T03 NEXT / NOT STARTED.
 | [x] **P7-M2-T02 — Prompt version and data minimization** | Ensure summary-only behavior | Versioned prompt, snapshot allow-list, prose/content validation | T01 | No prohibited fields; prompt forbids invented calculations | Implemented in `2ff4832` (`feat: add AI summary prompt policy`): server-owned V1 prompt, strict aggregate allow-list, generic scope labels, no IDs/PII/raw rows, plain-text validation; focused 54/54, full suite 1,085 passed and 1 skipped, lint/typecheck/build passed; no dependencies added |
 | [x] **P7-M2-T03 — Idempotent insight job** | Generate/persist one scheduled report | Claim, snapshot, provider, persisted success/failure/provenance/retry | T01–T02 | Duplicate trigger bounded; core system unaffected by failure | Implemented in `69f61be` (`feat: add idempotent AI insight job`): database-enforced identity and tenant-safe scope/snapshot links; pins snapshot/schema/metric/prompt versions; concurrent claims converge; reserves at most three attempts and fails closed after ambiguous provider activity; successful insights immutable; no raw prompt/error retention. Closure passed: T03 DB 11/11, schema inventory 16/16, provider/prompt/snapshot 60/60, demo 1/1, full suite 1,097 passed and 1 intentionally skipped, root typecheck/build in isolated Linux, lint, Prisma, Prettier, and diff check |
 
-### Milestone 7.3 — Four cadences and dashboard (IN PROGRESS)
+### Milestone 7.3 — Four cadences and dashboard (COMPLETE)
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
 | [x] **P7-M3-T01 — Cadence orchestration** | Support daily/weekly/monthly/yearly identities | Callable internal orchestration of due periods and scopes through the P7-M2-T03 job; no runtime timer, scheduler persistence, API/UI, or AWS resources | P7-M2 | Organization timezone and ADR-029 half-open periods; due at 06:00 local with DST gap/overlap rules; bounded two-period catch-up oldest first; Branch active-at-original-due eligibility | Implemented in `6c68b5c` (`feat: add AI insight cadence orchestration`): DAILY/WEEKLY/MONTHLY/YEARLY, active-at-due Branch history and fail-closed skips, deterministic sequential execution, and T03 idempotent delegation with no direct provider calls; focused closure 56/56, full suite 1,117 passed and 1 intentionally skipped; lint/typecheck/build passed, zero dependency additions |
 | [x] **P7-M3-T02 — Persisted insight API** | Read reports without provider calls | GET-only persisted list/latest/detail; `AI_BUSINESS_SUMMARY_VIEW` && `BUSINESS_ANALYTICS_VIEW` && `SALES_COST_VIEW`; OWNER/ADMIN organization scope incl. retained inactive-Branch history, BRANCH_MANAGER active assigned Branch only; tenant-scoped IDs/cursors; business-period latest/lastSuccess/structural stale; repeatable-read pair; historical versions and safe status/provenance | T01 | Zero provider calls on reads; safe stale/failure states | Implemented in `8af00151f073ead3efe57d81f2fbce6dcda8fb20` (`feat: add persisted AI insight API`); focused 9/9, combined T02/T03/T01 23/23, full suite 1,126 passed and 1 intentionally skipped; lint/typecheck/build passed; no schema migration or dependency additions |
-| [ ] **P7-M3-T03 — Insight dashboard UI** | Present summaries responsibly | Cadence/scope/freshness/data-state/content-safe rendering | T02 | AI labeled as summary; deterministic metrics accessible | UI/E2E/accessibility/XSS-safe rendering tests |
+| [x] **P7-M3-T03 — Insight dashboard UI** | Present summaries responsibly | Cadence/scope/freshness/data-state/content-safe rendering | T02 | AI labeled as summary; deterministic metrics accessible | Implemented in `df8084b9b6a19c7d5a9149c9daa67396bcc007de` (`feat: add AI insight dashboard`): `/app/analytics` AI Insights view with role-aware scopes, four cadences, persisted states and periods, API-timezone formatting, and plain-text summaries; deterministic Sales remains default and accessible. Focused 45/45, web 200/200, E2E 7/7; full suite 1,148 passed and 1 intentional skip using a 20-second test-only timeout after one unrelated test exceeded the default 5 seconds; lint/typecheck/build/Prettier/diff check passed; no dependency/backend/schema changes |
 
-### Milestone 7.4 — Pre-Cloud Readiness (PLANNED / NOT STARTED)
+### Milestone 7.4 — Pre-Cloud Readiness (IN PROGRESS; P7-M4-T01 NEXT / NOT STARTED)
 
 This is a PRE-CLOUD LOCAL gate to establish and validate the final local
 application baseline before AWS. Delivery sequence: Phase 7 feature implementation
@@ -308,11 +310,11 @@ or the final dependency/container/IaC security audit. Those remain Phase 9 work.
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
-| [ ] **P7-M4-T01 — Stable/LTS runtime and dependency baseline** | Establish the supported pre-cloud runtime/dependency baseline | Review current Node.js, pnpm, Next.js, React, Express, Prisma, Zod, Vitest, Playwright, TypeScript, PostgreSQL, Docker images, and other relevant direct runtime/build dependencies. Prefer supported stable/LTS and compatible, justified patch/minor versions; do not chase a major version solely because it is newer; no beta/RC/canary/preview. Pin/reproduce versions and inspect deprecations/compatibility; major upgrades require explicit justification and impact review. | Phase 7 feature implementation | Document accepted versions; no knowingly obsolete/unsupported critical runtime; review compatibility; exact changes reviewable before regression testing | Targeted version, deprecation, and compatibility validation only; full regression belongs to T02 |
+| [ ] **P7-M4-T01 — Stable/LTS runtime and dependency baseline (NEXT / NOT STARTED)** | Establish the supported pre-cloud runtime/dependency baseline | Review current Node.js, pnpm, Next.js, React, Express, Prisma, Zod, Vitest, Playwright, TypeScript, PostgreSQL, Docker images, and other relevant direct runtime/build dependencies. Prefer supported stable/LTS and compatible, justified patch/minor versions; do not chase a major version solely because it is newer; no beta/RC/canary/preview. Pin/reproduce versions and inspect deprecations/compatibility; major upgrades require explicit justification and impact review. | Phase 7 feature implementation | Document accepted versions; no knowingly obsolete/unsupported critical runtime; review compatibility; exact changes reviewable before regression testing | Targeted version, deprecation, and compatibility validation only; full regression belongs to T02 |
 | [ ] **P7-M4-T02 — Post-baseline automated regression** | Prove the accepted Stable/LTS baseline did not break StockWise | Reproducible install; Prisma validate/generate; migrations from zero on a fresh guarded database; lint, typecheck, build, full automated suite and relevant E2E; demo fixture; container startup/smoke; authentication and business-critical regressions as applicable. | T01; completed application features | Automated gates pass on the final local baseline; migrations/schema remain reproducible; no unresolved baseline-induced regression; exact accepted versions are those carried into Manual UAT | Full automated regression and applicable guarded database, E2E, demo, and container checks |
 | [ ] **P7-M4-T03 — Full local manual business UAT** | Manually validate feature-complete StockWise business workflows locally before AWS complexity | Human-executed UAT plan covering identity, email verification where configured, password lifecycle, onboarding, invitations, memberships, branch context; OWNER/ADMIN/BRANCH_MANAGER/INVENTORY_STAFF/CASHIER permissions and tenant/Branch isolation; Category/Product, Supplier, Inventory/adjustments, Purchasing/PO/Receiving, POS/payment, Sales History/receipt/refund/restock; Sales/Category/Branch/Inventory analytics, Forecast, Reorder; and scheduled AI snapshot generation plus provider/job/persisted insight flows once Phase 7.2/7.3 exist. Each case records prerequisite, actor/role, steps, expected UI/API result, expected business/database effect where relevant, negative/auth test, edge cases, and pass/fail evidence. | T02; feature-complete local application | Critical accepted flows manually exercised; failures resolved or explicitly blocking; no known blocker to AWS deployment; local application declared PRE-CLOUD READY | Human-executed plan with recorded outcomes and evidence; this task defines the plan, not UAT tooling |
 
-P7-M4-T01, P7-M4-T02, and P7-M4-T03 are PLANNED / NOT STARTED. This local
+P7-M4-T01 is NEXT / NOT STARTED; P7-M4-T02 and P7-M4-T03 are NOT STARTED. This local
 compatibility/regression/UAT gate does not replace **P9-M1-T02 — Dependency/
 container/IaC security review**, the final security-oriented audit in deployed/
 cloud context, or **P9-M4-T01 — End-to-end regression**, the complete regression
@@ -409,9 +411,11 @@ endpoints and `/app/analytics` view are available. The view remains advisory and
 does not auto-order. All Phase 6 tasks, including P6-M5-T01 and P6-M5-T02, are
 complete. Phase 6 is COMPLETE. `STOCKOUT_RISK` remains deferred/unassigned
 pending a separate accepted policy. Phase 7 is IN PROGRESS; Milestone 7.1 is
-COMPLETE and Milestone 7.2 is COMPLETE. P7-M2-T01, P7-M2-T02, and P7-M2-T03
-are COMPLETE, and Milestone 7.3 is IN PROGRESS. P7-M3-T01 and P7-M3-T02 are
-COMPLETE; **P7-M3-T03 — Insight dashboard UI** is NEXT / NOT STARTED.
+COMPLETE, Milestone 7.2 is COMPLETE, and Milestone 7.3 is COMPLETE. P7-M1-T01,
+P7-M1-T02, P7-M2-T01, P7-M2-T02, P7-M2-T03, P7-M3-T01, P7-M3-T02, and
+P7-M3-T03 are COMPLETE. Milestone 7.4 is IN PROGRESS; **P7-M4-T01 — Stable/LTS
+runtime and dependency baseline** is NEXT / NOT STARTED. P7-M4-T02 and
+P7-M4-T03 are NOT STARTED.
 
 Current-state constraints that the next task must preserve:
 
@@ -434,7 +438,7 @@ Current-state constraints that the next task must preserve:
   `OQ-020` remains open beyond its narrow application-level limiter exceptions.
 - `OQ-013` is resolved by `ADR-025` as **DEFERRED FROM MVP**. Stock transfer remains broader/full future scope, but no transfer schema, API, UI, permission, lifecycle, ledger-source, or idempotency contract is implemented or frozen.
 - `apps/api` contains the Express app/server bootstrap, safe transport/errors, Prisma client, all accepted authentication endpoints, first onboarding, `GET /me/access-context`, branch lifecycle endpoints, invitation/member workflows, Catalog, Inventory, Supplier, Purchase Order, Receiving, Sales, and the Analytics period/scope/base-Sales/Category/Branch/Inventory/Forecast/Reorder repositories and services with authenticated analytics endpoints. Metrics use set-based PostgreSQL statements and exact Decimal derivation. Sales includes bounded Organization VAT configuration, completed Sale/SaleItem/Payment snapshots and constraints, `SALE_CHECKOUT` hashes, tenant-safe negative `SALE` ledger provenance, atomic checkout, POS reads/checkout transport, branch-scoped history/detail reads with field-level cost permission, and immutable linked SaleRefund/SaleRefundItem/RefundPayment compensation with optional positive `SALE_REFUND_RETURN` stock/cost effects. Existing protected writes continue to derive the verified actor, re-evaluate centralized policy and tenant scope, and serialize their accepted invariants.
-- The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, the bounded refund workflow, and Sales/Category/Branch/Inventory/Forecast/Reorder Analytics HTTP/UI exposure are implemented. Forecasting V1 and Reorder V1 remain deterministic; forecast/reorder presentation uses server-authoritative values and statuses. P7-M2-T01 implements the OpenRouter provider adapter, P7-M2-T02 implements prompt preparation, and P7-M2-T03 implements the idempotent insight job/persistence; P7-M3-T01 implements callable due-period orchestration and P7-M3-T02 implements the persisted insight read API. The runtime timer and dashboard UI remain unimplemented.
+- The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, the bounded refund workflow, and Sales/Category/Branch/Inventory/Forecast/Reorder Analytics HTTP/UI exposure are implemented. Forecasting V1 and Reorder V1 remain deterministic; forecast/reorder presentation uses server-authoritative values and statuses. P7-M2-T01 implements the OpenRouter provider adapter, P7-M2-T02 implements prompt preparation, and P7-M2-T03 implements the idempotent insight job/persistence; P7-M3-T01 implements callable due-period orchestration, P7-M3-T02 implements persisted insight reads, and P7-M3-T03 implements the `/app/analytics` dashboard UI. The runtime timer remains unimplemented.
 - Git metadata is present, but P1-M1-T05 did not create a commit or perform any remote action.
 
 ### Next task handoff prompt
@@ -442,13 +446,13 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P7-M3-T03 — Insight dashboard UI
+Task: P7-M4-T01 — Stable/LTS runtime and dependency baseline
 
-Use the existing P7-M3-T03 task row as the complete task contract. Build the
-dashboard/read UI over the completed P7-M3-T02 persisted API. Preserve the
-GET-only read boundary, safe status/provenance, role/scope behavior, and
-plain-text content handling. Do not add generation calls, cadence orchestration,
-replay, or AWS resources.
+Use the existing P7-M4-T01 task row as the complete task contract. Review the
+supported stable/LTS runtime and direct dependency baseline for the completed
+Phase 7 application. Record accepted versions and compatibility/deprecation
+findings; justify any changes within the task row. Do not begin P7-M4-T02,
+manual UAT, or Phase 8/AWS work.
 
-Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not widen P7-M3-T03 beyond its task row.
+Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not widen P7-M4-T01 beyond its task row.
 ```

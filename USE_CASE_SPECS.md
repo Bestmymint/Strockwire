@@ -492,7 +492,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-AI-002 — View a persisted AI insight
 
-- **Status:** Policy accepted by `ADR-033`; runtime remains unimplemented
+- **Status:** Policy accepted by `ADR-033`; persisted read-only delivery (API and dashboard UI) is complete through Milestone 7.3. P7-M4-T01 is next; runtime scheduler triggering and replay remain unimplemented.
 - **Actor:** Authorized analytics viewer
 - **Preconditions:** Actor may access the insight's organization/branch scope.
 - **Trigger:** Actor opens an insight/dashboard panel.
