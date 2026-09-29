@@ -170,7 +170,7 @@ function nextDate(
   }
 }
 
-function previousDate(
+export function previousDate(
   date: Temporal.PlainDate,
   granularity: AnalyticsGranularity,
 ): Temporal.PlainDate {

@@ -538,11 +538,28 @@ success stores T02-validated plain text. A duplicate observes the existing job.
 An expired claim with no reserved call can be reclaimed, while any reserved or
 completed provider activity fails closed as `INTERRUPTED` after a crash because
 external delivery cannot be proven exactly once. Network I/O never holds a
-database transaction open. Due-period discovery and public reads remain P7-M3.
+database transaction open. Public reads remain P7-M3-T02.
 An internal Branch status-history lookup supplies due-instant eligibility from
 immutable events. Pre-migration history is unknown, so Branch generation skips
 due instants before its first trustworthy event; Organization aggregation keeps
 its existing historical Branch scope.
+P7-M3-T01 provides an internal callable cadence orchestrator with an injected
+current instant. For each active Organization it uses the ADR-029 timezone and
+period engine to select the two most recent due completed periods per cadence,
+oldest first, at 06:00 local time. A missing 06:00 fires at the first valid
+instant after the gap; a repeated 06:00 uses its earlier occurrence. Cadences
+iterate daily, weekly, monthly, yearly; each period runs the Organization job
+first, then Branches in ID order. Branch discovery includes currently active
+Branches and Branches with lifecycle events since the oldest candidate due
+instant; each Branch is then checked against immutable status history at that
+period's original due instant. Unavailable history skips Branch generation.
+Each candidate invokes the P7-M2-T03 job sequentially, so its persisted identity
+controls duplicates and attempt budgets; one failed candidate does not stop
+later candidates. The safe run counts distinguish a persisted failed result
+from an unexpected execution error. A future local timer or EventBridge trigger
+is only a wake-up signal. Its worker supplies the T03 job and current instant;
+the orchestrator determines due periods and scopes. T01 creates no cloud trigger
+or replay path.
 
 ## 7. Data ownership and module interactions
 
