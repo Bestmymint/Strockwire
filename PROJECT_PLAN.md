@@ -4,7 +4,7 @@
 | --- | --- |
 | Project | StockWise |
 | Plan baseline | Architecture Freeze v1 |
-| Repository state | Implemented and verified through P7-M3-T01; Phase 6 complete, Phase 7 in progress, Milestones 7.1 and 7.2 complete, Milestone 7.3 in progress; P7-M3-T02 next/not started |
+| Repository state | Implemented and verified through P7-M3-T02; Phase 6 complete, Phase 7 in progress, Milestones 7.1 and 7.2 complete, Milestone 7.3 in progress; P7-M3-T03 next/not started |
 | Last updated | 2026-09-29 |
 
 ## 1. Plan rules
@@ -202,8 +202,8 @@ Phase 6 — Analytics and forecasting is COMPLETE. Milestone 6.5 is COMPLETE, an
 all tasks in Milestones 6.1–6.5 are complete. `STOCKOUT_RISK` remains
 deferred/unassigned; Phase 6 completion
 does not resolve or assign that separate rule. Phase 7 is IN PROGRESS under
-`ADR-033`; Milestones 7.1 and 7.2 are COMPLETE. P7-M3-T01 is COMPLETE;
-Milestone 7.3 is IN PROGRESS, with P7-M3-T02 NEXT / NOT STARTED.
+`ADR-033`; Milestones 7.1 and 7.2 are COMPLETE. P7-M3-T01 and P7-M3-T02 are
+COMPLETE; Milestone 7.3 is IN PROGRESS, with P7-M3-T03 NEXT / NOT STARTED.
 
 ### Milestone 6.1 — Definitions and period engine
 
@@ -269,8 +269,8 @@ files; Prisma validate/generate, lint, typecheck, build, Prettier, and diff chec
 passed. Milestone 7.2 is COMPLETE: P7-M2-T01 is COMPLETE in
 `227303f` (`feat: add OpenRouter AI provider`); P7-M2-T02 is COMPLETE in
 `2ff4832` (`feat: add AI summary prompt policy`); P7-M2-T03 is COMPLETE in
-`69f61be` (`feat: add idempotent AI insight job`). P7-M3-T01 is COMPLETE;
-P7-M3-T02 is NEXT / NOT STARTED. Milestone 7.3 is IN PROGRESS.
+`69f61be` (`feat: add idempotent AI insight job`). P7-M3-T01 and P7-M3-T02
+are COMPLETE. Milestone 7.3 is IN PROGRESS, with P7-M3-T03 NEXT / NOT STARTED.
 `STOCKOUT_RISK` remains deferred/unassigned; P0-M2-T05 remains unchecked.
 
 ### Milestone 7.1 — AI decision gate and snapshots (COMPLETE)
@@ -293,7 +293,7 @@ P7-M3-T02 is NEXT / NOT STARTED. Milestone 7.3 is IN PROGRESS.
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
 | [x] **P7-M3-T01 — Cadence orchestration** | Support daily/weekly/monthly/yearly identities | Callable internal orchestration of due periods and scopes through the P7-M2-T03 job; no runtime timer, scheduler persistence, API/UI, or AWS resources | P7-M2 | Organization timezone and ADR-029 half-open periods; due at 06:00 local with DST gap/overlap rules; bounded two-period catch-up oldest first; Branch active-at-original-due eligibility | Implemented in `6c68b5c` (`feat: add AI insight cadence orchestration`): DAILY/WEEKLY/MONTHLY/YEARLY, active-at-due Branch history and fail-closed skips, deterministic sequential execution, and T03 idempotent delegation with no direct provider calls; focused closure 56/56, full suite 1,117 passed and 1 intentionally skipped; lint/typecheck/build passed, zero dependency additions |
-| [ ] **P7-M3-T02 — Persisted insight API** | Read reports without provider calls | List/latest/detail, safe status/provenance, scope | T01 | Zero provider calls on reads; safe stale/failure states | API/security/empty/stale/version tests |
+| [x] **P7-M3-T02 — Persisted insight API** | Read reports without provider calls | GET-only persisted list/latest/detail; `AI_BUSINESS_SUMMARY_VIEW` && `BUSINESS_ANALYTICS_VIEW` && `SALES_COST_VIEW`; OWNER/ADMIN organization scope incl. retained inactive-Branch history, BRANCH_MANAGER active assigned Branch only; tenant-scoped IDs/cursors; business-period latest/lastSuccess/structural stale; repeatable-read pair; historical versions and safe status/provenance | T01 | Zero provider calls on reads; safe stale/failure states | Implemented in `8af00151f073ead3efe57d81f2fbce6dcda8fb20` (`feat: add persisted AI insight API`); focused 9/9, combined T02/T03/T01 23/23, full suite 1,126 passed and 1 intentionally skipped; lint/typecheck/build passed; no schema migration or dependency additions |
 | [ ] **P7-M3-T03 — Insight dashboard UI** | Present summaries responsibly | Cadence/scope/freshness/data-state/content-safe rendering | T02 | AI labeled as summary; deterministic metrics accessible | UI/E2E/accessibility/XSS-safe rendering tests |
 
 ### Milestone 7.4 — Pre-Cloud Readiness (PLANNED / NOT STARTED)
@@ -410,9 +410,8 @@ does not auto-order. All Phase 6 tasks, including P6-M5-T01 and P6-M5-T02, are
 complete. Phase 6 is COMPLETE. `STOCKOUT_RISK` remains deferred/unassigned
 pending a separate accepted policy. Phase 7 is IN PROGRESS; Milestone 7.1 is
 COMPLETE and Milestone 7.2 is COMPLETE. P7-M2-T01, P7-M2-T02, and P7-M2-T03
-are COMPLETE, and Milestone 7.3 is IN PROGRESS. P7-M3-T01 is COMPLETE;
-P7-M3-T02 — Persisted insight API is NEXT / NOT STARTED, and P7-M3-T03
-remains NOT STARTED.
+are COMPLETE, and Milestone 7.3 is IN PROGRESS. P7-M3-T01 and P7-M3-T02 are
+COMPLETE; **P7-M3-T03 — Insight dashboard UI** is NEXT / NOT STARTED.
 
 Current-state constraints that the next task must preserve:
 
@@ -435,7 +434,7 @@ Current-state constraints that the next task must preserve:
   `OQ-020` remains open beyond its narrow application-level limiter exceptions.
 - `OQ-013` is resolved by `ADR-025` as **DEFERRED FROM MVP**. Stock transfer remains broader/full future scope, but no transfer schema, API, UI, permission, lifecycle, ledger-source, or idempotency contract is implemented or frozen.
 - `apps/api` contains the Express app/server bootstrap, safe transport/errors, Prisma client, all accepted authentication endpoints, first onboarding, `GET /me/access-context`, branch lifecycle endpoints, invitation/member workflows, Catalog, Inventory, Supplier, Purchase Order, Receiving, Sales, and the Analytics period/scope/base-Sales/Category/Branch/Inventory/Forecast/Reorder repositories and services with authenticated analytics endpoints. Metrics use set-based PostgreSQL statements and exact Decimal derivation. Sales includes bounded Organization VAT configuration, completed Sale/SaleItem/Payment snapshots and constraints, `SALE_CHECKOUT` hashes, tenant-safe negative `SALE` ledger provenance, atomic checkout, POS reads/checkout transport, branch-scoped history/detail reads with field-level cost permission, and immutable linked SaleRefund/SaleRefundItem/RefundPayment compensation with optional positive `SALE_REFUND_RETURN` stock/cost effects. Existing protected writes continue to derive the verified actor, re-evaluate centralized policy and tenant scope, and serialize their accepted invariants.
-- The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, the bounded refund workflow, and Sales/Category/Branch/Inventory/Forecast/Reorder Analytics HTTP/UI exposure are implemented. Forecasting V1 and Reorder V1 remain deterministic; forecast/reorder presentation uses server-authoritative values and statuses. P7-M2-T01 implements the OpenRouter provider adapter, P7-M2-T02 implements prompt preparation, and P7-M2-T03 implements the idempotent insight job/persistence; P7-M3-T01 implements callable due-period orchestration; runtime timer, persisted insight API, and dashboard UI remain unimplemented.
+- The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, the bounded refund workflow, and Sales/Category/Branch/Inventory/Forecast/Reorder Analytics HTTP/UI exposure are implemented. Forecasting V1 and Reorder V1 remain deterministic; forecast/reorder presentation uses server-authoritative values and statuses. P7-M2-T01 implements the OpenRouter provider adapter, P7-M2-T02 implements prompt preparation, and P7-M2-T03 implements the idempotent insight job/persistence; P7-M3-T01 implements callable due-period orchestration and P7-M3-T02 implements the persisted insight read API. The runtime timer and dashboard UI remain unimplemented.
 - Git metadata is present, but P1-M1-T05 did not create a commit or perform any remote action.
 
 ### Next task handoff prompt
@@ -443,15 +442,13 @@ Current-state constraints that the next task must preserve:
 ```text
 Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
 
-Task: P7-M3-T02 — Persisted insight API
+Task: P7-M3-T03 — Insight dashboard UI
 
-Use the existing P7-M3-T02 task row as the complete task contract. Preserve its
-scope and acceptance requirements. ADR-033 governs persisted insight read
-semantics and authorization. P7-M2-T03 owns generation/idempotency and
-P7-M3-T01 owns due-period orchestration; do not duplicate those behaviors or
-widen this task beyond its existing row. Implement only the public/read-side
-persisted insight API and its authorization, with no dashboard UI or AWS
-resources.
+Use the existing P7-M3-T03 task row as the complete task contract. Build the
+dashboard/read UI over the completed P7-M3-T02 persisted API. Preserve the
+GET-only read boundary, safe status/provenance, role/scope behavior, and
+plain-text content handling. Do not add generation calls, cadence orchestration,
+replay, or AWS resources.
 
-Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not begin P7-M3-T02 without its implementation authorization.
+Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not widen P7-M3-T03 beyond its task row.
 ```
