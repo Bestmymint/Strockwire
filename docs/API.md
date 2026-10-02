@@ -723,12 +723,18 @@ Stock transfer is **DEFERRED FROM MVP** by `ADR-025`. No transfer endpoint or fu
 endpoint contract is defined.
 
 Inventory reads require a trusted concrete branch scope and `inventory.view`.
-Branch-scoped roles require an active assignment; all five accepted roles may
-read only branches they can effectively access. `OWNER`/`ADMIN` remain
-organization-wide but must still select a concrete branch path. Branch
-deactivation preserves authorized historical readability. Balance list `status`
-is `ACTIVE` by default and accepts `INACTIVE` or
-`ALL`; `categoryId` accepts a same-tenant UUID or `uncategorized`. Its opaque
+Branch-scoped roles require an existing active, non-revoked assignment to the
+requested same-organization branch, plus an active actor, organization, and
+membership. `OWNER`/`ADMIN` retain organization-wide reads but must still select
+a concrete branch path. Under the 2026-10-01 clarification of `ADR-020`, an
+`INACTIVE` branch alone does not revoke these authorized read-only balance and
+history reads: a retained assignment may yield `200`; removing/revoking it
+removes branch-scoped read access. This does not add the inactive branch to
+`GET /me/access-context` or authorize new operational mutations. Inventory
+adjustment still requires an `ACTIVE` branch and otherwise returns
+`409 BRANCH_INACTIVE` for an otherwise authorized actor. Balance list `status`
+filters Product status, not Branch status; it is `ACTIVE` by default and accepts
+`INACTIVE` or `ALL`; `categoryId` accepts a same-tenant UUID or `uncategorized`. Its opaque
 cursor is bound to the organization, branch, and filters and orders products by
 `(createdAt ASC, id ASC)`. The result includes every matching Product, even when
 it has no persisted balance: `{ exists: false, quantity: "0", updatedAt: null }`

@@ -121,7 +121,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   3. Missing or revoked branch context falls back to the first accessible branch ordered by code; one organization is automatic and several require a chooser.
   4. With no accessible organization, the client enters first setup only when the same response reports server-derived first-organization onboarding eligibility; otherwise it renders the safe no-access state.
   5. Before switching, the UI cancels and removes the previous `["branch-scoped", organizationId, branchId, ...]` TanStack Query prefix, then replaces the URL.
-  6. Every later branch-scoped API request still revalidates current membership, assignment, ownership, status, and permission server-side.
+  6. Every later branch-scoped API request still revalidates current membership, assignment, ownership, status, and permission server-side under that action's rules. An inactive branch is excluded from active navigation/new operations, but a retained active assignment may still authorize historical read-only access (`ADR-020`).
 - **Alternative flows:** `OWNER`/`ADMIN` see all active organization branches; branch-only roles see active assigned branches only. An organization with no effective branch shows a safe no-branch state.
 - **Error cases:** Branch inactive; access revoked; branch from another organization; stale cached selection; network failure. The UI falls back to an allowed selection and shows a safe message.
 - **Business rules:** Selection is URL-only navigation context, not authorization. It is never persisted in the database, session, cookie, local storage, or session storage. First-organization eligibility is server-derived from durable membership/provenance and is not authorization proof for creation. One user can access multiple branches without separate accounts.
@@ -249,7 +249,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   3. For history, it returns ledger movements in stable chronological order with source/actor context permitted to the role.
   4. UI distinguishes no balance record (quantity zero), a persisted zero balance,
      and unavailable data.
-- **Alternative flows:** Organization view returns separate/aggregated branch data only when authorized; inactive products can be included by explicit filter.
+- **Alternative flows:** Organization view returns separate/aggregated branch data only when authorized; inactive products can be included by explicit filter. Branch deactivation preserves authorized read-only inventory balance/history access: `OWNER`/`ADMIN` retain organization-wide reads, and other roles with inventory-read permission may retain access through an existing active, non-revoked assignment. Removing/revoking that assignment removes branch-scoped historical access. Active navigation and new operational mutations remain unavailable for an inactive branch (`ADR-020`).
 - **Error cases:** Invalid cursor/filter; inaccessible branch/product; stale page cursor; database unavailable. Do not leak another tenant's product or movement.
 - **Business rules:** Balance is a projection; ledger explains changes. This
   operational inventory view does not emit the planned analytics classification.

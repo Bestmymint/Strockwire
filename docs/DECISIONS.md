@@ -834,8 +834,22 @@ Every edit or lifecycle command includes the exact prior millisecond UTC
 `updatedAt`. Mismatch returns `409 BRANCH_STALE`; matching same-state lifecycle
 is idempotent. Deactivation locks the organization row and checks at least one
 other active branch inside the transaction, returning `409 LAST_ACTIVE_BRANCH`
-when prohibited. Assignments remain persisted, have no effect while their
-branch is inactive, and regain effect on reactivation when otherwise active.
+when prohibited. Assignments remain persisted but confer no active operational
+authority while their branch is inactive; that authority returns on reactivation
+only when the assignment and membership are otherwise active.
+
+**Accepted clarification — 2026-10-01 (SW-PREBASE-MT-01):** Branch deactivation
+does not erase historical/read-only visibility. `OWNER`/`ADMIN` retain
+organization-wide read access. Other roles may retain authorized historical
+reads, including branch inventory balance/history reads, through an existing
+active, non-revoked assignment to that inactive branch. Active actor,
+organization, membership, same-tenant scope, and the endpoint's read permission
+remain required; removing/revoking the assignment removes this branch-scoped
+access. A retained assignment never permits new operational work on an inactive
+branch, including inventory adjustment, receiving, or POS checkout. This
+clarification does not expand role permissions or change capability-specific
+active-branch requirements. Active navigation/access-context remains distinct
+from authorized historical reads.
 
 Default branch listing returns active rows. Only `OWNER`/`ADMIN` may include
 inactive rows; branch-only roles receive active assigned rows. Results are

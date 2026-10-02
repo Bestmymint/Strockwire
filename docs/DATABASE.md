@@ -317,9 +317,14 @@ Constraints and indexes:
 - Branch edits and lifecycle changes compare the exact prior millisecond UTC
   `updatedAt`; a mismatch is a stale-write conflict. A same-state lifecycle
   request with the matching version is idempotent and does not advance the row.
-- Branch assignments are preserved when a branch becomes inactive. They become
-  ineffective while inactive and effective again after reactivation if the
-  assignment and membership remain active.
+- Branch assignments are preserved when a branch becomes inactive. They confer
+  no active operational authority or active navigation context while inactive,
+  but an existing active, non-revoked assignment may still authorize historical
+  read-only access under the endpoint's permission/scope rules (`ADR-020`).
+  Removing/revoking the assignment removes that branch-scoped historical access.
+  Operational authority returns on reactivation only if the assignment and
+  membership remain active; no assignment permits new operations on an inactive
+  branch.
 
 `BranchStatusEvent` is the append-only authority for historical Branch activity.
 An insert records the initial status at `createdAt`; a status change records its
