@@ -89,10 +89,13 @@ export interface ReceivingRepositoryOptions {
 }
 
 class ReceivingAbort extends Error {
+  readonly outcome: { kind: "invalid_costs" } | { kind: "invalid_quantity" };
+
   constructor(
-    readonly outcome: { kind: "invalid_costs" } | { kind: "invalid_quantity" },
+    outcome: { kind: "invalid_costs" } | { kind: "invalid_quantity" },
   ) {
     super(outcome.kind);
+    this.outcome = outcome;
   }
 }
 
