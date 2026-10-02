@@ -4,8 +4,8 @@
 | --- | --- |
 | Project | StockWise |
 | Plan baseline | Architecture Freeze v1 |
-| Repository state | Implemented and verified through P7-M3-T03; Phase 6 complete, Phase 7 in progress, Milestones 7.1–7.3 complete, Milestone 7.4 in progress; P7-M4-T01 next/not started |
-| Last updated | 2026-09-29 |
+| Repository state | Implemented and verified through P7-M4-T01 (accepted baseline); Phase 6 complete, Phase 7 in progress, Milestones 7.1–7.3 complete, Milestone 7.4 in progress; P7-M4-T01 complete (verified/accepted); P7-M4-T02 next/not started |
+| Last updated | 2026-10-02 |
 
 ## 1. Plan rules
 
@@ -204,7 +204,7 @@ deferred/unassigned; Phase 6 completion
 does not resolve or assign that separate rule. Phase 7 is IN PROGRESS under
 `ADR-033`; Milestones 7.1, 7.2, and 7.3 are COMPLETE. P7-M3-T01, P7-M3-T02,
 and P7-M3-T03 are COMPLETE. Milestone 7.4 is IN PROGRESS, with P7-M4-T01
-NEXT / NOT STARTED; P7-M4-T02 and P7-M4-T03 are NOT STARTED.
+COMPLETE; P7-M4-T02 and P7-M4-T03 are NOT STARTED.
 
 ### Milestone 6.1 — Definitions and period engine
 
@@ -272,7 +272,7 @@ passed. Milestone 7.2 is COMPLETE: P7-M2-T01 is COMPLETE in
 `2ff4832` (`feat: add AI summary prompt policy`); P7-M2-T03 is COMPLETE in
 `69f61be` (`feat: add idempotent AI insight job`). P7-M3-T01 and P7-M3-T02
 are COMPLETE. Milestone 7.3 is COMPLETE. Milestone 7.4 is IN PROGRESS, with
-P7-M4-T01 NEXT / NOT STARTED; P7-M4-T02 and P7-M4-T03 remain NOT STARTED.
+P7-M4-T01 COMPLETE; P7-M4-T02 and P7-M4-T03 remain NOT STARTED.
 `STOCKOUT_RISK` remains deferred/unassigned; P0-M2-T05 remains unchecked.
 The 2026-09-30 pre-baseline amendment to `ADR-033` now requests
 `openrouter/free` on every attempt without paid-model fallback; historical
@@ -301,7 +301,7 @@ P7-M1/P7-M2 task rows below record their original completion scope.
 | [x] **P7-M3-T02 — Persisted insight API** | Read reports without provider calls | GET-only persisted list/latest/detail; `AI_BUSINESS_SUMMARY_VIEW` && `BUSINESS_ANALYTICS_VIEW` && `SALES_COST_VIEW`; OWNER/ADMIN organization scope incl. retained inactive-Branch history, BRANCH_MANAGER active assigned Branch only; tenant-scoped IDs/cursors; business-period latest/lastSuccess/structural stale; repeatable-read pair; historical versions and safe status/provenance | T01 | Zero provider calls on reads; safe stale/failure states | Implemented in `8af00151f073ead3efe57d81f2fbce6dcda8fb20` (`feat: add persisted AI insight API`); focused 9/9, combined T02/T03/T01 23/23, full suite 1,126 passed and 1 intentionally skipped; lint/typecheck/build passed; no schema migration or dependency additions |
 | [x] **P7-M3-T03 — Insight dashboard UI** | Present summaries responsibly | Cadence/scope/freshness/data-state/content-safe rendering | T02 | AI labeled as summary; deterministic metrics accessible | Implemented in `df8084b9b6a19c7d5a9149c9daa67396bcc007de` (`feat: add AI insight dashboard`): `/app/analytics` AI Insights view with role-aware scopes, four cadences, persisted states and periods, API-timezone formatting, and plain-text summaries; deterministic Sales remains default and accessible. Focused 45/45, web 200/200, E2E 7/7; full suite 1,148 passed and 1 intentional skip using a 20-second test-only timeout after one unrelated test exceeded the default 5 seconds; lint/typecheck/build/Prettier/diff check passed; no dependency/backend/schema changes |
 
-### Milestone 7.4 — Pre-Cloud Readiness (IN PROGRESS; P7-M4-T01 NEXT / NOT STARTED)
+### Milestone 7.4 — Pre-Cloud Readiness (IN PROGRESS; P7-M4-T01 COMPLETE)
 
 This is a PRE-CLOUD LOCAL gate to establish and validate the final local
 application baseline before AWS. Delivery sequence: Phase 7 feature implementation
@@ -313,11 +313,12 @@ or the final dependency/container/IaC security audit. Those remain Phase 9 work.
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
-| [ ] **P7-M4-T01 — Stable/LTS runtime and dependency baseline (NEXT / NOT STARTED)** | Establish the supported pre-cloud runtime/dependency baseline | Review current Node.js, pnpm, Next.js, React, Express, Prisma, Zod, Vitest, Playwright, TypeScript, PostgreSQL, Docker images, and other relevant direct runtime/build dependencies. Prefer supported stable/LTS and compatible, justified patch/minor versions; do not chase a major version solely because it is newer; no beta/RC/canary/preview. Pin/reproduce versions and inspect deprecations/compatibility; major upgrades require explicit justification and impact review. | Phase 7 feature implementation | Document accepted versions; no knowingly obsolete/unsupported critical runtime; review compatibility; exact changes reviewable before regression testing | Targeted version, deprecation, and compatibility validation only; full regression belongs to T02 |
+| [x] **P7-M4-T01 — Stable/LTS runtime and dependency baseline (COMPLETE)** | Establish the supported pre-cloud runtime/dependency baseline | Review current Node.js, pnpm, Next.js, React, Express, Prisma, Zod, Vitest, Playwright, TypeScript, PostgreSQL, Docker images, and other relevant direct runtime/build dependencies. Prefer supported stable/LTS and compatible, justified patch/minor versions; do not chase a major version solely because it is newer; no beta/RC/canary/preview. Pin/reproduce versions and inspect deprecations/compatibility; major upgrades require explicit justification and impact review. | Phase 7 feature implementation | Document accepted versions; no knowingly obsolete/unsupported critical runtime; review compatibility; exact changes reviewable before regression testing | Verified/accepted 2026-10-02: Node 24.21.0, Next/plugin 16.3.8, PostgreSQL 16.15, API/web Node types 24.19.0; compatible transitive security fixes. Frozen install, Prisma validate/generate, lint/typecheck/build, tracked-file formatting, 1,149 passed/1 intentional skip, and Chromium smoke 9/9 passed. Root format fails only on preserved untracked diagrams; two MySQL-only Prisma tooling advisories deferred. See `docs/P7-M4-T01-BASELINE.md`; T02 remains unstarted. |
 | [ ] **P7-M4-T02 — Post-baseline automated regression** | Prove the accepted Stable/LTS baseline did not break StockWise | Reproducible install; Prisma validate/generate; migrations from zero on a fresh guarded database; lint, typecheck, build, full automated suite and relevant E2E; demo fixture; container startup/smoke; authentication and business-critical regressions as applicable. | T01; completed application features | Automated gates pass on the final local baseline; migrations/schema remain reproducible; no unresolved baseline-induced regression; exact accepted versions are those carried into Manual UAT | Full automated regression and applicable guarded database, E2E, demo, and container checks |
 | [ ] **P7-M4-T03 — Full local manual business UAT** | Manually validate feature-complete StockWise business workflows locally before AWS complexity | Human-executed UAT plan covering identity, email verification where configured, password lifecycle, onboarding, invitations, memberships, branch context; OWNER/ADMIN/BRANCH_MANAGER/INVENTORY_STAFF/CASHIER permissions and tenant/Branch isolation; Category/Product, Supplier, Inventory/adjustments, Purchasing/PO/Receiving, POS/payment, Sales History/receipt/refund/restock; Sales/Category/Branch/Inventory analytics, Forecast, Reorder; and scheduled AI snapshot generation plus provider/job/persisted insight flows once Phase 7.2/7.3 exist. Each case records prerequisite, actor/role, steps, expected UI/API result, expected business/database effect where relevant, negative/auth test, edge cases, and pass/fail evidence. | T02; feature-complete local application | Critical accepted flows manually exercised; failures resolved or explicitly blocking; no known blocker to AWS deployment; local application declared PRE-CLOUD READY | Human-executed plan with recorded outcomes and evidence; this task defines the plan, not UAT tooling |
 
-P7-M4-T01 is NEXT / NOT STARTED; P7-M4-T02 and P7-M4-T03 are NOT STARTED. This local
+P7-M4-T01 is COMPLETE (verified/accepted); P7-M4-T02 is NEXT / NOT STARTED,
+and P7-M4-T03 is NOT STARTED. This local
 compatibility/regression/UAT gate does not replace **P9-M1-T02 — Dependency/
 container/IaC security review**, the final security-oriented audit in deployed/
 cloud context, or **P9-M4-T01 — End-to-end regression**, the complete regression
@@ -417,8 +418,8 @@ pending a separate accepted policy. Phase 7 is IN PROGRESS; Milestone 7.1 is
 COMPLETE, Milestone 7.2 is COMPLETE, and Milestone 7.3 is COMPLETE. P7-M1-T01,
 P7-M1-T02, P7-M2-T01, P7-M2-T02, P7-M2-T03, P7-M3-T01, P7-M3-T02, and
 P7-M3-T03 are COMPLETE. Milestone 7.4 is IN PROGRESS; **P7-M4-T01 — Stable/LTS
-runtime and dependency baseline** is NEXT / NOT STARTED. P7-M4-T02 and
-P7-M4-T03 are NOT STARTED.
+runtime and dependency baseline** is COMPLETE (verified/accepted).
+P7-M4-T02 is NEXT / NOT STARTED; P7-M4-T03 is NOT STARTED.
 
 Current-state constraints that the next task must preserve:
 
@@ -447,15 +448,21 @@ Current-state constraints that the next task must preserve:
 ### Next task handoff prompt
 
 ```text
-Read AGENTS.md and all Source of Truth documents, then inspect the current repository before changing files.
+THREAD: NEW THREAD
+MODEL: GPT-6.1 Sol
+EFFORT: High
+SKILLS: project-operating-standard; stockwise-source-of-truth-change-gate
 
-Task: P7-M4-T01 — Stable/LTS runtime and dependency baseline
+Read AGENTS.md, PROJECT_PLAN.md, docs/P7-M4-T01-BASELINE.md and relevant
+Source of Truth before changing anything. Inspect the actual Git checkpoint
+and preserve all unrelated work, especially docs/diagrams/.
 
-Use the existing P7-M4-T01 task row as the complete task contract. Review the
-supported stable/LTS runtime and direct dependency baseline for the completed
-Phase 7 application. Record accepted versions and compatibility/deprecation
-findings; justify any changes within the task row. Do not begin P7-M4-T02,
-manual UAT, or Phase 8/AWS work.
-
-Preserve existing tenant, branch, authorization, Decimal, stock-ledger, shared-lock, ADR-026 cost, immutable Sale/Payment/history/refund, repository-foundation, API/web, environment, and CI invariants. Do not widen P7-M4-T01 beyond its task row.
+Next task, only after separate authorization: P7-M4-T02 — Post-baseline
+automated regression. Its existing task row is the complete contract. T01 is
+verified and accepted; inspect the isolated T01 commit on main;
+confirm the accepted final checkpoint before beginning. Use explicit fresh
+loopback *_test targets; never reset the manual baseline database. Carry the
+seven open manual findings and two deferred Prisma MySQL-tooling advisories.
+Do not begin T03/manual UAT, Phase 8/AWS, known-defect fixes, or Git actions
+without separate authorization.
 ```
