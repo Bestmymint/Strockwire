@@ -241,6 +241,12 @@ describe("V1 AI summary prose", () => {
   });
 
   it.each([
+    "User Safety: safe",
+    "User Safety: safe. Sales content is allowed.",
+    "Content Safety: safe. No policy violations detected.",
+    "Hello! How can I help you today?",
+    "The weather is sunny today.",
+    "I cannot assist with this request.",
     "",
     "  \n  ",
     "Summary\u0000hidden",

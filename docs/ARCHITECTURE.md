@@ -527,7 +527,12 @@ prompt. V1 always has available counts and amounts, even for an empty period,
 so its all-zero snapshot is not locally insufficient. The output contract is
 plain Unicode prose: reject empty, malformed, control-laden, JSON-like,
 prompt-marker, or HTML-like text before persistence; the UI must escape
-it as text. This validator cannot prove factual accuracy or detect every
+it as text. P7-M4-REM-01 additionally rejects a leading safety-classifier verdict
+and requires a Sales metric term from the English vocabulary of the V1 prompt
+(sales/refunds/revenue/average order value/COGS/cost/profit/margin/growth).
+Invalid prose follows the existing non-retryable `INVALID_RESPONSE` path, with
+no persisted summary content; `openrouter/free` routing is unchanged. This
+bounded relevance check cannot prove factual accuracy or detect every
 invented number; the authoritative snapshot and explicit no-calculation prompt
 remain separate controls. Only the prompt version, not its raw text, is
 persisted as provenance.

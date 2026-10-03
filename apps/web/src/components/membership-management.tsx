@@ -360,6 +360,18 @@ function InvitationCard({
       <p className="mt-1 text-sm text-muted-foreground">
         {invitation.intendedRole.replaceAll("_", " ")} · {invitation.state}
       </p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        {BRANCH_ROLES.has(invitation.intendedRole)
+          ? `Branch scope: ${
+              invitation.branchScopes
+                .map(
+                  (branch) =>
+                    `${branch.code} — ${branch.name}${branch.status === "INACTIVE" ? " (Inactive)" : ""}`,
+                )
+                .join(", ") || "No branches assigned"
+            }`
+          : "Organization-wide scope"}
+      </p>
       {failure ? (
         <p className="mt-3 text-sm text-red-700" role="alert">
           {errorMessage(failure)}

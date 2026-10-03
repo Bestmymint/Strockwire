@@ -223,7 +223,8 @@ function SupplierForm({
       className="rounded-lg border bg-card p-5"
       onSubmit={(event) => {
         event.preventDefault();
-        const form = new FormData(event.currentTarget);
+        const formElement = event.currentTarget;
+        const form = new FormData(formElement);
         void mutation
           .mutateAsync({
             name: String(form.get("name") ?? ""),
@@ -233,7 +234,7 @@ function SupplierForm({
             address: String(form.get("address") ?? ""),
           })
           .then(() => {
-            if (label === "Create supplier") event.currentTarget.reset();
+            if (label === "Create supplier") formElement.reset();
           })
           .catch(onError);
       }}

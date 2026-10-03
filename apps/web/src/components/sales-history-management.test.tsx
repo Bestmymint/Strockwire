@@ -189,6 +189,10 @@ describe("sales history UI", () => {
       await screen.findByRole("heading", { name: "Sales history" }),
     ).toBeTruthy();
     expect(await screen.findByText("Historical cashier")).toBeTruthy();
+    expect(
+      screen.getByText(/Sale timestamps are shown in UTC\. Analytics uses/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/OQ-016/)).toBeNull();
     expect(screen.getByText("THB 12.34")).toBeTruthy();
     await waitFor(() =>
       expect(listSalesHistory).toHaveBeenCalledWith(

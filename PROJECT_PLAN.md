@@ -4,7 +4,7 @@
 | --- | --- |
 | Project | StockWise |
 | Plan baseline | Architecture Freeze v1 |
-| Repository state | Implemented and verified through P7-M4-T02 (fresh automated regression); Phase 6 complete, Phase 7 in progress, Milestones 7.1–7.3 complete, Milestone 7.4 in progress; P7-M4-T01 complete (verified/accepted); P7-M4-T02 complete (verified/accepted); P7-M4-T03 execution concluded / not accepted |
+| Repository state | Implemented and automated-verified through P7-M4-REM-01 (uncommitted; focused manual follow-up pending); Phase 6 complete, Phase 7 in progress, Milestones 7.1–7.3 complete, Milestone 7.4 in progress; P7-M4-T01 complete (verified/accepted); P7-M4-T02 complete (verified/accepted); P7-M4-T03 execution concluded / not accepted |
 | Last updated | 2026-10-04 |
 
 ## 1. Plan rules
@@ -445,7 +445,23 @@ Current-state constraints that the next task must preserve:
 - The Next.js web-to-API integration uses same-origin `/api/health` and `/api/v1/:path*` rewrites to loopback Express; Express CORS remains disabled. Supplier management, Purchase Orders, Receiving, checkout/POS, Sales History/detail/browser receipt, the bounded refund workflow, and Sales/Category/Branch/Inventory/Forecast/Reorder Analytics HTTP/UI exposure are implemented. Forecasting V1 and Reorder V1 remain deterministic; forecast/reorder presentation uses server-authoritative values and statuses. P7-M2-T01 implements the OpenRouter provider adapter, P7-M2-T02 implements prompt preparation, and P7-M2-T03 implements the idempotent insight job/persistence; P7-M3-T01 implements callable due-period orchestration, P7-M3-T02 implements persisted insight reads, and P7-M3-T03 implements the `/app/analytics` dashboard UI. The runtime timer remains unimplemented.
 - Git metadata is present, but P1-M1-T05 did not create a commit or perform any remote action.
 
-### Current T03 closure handoff — authorization required
+### Current REM-01 handoff — implementation verified, review required
+
+P7-M4-REM-01 corrects MT-001–007 and T03-AI-001 after historical T03.
+The isolated uncommitted implementation passes 119 focused tests, 1166 full-suite
+tests (one demo-only test intentionally skipped), 27/27 Chromium tests, root/API/web
+and changed-E2E typechecks, lint, formatting, API compilation and an optimized
+Webpack web build. Mobile document scroll/client widths now match at 390/375px;
+tablet/desktop comparisons pass. See [the remediation record](docs/P7-M4-REM-01.md)
+for exact causes, evidence, boundaries and changed files.
+
+Historical T03 remains 250 PASS /7 FAIL /3 BLOCKED /0 N/A /0 pending; acceptance
+NOT MET, P7-M4 incomplete and PRE-CLOUD READY NO. Next: review the unstaged diff,
+authorize any commit separately, then authorize P7-M4-REM-VERIFY-01 focused manual
+verification and separate L04/M11/P08 evidence/disposition. No automatic Git action,
+provider call, FK-name/advisory repair or Phase 8 work.
+
+### Historical T03 closure handoff — before REM-01 authorization
 
 ```text
 THREAD: SAME THREAD

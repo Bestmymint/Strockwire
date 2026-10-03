@@ -24,7 +24,9 @@ test("owner adjusts a branch balance and sees the immutable movement", async ({
 }) => {
   await signIn(page, E2E_OWNER_EMAIL);
   await page.goto(inventoryPath);
-  await expect(page.getByRole("heading", { name: "Inventory" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Inventory", exact: true }),
+  ).toBeVisible();
   const productCard = page.getByRole("button", { name: /Inventory test tea/ });
   await productCard.click();
   await expect(

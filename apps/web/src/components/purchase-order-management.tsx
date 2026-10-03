@@ -499,8 +499,8 @@ function PurchaseOrderContent({
       {!orders.isPending && !orders.isError && records.length === 0 ? (
         <p>No purchase orders match this view.</p>
       ) : null}
-      <div className="grid gap-3 lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]">
-        <div className="grid content-start gap-3">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]">
+        <div className="grid min-w-0 grid-cols-1 content-start gap-3">
           {records.map((order) => (
             <button
               className="rounded-lg border bg-card p-4 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -509,7 +509,9 @@ function PurchaseOrderContent({
               type="button"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-semibold">{order.reference}</span>
+                <span className="min-w-0 break-words font-semibold">
+                  {order.reference}
+                </span>
                 <StatusBadge status={order.status} />
               </div>
               <p className="mt-2 text-sm text-muted-foreground">
@@ -531,7 +533,7 @@ function PurchaseOrderContent({
             </SecondaryButton>
           ) : null}
         </div>
-        <div>
+        <div className="min-w-0">
           {selectedId === null ? (
             <p className="rounded-lg border p-5 text-muted-foreground">
               Select a purchase order to view its details.
@@ -748,17 +750,17 @@ function PurchaseOrderForm({
           const selected = productById.get(line.productId);
           return (
             <fieldset
-              className="grid gap-3 rounded-md border p-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_9rem_10rem_auto]"
+              className="grid min-w-0 grid-cols-1 gap-3 rounded-md border p-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_9rem_10rem_auto]"
               key={`${line.productId}-${index}`}
             >
               <legend className="sr-only">Product line {index + 1}</legend>
-              <label className="grid gap-1 text-sm font-medium">
+              <label className="grid min-w-0 gap-1 text-sm font-medium">
                 Product
                 <select
                   aria-describedby={describedBy}
                   aria-invalid={validation !== null}
                   aria-label={`Product line ${index + 1} product`}
-                  className="min-h-11 rounded-md border bg-background px-3"
+                  className="min-h-11 w-full min-w-0 rounded-md border bg-background px-3"
                   onChange={(event) =>
                     updateLine(index, { productId: event.target.value })
                   }
@@ -775,13 +777,13 @@ function PurchaseOrderForm({
                   ))}
                 </select>
               </label>
-              <label className="grid gap-1 text-sm font-medium">
+              <label className="grid min-w-0 gap-1 text-sm font-medium">
                 Quantity{selected ? ` (${selected.unit})` : ""}
                 <input
                   aria-describedby={describedBy}
                   aria-invalid={validation !== null}
                   aria-label={`Product line ${index + 1} quantity${selected ? ` (${selected.unit})` : ""}`}
-                  className="min-h-11 rounded-md border bg-background px-3"
+                  className="min-h-11 w-full min-w-0 rounded-md border bg-background px-3"
                   inputMode="decimal"
                   onChange={(event) =>
                     updateLine(index, { quantity: event.target.value })
@@ -789,13 +791,13 @@ function PurchaseOrderForm({
                   value={line.quantity}
                 />
               </label>
-              <label className="grid gap-1 text-sm font-medium">
+              <label className="grid min-w-0 gap-1 text-sm font-medium">
                 Expected unit cost (THB)
                 <input
                   aria-describedby={describedBy}
                   aria-invalid={validation !== null}
                   aria-label={`Product line ${index + 1} expected unit cost (THB)`}
-                  className="min-h-11 rounded-md border bg-background px-3"
+                  className="min-h-11 w-full min-w-0 rounded-md border bg-background px-3"
                   inputMode="decimal"
                   onChange={(event) =>
                     updateLine(index, { expectedUnitCost: event.target.value })
@@ -878,8 +880,8 @@ function PurchaseOrderEditor({
   return (
     <article className="space-y-4 rounded-lg border bg-card p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="font-semibold">{order.reference}</h2>
+        <div className="min-w-0 max-w-full">
+          <h2 className="break-words font-semibold">{order.reference}</h2>
           <p className="text-sm text-muted-foreground">
             Supplier: {supplierName} · Expected total: {order.expectedTotal} THB
           </p>

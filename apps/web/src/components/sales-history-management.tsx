@@ -231,8 +231,9 @@ function SalesHistoryContent({
         </Link>
         <h1 className="text-2xl font-semibold">Sales history</h1>
         <p className="text-muted-foreground">
-          Completed sales at {branch.code} — {branch.name}. Times are shown in
-          UTC; business-day filtering remains unavailable while OQ-016 is open.
+          Completed sales at {branch.code} — {branch.name}. Sale timestamps are
+          shown in UTC. Analytics uses the organization's reporting timezone for
+          calendar periods.
         </p>
       </header>
 
@@ -339,7 +340,7 @@ function SalesList({
               <th className="px-4 py-3 font-medium">Cashier</th>
               <th className="px-4 py-3 font-medium">Payment</th>
               <th className="px-4 py-3 text-right font-medium">Total</th>
-              <th className="px-4 py-3 font-medium">
+              <th className="relative px-4 py-3 font-medium">
                 <span className="sr-only">Open detail</span>
               </th>
             </tr>

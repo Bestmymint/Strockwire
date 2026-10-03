@@ -105,6 +105,45 @@ describe("idempotent AI insight job", () => {
     await prisma.$disconnect();
   });
 
+  it("fails safety-only output without retry, content persistence, or paid fallback", async () => {
+    const { organization } = await setup();
+    const external = provider([
+      completion(
+        "nvidia/nemotron-3.5-content-safety:free",
+        "User Safety: safe",
+      ),
+    ]);
+    const run = createAiInsightJob(prisma, external.adapter);
+    const report = await run(input(organization.id));
+    expect(report).toMatchObject({
+      state: "FAILED",
+      failureCategory: "INVALID_RESPONSE",
+      content: null,
+      attemptCount: 1,
+    });
+    expect((await run(input(organization.id))).id).toBe(report.id);
+    expect(external.calls).toHaveLength(1);
+    expect(JSON.parse(external.calls[0]!).model).toBe("openrouter/free");
+    const stored = await prisma.aiInsightReport.findUniqueOrThrow({
+      where: { id: report.id },
+    });
+    expect(stored.content).toBeNull();
+    expect(
+      await prisma.aiInsightReport.count({ where: { state: "SUCCEEDED" } }),
+    ).toBe(0);
+    const attempt = await prisma.aiInsightAttempt.findFirstOrThrow();
+    expect(attempt).toMatchObject({
+      requestedModel: "openrouter/free",
+      actualModel: "nvidia/nemotron-3.5-content-safety:free",
+    });
+    const snapshot = await prisma.analyticsSnapshot.findUniqueOrThrow({
+      where: { id: report.snapshotId },
+    });
+    expect(snapshot.payload).toMatchObject({
+      sales: { saleCount: 0, netSalesAmount: "0.00", refundAmount: "0.00" },
+    });
+  });
+
   it("pins an Organization zero snapshot, records one actual call, and reuses immutable success", async () => {
     const { organization } = await setup();
     const external = provider([completion()]);

@@ -593,6 +593,13 @@ function AdjustmentForm({
   );
 }
 
+const MOVEMENT_LABELS: Record<string, string> = {
+  MANUAL_ADJUSTMENT: "Manual adjustment",
+  PURCHASE_RECEIVE: "Purchase receive",
+  SALE: "Sale",
+  SALE_REFUND_RETURN: "Sale refund return",
+};
+
 function HistoryList({
   error,
   hasNextPage,
@@ -635,10 +642,9 @@ function HistoryList({
                 <div>
                   <p className="font-medium">
                     {signedDelta(transaction.delta)} ·{" "}
-                    {(transaction.reason ?? "Purchase receive").replaceAll(
-                      "_",
-                      " ",
-                    )}
+                    {transaction.reason?.replaceAll("_", " ") ??
+                      MOVEMENT_LABELS[transaction.source] ??
+                      transaction.source.replaceAll("_", " ")}
                   </p>
                   <p className="text-sm text-muted-foreground">
                     {transaction.source.replaceAll("_", " ")} ·{" "}

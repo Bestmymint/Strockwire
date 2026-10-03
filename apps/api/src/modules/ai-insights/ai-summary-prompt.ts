@@ -77,6 +77,14 @@ export function validateAiSummaryProse(content: string): string {
   const text = content.trim();
   if (
     !text ||
+    // Free routing can return a safety classifier instead of a business summary.
+    /^(?:(?:user|content|assistant)\s+)?safety\s*:\s*(?:safe|unsafe)\b/iu.test(
+      text,
+    ) ||
+    // This relevance guard is not a proof of factual accuracy against the snapshot.
+    !/\b(?:sales?|refunds?|revenue|average order value|COGS|costs?|profit|margins?|growth)\b/iu.test(
+      text,
+    ) ||
     !text.isWellFormed() ||
     // eslint-disable-next-line no-control-regex -- Plain prose excludes control characters.
     /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/u.test(text) ||

@@ -171,6 +171,48 @@ afterEach(() => {
 });
 
 describe("membership management UI", () => {
+  it("shows persisted invitation branches rather than the currently selected branch", async () => {
+    vi.mocked(fetchInvitations).mockResolvedValue({
+      data: [
+        {
+          ...invitation,
+          branchScopes: [
+            {
+              ...invitation.branchScopes[0]!,
+              code: "OTHER",
+              name: "Other branch",
+              status: "INACTIVE",
+            },
+          ],
+        },
+      ],
+      meta: { nextCursor: null },
+    });
+    renderManagement();
+    const card = (
+      await screen.findByRole("heading", { name: invitation.invitedEmail })
+    ).closest("article")!;
+    expect(card.textContent).toContain(
+      "Branch scope: OTHER — Other branch (Inactive)",
+    );
+    expect(card.textContent).not.toContain("MAIN — Main");
+  });
+
+  it.each(["OWNER", "ADMIN"] as const)(
+    "shows %s invitations as organization-wide",
+    async (intendedRole) => {
+      vi.mocked(fetchInvitations).mockResolvedValue({
+        data: [{ ...invitation, intendedRole, branchScopes: [] }],
+        meta: { nextCursor: null },
+      });
+      renderManagement();
+      const card = (
+        await screen.findByRole("heading", { name: invitation.invitedEmail })
+      ).closest("article")!;
+      expect(card.textContent).toContain("Organization-wide scope");
+    },
+  );
+
   it("gates branch-scoped users without loading management resources", async () => {
     vi.mocked(fetchAccessContext).mockResolvedValue(context("CASHIER"));
     renderManagement();

@@ -551,7 +551,7 @@ function PosContent({
             </SecondaryButton>
           </div>
           <fieldset
-            className="m-0 space-y-5 border-0 p-0"
+            className="m-0 min-w-0 space-y-5 border-0 p-0"
             disabled={checkoutMutation.isPending}
           >
             <CartLines
@@ -765,7 +765,7 @@ function CartLines({
                 {estimate === null ? "Check quantity" : formatThb(estimate)}
               </strong>
             </div>
-            <div className="flex items-end gap-2">
+            <div className="flex flex-wrap items-end gap-2">
               <SecondaryButton
                 aria-label={`Decrease ${line.name} quantity`}
                 onClick={() => onDecrement(line.id)}
@@ -773,11 +773,11 @@ function CartLines({
               >
                 −
               </SecondaryButton>
-              <label className="grid flex-1 gap-1 text-sm font-medium">
+              <label className="grid min-w-32 flex-1 gap-1 text-sm font-medium">
                 Quantity for {line.name} ({line.unit})
                 <input
                   aria-invalid={!valid}
-                  className="min-h-11 rounded-md border bg-background px-3"
+                  className="min-h-11 w-full min-w-0 rounded-md border bg-background px-3"
                   inputMode="decimal"
                   onChange={(event) =>
                     onChangeQuantity(line.id, event.target.value)

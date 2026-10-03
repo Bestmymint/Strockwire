@@ -138,6 +138,38 @@ afterEach(() => {
 });
 
 describe("inventory management UI", () => {
+  it.each([
+    ["MANUAL_ADJUSTMENT", "Manual adjustment"],
+    ["PURCHASE_RECEIVE", "Purchase receive"],
+    ["SALE", "Sale"],
+    ["SALE_REFUND_RETURN", "Sale refund return"],
+  ] as const)(
+    "labels %s history by its stored provenance",
+    async (source, label) => {
+      vi.mocked(listInventoryHistory).mockResolvedValue({
+        data: [
+          {
+            actor: {
+              displayName: "User",
+              id: "40000000-0000-4000-8000-000000000001",
+            },
+            delta: "2",
+            id: "50000000-0000-4000-8000-000000000002",
+            note: null,
+            occurredAt: "2026-09-02T10:00:00.000Z",
+            reason: null,
+            source,
+          },
+        ],
+        meta: { nextCursor: null },
+      });
+      renderInventory();
+      await screen.findByText("Tea");
+      fireEvent.click(screen.getByRole("button", { name: /Tea/ }));
+      expect(await screen.findByText(`+2 · ${label}`)).toBeTruthy();
+    },
+  );
+
   it("renders a lazy zero balance and chronological history without numeric conversion", async () => {
     renderInventory();
     expect(
