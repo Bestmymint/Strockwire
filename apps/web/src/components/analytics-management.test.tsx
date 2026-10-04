@@ -37,6 +37,7 @@ const OTHER_BRANCH = "20000000-0000-4000-8000-000000000002";
 let requests: string[];
 let role: string;
 let salesCost: boolean;
+let costMoney: string;
 let categoryCursorError: boolean;
 let salesError: { code: string; status: number } | null;
 let inventoryMode: "normal" | "empty" | "error";
@@ -91,10 +92,10 @@ function bucket(label: string, netSalesAmount: string) {
               value: null,
             },
             knownCostLineCount: 1,
-            knownNetCogsAmount: "2.0000000000",
+            knownNetCogsAmount: costMoney,
             netCogsAmount: { reason: "INCOMPLETE_COST_COVERAGE", value: null },
             refundCogsReversalAmount: "0.0000000000",
-            saleCogsAmount: "2.0000000000",
+            saleCogsAmount: costMoney,
             unknownCostLineCount: 1,
           },
         }
@@ -331,6 +332,7 @@ function renderPage() {
 }
 
 beforeEach(() => {
+  costMoney = "2.0000000000";
   requests = [];
   role = "OWNER";
   salesCost = false;
@@ -349,6 +351,18 @@ afterEach(() => {
 });
 
 describe("analytics management", () => {
+  it("formats exact cost metrics with grouping and meaningful extra digits", async () => {
+    salesCost = true;
+    costMoney = "9007199254740993.1230000000";
+    renderPage();
+    expect(
+      (await screen.findAllByText("THB 9,007,199,254,740,993.123")).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("THB 0.00", { selector: "dd" }).length,
+    ).toBeGreaterThan(0);
+  });
+
   it("keeps deterministic Sales and its scope available after viewing AI insights", async () => {
     renderPage();
     expect(
@@ -522,6 +536,8 @@ describe("analytics management", () => {
     expect(
       screen.getAllByText("Current inventory value").length,
     ).toBeGreaterThan(0);
+    expect(screen.getAllByText("0.00 THB").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("3.0000 EA").length).toBeGreaterThan(0);
   });
 
   it("shows an explicit empty inventory state", async () => {

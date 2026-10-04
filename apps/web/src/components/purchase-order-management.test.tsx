@@ -293,6 +293,25 @@ afterEach(() => {
 });
 
 describe("purchase order management UI", () => {
+  it("formats frozen receiving costs without formatting quantities or entered costs", async () => {
+    vi.mocked(getPurchaseOrder).mockResolvedValue({
+      ...order,
+      status: "ORDERED",
+      items: [
+        { ...order.items[0]!, expectedUnitCost: "4.1230", quantity: "1.2500" },
+      ],
+    });
+    renderManagement();
+    await screen.findByText("PO-0001");
+    fireEvent.click(screen.getByRole("button", { name: /PO-0001/ }));
+    expect(await screen.findByText("Expected: 4.123 THB")).toBeTruthy();
+    expect(screen.getByText("Quantity: 1.2500")).toBeTruthy();
+    expect(screen.getByText("Expected total: 25.00 THB")).toBeTruthy();
+    const input = screen.getByLabelText("Tea actual unit cost");
+    fireEvent.change(input, { target: { value: "4.1230" } });
+    expect(input).toHaveProperty("value", "4.1230");
+  });
+
   it("creates a DRAFT with string quantity and cost and prevents a duplicate product line", async () => {
     renderManagement();
     const form = await screen.findByRole("form", {
@@ -373,7 +392,7 @@ describe("purchase order management UI", () => {
       name: "Save draft changes",
     });
     expect(
-      screen.getByText("Server-calculated expected total: 25.0000 THB"),
+      screen.getByText("Server-calculated expected total: 25.00 THB"),
     ).toBeTruthy();
     fireEvent.submit(form);
     await waitFor(() =>

@@ -169,13 +169,37 @@ afterEach(() => {
 });
 
 describe("POS management UI", () => {
+  it("preserves extra price digits and submits the original exact price", async () => {
+    vi.mocked(searchPosProducts).mockResolvedValue({
+      data: { products: [{ ...coffee, basePrice: "4.1230" }] },
+      meta: { nextCursor: null },
+    });
+    renderPos();
+    expect(await screen.findByText("THB 4.123")).toBeTruthy();
+    await addCoffee();
+    expect(screen.getByText(/THB 4.123 \/ EA/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Amount tendered (THB)"), {
+      target: { value: "5.00" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Complete sale" }));
+    await waitFor(() =>
+      expect(checkoutSale).toHaveBeenCalledWith(
+        expect.anything(),
+        "checkout-key-one",
+        expect.objectContaining({
+          items: [expect.objectContaining({ expectedUnitPrice: "4.1230" })],
+        }),
+      ),
+    );
+  });
+
   it("renders the authorized branch POS with safe product data only", async () => {
     renderPos();
     expect(
       await screen.findByRole("heading", { name: "Point of sale" }),
     ).toBeTruthy();
     expect(screen.getByText(/MAIN.*Main/)).toBeTruthy();
-    expect(await screen.findByText("THB 0.1000")).toBeTruthy();
+    expect(await screen.findByText("THB 0.10")).toBeTruthy();
     expect(screen.queryByText(/cost|cogs/i)).toBeNull();
     await waitFor(() =>
       expect(searchPosProducts).toHaveBeenCalledWith(

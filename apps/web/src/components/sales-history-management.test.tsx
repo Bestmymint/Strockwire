@@ -183,6 +183,31 @@ afterEach(() => {
 });
 
 describe("sales history UI", () => {
+  it.each([
+    ["4.0000", "4.00"],
+    ["4.1230", "4.123"],
+    ["4.1234", "4.1234"],
+  ])(
+    "formats immutable detail and receipt price %s without altering quantity",
+    async (unitPrice, display) => {
+      vi.mocked(getSalesHistoryDetail).mockResolvedValue({
+        ...detail,
+        items: [{ ...detail.items[0]!, unitPrice }],
+      });
+      renderSales();
+      await screen.findByText("SALE-IMMUTABLE-001");
+      fireEvent.click(screen.getByRole("button", { name: "View detail" }));
+      await screen.findByLabelText("Printable receipt");
+      const receipt = screen.getByLabelText("Printable receipt");
+      expect(receipt.textContent).toContain(`THB ${display}`);
+      expect(receipt.textContent).toContain("1.0000 EA");
+      expect(
+        screen.getByText(`THB ${display}`, { selector: "td" }),
+      ).toBeTruthy();
+      expect(receipt.textContent).toContain("THB 12.34");
+    },
+  );
+
   it("renders immutable branch-scoped history and forwards the opaque cursor", async () => {
     renderSales();
     expect(
@@ -280,7 +305,7 @@ describe("sales history UI", () => {
     renderSales();
     await screen.findByText("SALE-IMMUTABLE-001");
     fireEvent.click(screen.getByRole("button", { name: "View detail" }));
-    expect(await screen.findByText(/COGS THB 4.5600000000/)).toBeTruthy();
+    expect(await screen.findByText(/COGS THB 4.56/)).toBeTruthy();
     expect(screen.getByLabelText("Printable receipt").textContent).not.toMatch(
       /COGS|cost/i,
     );

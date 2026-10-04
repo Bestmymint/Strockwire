@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 
+import { formatMoney } from "@/money-display";
 import {
   applicationContextUrl,
   resolveApplicationContext,
@@ -971,7 +972,7 @@ function ProductEditor({
         <div>
           <h3 className="font-semibold">{product.name}</h3>
           <p className="text-sm text-muted-foreground">
-            {product.sku} · {product.basePrice} · {product.unit}
+            {product.sku} · {formatMoney(product.basePrice)} · {product.unit}
           </p>
         </div>
         <StatusBadge status={product.status} />

@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { formatThb } from "@/money-display";
 import {
   applicationContextUrl,
   resolveApplicationContext,
@@ -55,10 +56,6 @@ function salesUrl(organizationId: string, branchId: string | null): string {
 
 function salesScopeKey(context: SalesRequestContext): readonly unknown[] {
   return ["branch-scoped", context.organizationId, context.branchId, "sales"];
-}
-
-function formatThb(value: string): string {
-  return `THB ${value}`;
 }
 
 function formatAbsoluteTimestamp(value: string): string {

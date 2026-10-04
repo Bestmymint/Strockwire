@@ -10,6 +10,8 @@ import {
   type AnalyticsRequest,
 } from "@/analytics-api-client";
 
+import { formatMoney } from "@/money-display";
+
 const reasons: Record<string, string> = {
   INCOMPLETE_PERIOD: "The selected period is not complete",
   INSUFFICIENT_DATA: "Fewer than 28 complete days of inventory history",
@@ -38,11 +40,15 @@ function costDetail(
     <dl className="grid gap-2 text-sm sm:grid-cols-2">
       <div>
         <dt>Current inventory value</dt>
-        <dd>{metric(cost.inventoryValue, " THB")}</dd>
+        <dd>
+          {cost.inventoryValue.value === null
+            ? metric(cost.inventoryValue)
+            : `${formatMoney(cost.inventoryValue.value)} THB`}
+        </dd>
       </div>
       <div>
         <dt>Known inventory value</dt>
-        <dd>{cost.knownInventoryValue} THB</dd>
+        <dd>{formatMoney(cost.knownInventoryValue)} THB</dd>
       </div>
       <div>
         <dt>Products with known cost</dt>

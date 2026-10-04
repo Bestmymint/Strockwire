@@ -24,6 +24,7 @@ import {
   getAnalyticsCategories,
   getAnalyticsSales,
 } from "@/analytics-api-client";
+import { formatThb } from "@/money-display";
 import { resolveApplicationContext } from "@/application-context";
 import { AiInsightView } from "@/components/ai-insight-view";
 import { InventoryAnalyticsView } from "@/components/inventory-analytics-view";
@@ -55,8 +56,7 @@ function initialPeriod(): AnalyticsPeriod {
 }
 
 function money(value: string): string {
-  const [integer, fraction] = value.split(".");
-  return `THB ${integer?.replace(/\B(?=(\d{3})+(?!\d))/g, ",") ?? value}${fraction === undefined ? "" : `.${fraction}`}`;
+  return formatThb(value, true);
 }
 
 function reasonText(reason: string | null): string {

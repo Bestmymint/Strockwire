@@ -41,7 +41,7 @@ test("owner manages the catalog through the same-origin application path", async
     .selectOption({ label: "Drinks" });
   await page.getByRole("button", { name: "Create product" }).click();
   await expect(page.getByRole("heading", { name: "Green tea" })).toBeVisible();
-  await expect(page.getByText("TEA-E2E-01 · 12.3400 · EA")).toBeVisible();
+  await expect(page.getByText("TEA-E2E-01 · 12.34 · EA")).toBeVisible();
 
   await page.getByLabel("Search catalog").fill("TEA-E2E");
   await page.getByRole("button", { name: "Search" }).click();

@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
+import { formatMoney } from "@/money-display";
 import {
   applicationContextUrl,
   resolveApplicationContext,
@@ -519,7 +520,7 @@ function PurchaseOrderContent({
                 {order.orderDate}
               </p>
               <p className="mt-1 text-sm">
-                Expected total: {order.expectedTotal} THB
+                Expected total: {formatMoney(order.expectedTotal)} THB
               </p>
             </button>
           ))}
@@ -827,7 +828,8 @@ function PurchaseOrderForm({
       </div>
       {initialOrder ? (
         <p className="mt-4 text-sm text-muted-foreground">
-          Server-calculated expected total: {initialOrder.expectedTotal} THB
+          Server-calculated expected total:{" "}
+          {formatMoney(initialOrder.expectedTotal)} THB
         </p>
       ) : null}
       <PrimaryButton
@@ -883,7 +885,8 @@ function PurchaseOrderEditor({
         <div className="min-w-0 max-w-full">
           <h2 className="break-words font-semibold">{order.reference}</h2>
           <p className="text-sm text-muted-foreground">
-            Supplier: {supplierName} · Expected total: {order.expectedTotal} THB
+            Supplier: {supplierName} · Expected total:{" "}
+            {formatMoney(order.expectedTotal)} THB
           </p>
         </div>
         <StatusBadge status={order.status} />
@@ -1095,7 +1098,7 @@ function ReceivingPanel({
         {receipt.items.map((item) => (
           <p className="text-sm" key={item.id}>
             {item.productNameSnapshot}: {item.receivedQuantity} at{" "}
-            {item.actualUnitCost} THB
+            {formatMoney(item.actualUnitCost)} THB
           </p>
         ))}
       </div>
@@ -1117,7 +1120,9 @@ function ReceivingPanel({
             {item.productNameSnapshot} · {item.productSkuSnapshot}
           </legend>
           <p className="text-sm">Quantity: {item.quantity}</p>
-          <p className="text-sm">Expected: {item.expectedUnitCost} THB</p>
+          <p className="text-sm">
+            Expected: {formatMoney(item.expectedUnitCost)} THB
+          </p>
           <label className="grid gap-1 text-sm font-medium">
             Actual unit cost (THB)
             <input
@@ -1314,7 +1319,7 @@ function ReadOnlyPurchaseOrder({
         </div>
         <div>
           <dt className="text-muted-foreground">Expected total</dt>
-          <dd>{order.expectedTotal} THB</dd>
+          <dd>{formatMoney(order.expectedTotal)} THB</dd>
         </div>
       </dl>
       <div className="space-y-2">
@@ -1323,7 +1328,7 @@ function ReadOnlyPurchaseOrder({
           <div className="rounded-md border p-3 text-sm" key={item.id}>
             {item.productNameSnapshot} · {item.productSkuSnapshot}
             <br />
-            {item.quantity} × {item.expectedUnitCost} THB
+            {item.quantity} × {formatMoney(item.expectedUnitCost)} THB
           </div>
         ))}
       </div>

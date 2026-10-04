@@ -136,6 +136,27 @@ afterEach(() => {
 });
 
 describe("catalog management UI", () => {
+  it.each([
+    ["4.0000", "4.00"],
+    ["4.1230", "4.123"],
+    ["4.1234", "4.1234"],
+  ])(
+    "formats price %s while preserving the edit value",
+    async (basePrice, display) => {
+      vi.mocked(listProducts).mockResolvedValue({
+        data: { products: [{ ...product, basePrice }] },
+        meta: { nextCursor: null },
+      });
+      renderCatalog();
+      expect(await screen.findByText(`TEA-01 · ${display} · EA`)).toBeTruthy();
+      const editor = screen.getByRole("form", { name: "Edit product Tea" });
+      expect(within(editor).getByLabelText("Base price")).toHaveProperty(
+        "value",
+        basePrice,
+      );
+    },
+  );
+
   it("presents the default product view with exact decimal and immutable unit information", async () => {
     renderCatalog();
 
@@ -143,7 +164,7 @@ describe("catalog management UI", () => {
       await screen.findByRole("heading", { name: "Catalog" }),
     ).toBeTruthy();
     expect(await screen.findByText("Tea")).toBeTruthy();
-    expect(screen.getByText(/TEA-01.*12\.3400.*EA/)).toBeTruthy();
+    expect(screen.getByText(/TEA-01.*12\.34.*EA/)).toBeTruthy();
     expect(screen.getByText("Unit: EA (immutable)")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Create product" })).toBeTruthy();
   });

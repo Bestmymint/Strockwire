@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { formatThb } from "@/money-display";
 import {
   applicationContextUrl,
   resolveApplicationContext,
@@ -119,10 +120,6 @@ function estimatedSubtotal(lines: CartLine[]): string | null {
 
 function lineEstimate(line: CartLine): string | null {
   return estimatedSubtotal([line]);
-}
-
-function formatThb(value: string): string {
-  return `THB ${value}`;
 }
 
 function createIdempotencyKey(): string {
