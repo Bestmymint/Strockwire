@@ -60,7 +60,11 @@ export function SupplierManagement() {
   });
   if (contextQuery.isPending) return <p aria-live="polite">Loading access…</p>;
   if (contextQuery.isError || contextQuery.data === undefined)
-    return <p role="alert">Your access context could not be loaded.</p>;
+    return (
+      <p className="form-message" role="alert">
+        Your access context could not be loaded.
+      </p>
+    );
   const context = contextQuery.data;
   const resolved = resolveApplicationContext(
     context,
@@ -69,7 +73,9 @@ export function SupplierManagement() {
   );
   if (resolved.organization === null)
     return (
-      <p role="alert">Choose an organization before managing suppliers.</p>
+      <p className="form-message" role="alert">
+        Choose an organization before managing suppliers.
+      </p>
     );
   return (
     <SupplierContent
@@ -117,7 +123,9 @@ function SupplierContent({
           Back to workspace
         </Link>
         <h1 className="text-2xl font-semibold">Suppliers</h1>
-        <p role="alert">You do not have permission to access suppliers.</p>
+        <p className="form-message" role="alert">
+          You do not have permission to access suppliers.
+        </p>
       </section>
     );
   const records =
@@ -136,25 +144,29 @@ function SupplierContent({
           Manage suppliers for {organization.name}.
         </p>
       </header>
-      {notice ? <p role="alert">{notice}</p> : null}
+      {notice ? (
+        <p className="form-message" role="alert">
+          {notice}
+        </p>
+      ) : null}
       <SupplierForm
         label="Create supplier"
         onError={(error) => setNotice(message(error))}
         onSave={(input) => createSupplier(organization.id, input).then(refresh)}
       />
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem_auto]">
-        <label className="grid gap-1 text-sm font-medium">
+        <label className="form-field">
           Search suppliers
           <input
-            className="min-h-11 rounded-md border bg-background px-3"
+            className="form-control"
             defaultValue={search}
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
-        <label className="grid gap-1 text-sm font-medium">
+        <label className="form-field">
           Status
           <select
-            className="min-h-11 rounded-md border bg-background px-3"
+            className="form-control"
             onChange={(event) =>
               setStatus(event.target.value as SupplierStatusFilter)
             }
@@ -166,7 +178,7 @@ function SupplierContent({
           </select>
         </label>
         <button
-          className="min-h-11 self-end rounded-md border px-4 text-sm font-medium"
+          className="min-h-11 self-end rounded-md border px-4 text-sm font-medium form-action"
           onClick={() => void refresh()}
           type="button"
         >
@@ -176,7 +188,9 @@ function SupplierContent({
       {suppliers.isPending ? (
         <p aria-live="polite">Loading suppliers…</p>
       ) : suppliers.isError ? (
-        <p role="alert">{message(suppliers.error)}</p>
+        <p className="form-message" role="alert">
+          {message(suppliers.error)}
+        </p>
       ) : records.length === 0 ? (
         <p>No suppliers match this view.</p>
       ) : (
@@ -195,7 +209,7 @@ function SupplierContent({
       )}
       {suppliers.hasNextPage ? (
         <button
-          className="min-h-11 rounded-md border px-4 text-sm font-medium"
+          className="min-h-11 rounded-md border px-4 text-sm font-medium form-action"
           disabled={suppliers.isFetchingNextPage}
           onClick={() => void suppliers.fetchNextPage()}
           type="button"
@@ -240,7 +254,7 @@ function SupplierForm({
       }}
     >
       <h2 className="font-semibold">{label}</h2>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid max-w-4xl items-start gap-4 sm:grid-cols-2">
         <Field
           defaultValue={initial.name}
           label="Supplier name"
@@ -263,10 +277,10 @@ function SupplierForm({
           label="Phone (optional)"
           name="phone"
         />
-        <label className="grid gap-1 text-sm font-medium sm:col-span-2">
+        <label className="form-field sm:col-span-2">
           Address (optional)
           <textarea
-            className="min-h-24 rounded-md border bg-background px-3 py-2"
+            className="form-control"
             defaultValue={initial.address}
             name="address"
           />
@@ -274,7 +288,7 @@ function SupplierForm({
       </div>
       <button
         aria-busy={mutation.isPending}
-        className="mt-4 min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background disabled:opacity-60"
+        className="mt-4 min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background disabled:opacity-60 form-action"
         disabled={mutation.isPending}
         type="submit"
       >
@@ -329,7 +343,7 @@ function SupplierCard({
       {canLifecycle ? (
         <button
           aria-busy={lifecycle.isPending}
-          className="mt-3 min-h-11 rounded-md border px-4 text-sm font-medium"
+          className="mt-3 min-h-11 rounded-md border px-4 text-sm font-medium form-action"
           disabled={pending}
           onClick={() => void lifecycle.mutateAsync().catch(onError)}
           type="button"
@@ -354,10 +368,14 @@ function Field({
   type?: string;
 }) {
   return (
-    <label className="grid gap-1 text-sm font-medium">
+    <label className="form-field">
       {label}
       <input
-        className="min-h-11 rounded-md border bg-background px-3"
+        className={
+          name === "phone"
+            ? "form-control form-control--compact"
+            : "form-control"
+        }
         defaultValue={defaultValue}
         name={name}
         required={required}

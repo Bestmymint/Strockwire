@@ -68,12 +68,12 @@ export function RegistrationForm() {
   return (
     <form className="space-y-5" noValidate onSubmit={handleSubmit}>
       <div>
-        <label className="text-sm font-medium" htmlFor="registration-email">
+        <label className="form-field" htmlFor="registration-email">
           Email address
         </label>
         <input
           autoComplete="email"
-          className="mt-2 min-h-11 w-full rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="form-control mt-1"
           disabled={isSubmitting}
           id="registration-email"
           name="email"
@@ -84,12 +84,12 @@ export function RegistrationForm() {
         />
       </div>
       <div>
-        <label className="text-sm font-medium" htmlFor="registration-password">
+        <label className="form-field" htmlFor="registration-password">
           Password
         </label>
         <input
           autoComplete="new-password"
-          className="mt-2 min-h-11 w-full rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="form-control mt-1"
           disabled={isSubmitting}
           id="registration-password"
           name="password"
@@ -104,12 +104,16 @@ export function RegistrationForm() {
         </p>
       </div>
       {error === null ? null : (
-        <p aria-live="assertive" className="text-sm text-red-700" role="alert">
+        <p
+          aria-live="assertive"
+          className="text-sm text-red-700 form-message"
+          role="alert"
+        >
           {error}
         </p>
       )}
       <button
-        className="min-h-11 w-full rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="min-h-11 w-full rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 form-action"
         disabled={isSubmitting}
         type="submit"
       >

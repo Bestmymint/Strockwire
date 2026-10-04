@@ -96,11 +96,11 @@ export function AiInsightView({
           </Link>{" "}
           for numerical results.
         </p>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <label className="text-sm font-medium">
+        <div className="mt-4 grid max-w-4xl gap-4 sm:grid-cols-2">
+          <label className="form-field">
             Insight scope
             <select
-              className="mt-1 min-h-11 w-full rounded-md border bg-background px-3"
+              className="form-control"
               onChange={(event) => setScopeValue(event.target.value)}
               value={
                 scope.scope === "organization" ? "organization" : scope.branchId
@@ -119,10 +119,10 @@ export function AiInsightView({
               ))}
             </select>
           </label>
-          <label className="text-sm font-medium">
+          <label className="form-field">
             Insight cadence
             <select
-              className="mt-1 min-h-11 w-full rounded-md border bg-background px-3"
+              className="form-control"
               onChange={(event) =>
                 setCadence(event.target.value as InsightCadence)
               }
@@ -141,7 +141,7 @@ export function AiInsightView({
           </p>
         ) : null}
         {wide && branchesQuery.isError ? (
-          <p className="mt-2 text-sm" role="alert">
+          <p className="mt-2 text-sm form-message" role="alert">
             Historical branch choices could not be loaded.
           </p>
         ) : null}
@@ -152,7 +152,9 @@ export function AiInsightView({
       ) : insightQuery.isPending ? (
         <p aria-live="polite">Loading persisted insight…</p>
       ) : insightQuery.isError ? (
-        <p role="alert">{errorMessage(insightQuery.error)}</p>
+        <p className="form-message" role="alert">
+          {errorMessage(insightQuery.error)}
+        </p>
       ) : !latest ? (
         <p className="rounded-lg border bg-card p-4">
           No persisted insight yet for this scope and cadence.

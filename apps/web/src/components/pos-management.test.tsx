@@ -209,6 +209,17 @@ describe("POS management UI", () => {
     );
   });
 
+  it("keeps button styling when callers add layout classes", async () => {
+    renderPos();
+    const add = await screen.findByRole("button", { name: "Add Coffee" });
+    const search = screen.getByRole("button", { name: /^Search$/ });
+    expect(add.classList.contains("form-action")).toBe(true);
+    expect(add.classList.contains("bg-foreground")).toBe(true);
+    expect(add.classList.contains("w-full")).toBe(true);
+    expect(search.classList.contains("form-action")).toBe(true);
+    expect(search.classList.contains("self-end")).toBe(true);
+  });
+
   it("submits a name/SKU search and provides a no-results state", async () => {
     vi.mocked(searchPosProducts).mockResolvedValue({
       data: { products: [] },

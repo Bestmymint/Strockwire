@@ -166,19 +166,25 @@ function errorMessage(error: unknown): string {
   return messages[error.kind];
 }
 
-function PrimaryButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+function PrimaryButton({
+  className = "",
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
-      className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+      className={`form-action rounded-md bg-foreground text-background hover:opacity-90 disabled:opacity-60 ${className}`}
       {...props}
     />
   );
 }
 
-function SecondaryButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+function SecondaryButton({
+  className = "",
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
-      className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+      className={`form-action rounded-md border hover:bg-muted disabled:opacity-60 ${className}`}
       {...props}
     />
   );
@@ -214,7 +220,11 @@ export function PosManagement() {
 
   if (contextQuery.isPending) return <p aria-live="polite">Loading access…</p>;
   if (contextQuery.isError)
-    return <p role="alert">Your access context could not be loaded.</p>;
+    return (
+      <p className="form-message" role="alert">
+        Your access context could not be loaded.
+      </p>
+    );
   if (resolved?.organization === null) {
     return (
       <ContextUnavailable
@@ -461,13 +471,16 @@ function PosContent({
       ) : null}
       {canConfigureVat &&
       vatProfileQuery.data?.salesVatStatus === "UNCONFIGURED" ? (
-        <p className="rounded-md border border-destructive p-4" role="alert">
+        <p
+          className="rounded-md border border-destructive p-4 form-message"
+          role="alert"
+        >
           Checkout is blocked until the organization sales VAT profile is
           configured.
         </p>
       ) : null}
       {notice ? (
-        <p className="rounded-md border p-4" role="alert">
+        <p className="rounded-md border p-4 form-message" role="alert">
           {notice}
         </p>
       ) : null}
@@ -479,7 +492,7 @@ function PosContent({
           </h2>
           <form
             aria-label="Search POS products"
-            className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+            className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
             onSubmit={(event) => {
               event.preventDefault();
               autoAddedBarcode.current = null;
@@ -490,19 +503,19 @@ function PosContent({
               });
             }}
           >
-            <label className="grid gap-1 text-sm font-medium">
+            <label className="form-field">
               Search products
               <input
-                className="min-h-11 rounded-md border bg-background px-3"
+                className="form-control"
                 defaultValue={search.q}
                 name="q"
                 placeholder="Name or SKU"
               />
             </label>
-            <label className="grid gap-1 text-sm font-medium">
+            <label className="form-field">
               Barcode
               <input
-                className="min-h-11 rounded-md border bg-background px-3"
+                className="form-control"
                 defaultValue={search.barcode}
                 name="barcode"
                 placeholder="Scan or enter barcode"
@@ -677,7 +690,12 @@ function ProductResults({
   products: PosProduct[];
 }) {
   if (isLoading) return <p aria-live="polite">Loading sellable products…</p>;
-  if (error) return <p role="alert">{errorMessage(error)}</p>;
+  if (error)
+    return (
+      <p className="form-message" role="alert">
+        {errorMessage(error)}
+      </p>
+    );
   if (products.length === 0)
     return (
       <p className="rounded-lg border p-5 text-muted-foreground">
@@ -770,11 +788,11 @@ function CartLines({
               >
                 −
               </SecondaryButton>
-              <label className="grid min-w-32 flex-1 gap-1 text-sm font-medium">
+              <label className="form-field max-w-48 basis-32 flex-1">
                 Quantity for {line.name} ({line.unit})
                 <input
                   aria-invalid={!valid}
-                  className="min-h-11 w-full min-w-0 rounded-md border bg-background px-3"
+                  className="form-control form-control--numeric"
                   inputMode="decimal"
                   onChange={(event) =>
                     onChangeQuantity(line.id, event.target.value)
@@ -798,7 +816,7 @@ function CartLines({
               </SecondaryButton>
             </div>
             {!valid ? (
-              <p className="text-sm text-destructive" role="alert">
+              <p className="text-sm text-destructive form-message" role="alert">
                 Enter a positive quantity with no more than four decimal places.
               </p>
             ) : null}
@@ -823,10 +841,10 @@ function DiscountControls({
   return (
     <fieldset className="space-y-3 border-t pt-4">
       <legend className="font-medium">Whole-sale discount</legend>
-      <label className="grid gap-1 text-sm font-medium">
+      <label className="form-field">
         Discount type
         <select
-          className="min-h-11 rounded-md border bg-background px-3"
+          className="form-control"
           onChange={(event) =>
             onChange(event.target.value as DiscountType, value, reason)
           }
@@ -839,19 +857,19 @@ function DiscountControls({
       </label>
       {type !== "NONE" ? (
         <>
-          <label className="grid gap-1 text-sm font-medium">
+          <label className="form-field">
             {type === "AMOUNT" ? "Discount amount (THB)" : "Discount percent"}
             <input
-              className="min-h-11 rounded-md border bg-background px-3"
+              className="form-control form-control--numeric"
               inputMode="decimal"
               onChange={(event) => onChange(type, event.target.value, reason)}
               value={value}
             />
           </label>
-          <label className="grid gap-1 text-sm font-medium">
+          <label className="form-field">
             Discount reason
             <input
-              className="min-h-11 rounded-md border bg-background px-3"
+              className="form-control"
               onChange={(event) => onChange(type, value, event.target.value)}
               value={reason}
             />
@@ -888,9 +906,10 @@ function PaymentControls({
   return (
     <fieldset className="space-y-3 border-t pt-4">
       <legend className="font-medium">Payment</legend>
-      <div className="flex gap-4">
-        <label className="flex items-center gap-2">
+      <div className="flex flex-wrap gap-4">
+        <label className="flex min-h-11 items-center gap-2 text-sm font-medium">
           <input
+            className="form-choice"
             checked={method === "CASH"}
             name="payment-method"
             onChange={() => onChange("CASH", amountTendered, reference)}
@@ -901,6 +920,7 @@ function PaymentControls({
         </label>
         <label className="flex items-center gap-2">
           <input
+            className="form-choice"
             checked={method === "TRANSFER"}
             name="payment-method"
             onChange={() => onChange("TRANSFER", amountTendered, reference)}
@@ -912,10 +932,10 @@ function PaymentControls({
       </div>
       {method === "CASH" ? (
         <>
-          <label className="grid gap-1 text-sm font-medium">
+          <label className="form-field">
             Amount tendered (THB)
             <input
-              className="min-h-11 rounded-md border bg-background px-3"
+              className="form-control form-control--numeric"
               inputMode="decimal"
               onChange={(event) =>
                 onChange("CASH", event.target.value, reference)
@@ -931,10 +951,10 @@ function PaymentControls({
           </p>
         </>
       ) : (
-        <label className="grid gap-1 text-sm font-medium">
+        <label className="form-field">
           Transfer reference (optional)
           <input
-            className="min-h-11 rounded-md border bg-background px-3"
+            className="form-control"
             onChange={(event) =>
               onChange("TRANSFER", amountTendered, event.target.value)
             }
@@ -1015,7 +1035,12 @@ function VatProfilePanel({
     }
   }, [profile]);
   if (isLoading) return <p aria-live="polite">Loading sales VAT profile…</p>;
-  if (error) return <p role="alert">{errorMessage(error)}</p>;
+  if (error)
+    return (
+      <p className="form-message" role="alert">
+        {errorMessage(error)}
+      </p>
+    );
   if (!profile) return null;
   return (
     <form
@@ -1036,10 +1061,10 @@ function VatProfilePanel({
           .catch(() => undefined);
       }}
     >
-      <label className="grid gap-1 text-sm font-medium">
+      <label className="form-field">
         Sales VAT status
         <select
-          className="min-h-11 rounded-md border bg-background px-3"
+          className="form-control"
           onChange={(event) =>
             setStatus(event.target.value as SalesVatProfile["salesVatStatus"])
           }
@@ -1050,10 +1075,10 @@ function VatProfilePanel({
         </select>
       </label>
       {status === "REGISTERED" ? (
-        <label className="grid gap-1 text-sm font-medium">
+        <label className="form-field">
           VAT rate (%)
           <input
-            className="min-h-11 rounded-md border bg-background px-3"
+            className="form-control form-control--numeric"
             inputMode="decimal"
             onChange={(event) => setRate(event.target.value)}
             value={rate}
@@ -1063,7 +1088,7 @@ function VatProfilePanel({
         <div />
       )}
       {notice ? (
-        <p className="sm:col-span-2" role="alert">
+        <p className="sm:col-span-2 form-message" role="alert">
           {notice}
         </p>
       ) : null}

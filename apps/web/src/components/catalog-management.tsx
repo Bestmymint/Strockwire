@@ -130,10 +130,14 @@ function Field({
 }) {
   const id = useId();
   return (
-    <label className="grid gap-1 text-sm font-medium" htmlFor={id}>
+    <label className="form-field" htmlFor={id}>
       {label}
       <input
-        className="min-h-11 rounded-md border bg-background px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={
+          name === "basePrice"
+            ? "form-control form-control--numeric"
+            : "form-control"
+        }
         id={id}
         name={name}
         type="text"
@@ -153,14 +157,9 @@ function Textarea({
 }) {
   const id = useId();
   return (
-    <label className="grid gap-1 text-sm font-medium" htmlFor={id}>
+    <label className="form-field sm:col-span-full" htmlFor={id}>
       {label}
-      <textarea
-        className="min-h-20 rounded-md border bg-background px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        id={id}
-        name={name}
-        {...props}
-      />
+      <textarea className="form-control" id={id} name={name} {...props} />
     </label>
   );
 }
@@ -171,7 +170,7 @@ function PrimaryButton({
 }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
-      className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+      className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
       {...props}
     >
       {children}
@@ -185,7 +184,7 @@ function SecondaryButton({
 }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
-      className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+      className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
       {...props}
     >
       {children}
@@ -230,7 +229,11 @@ export function CatalogManagement() {
 
   if (contextQuery.isPending) return <p aria-live="polite">Loading access…</p>;
   if (contextQuery.isError)
-    return <p role="alert">Your access context could not be loaded.</p>;
+    return (
+      <p className="form-message" role="alert">
+        Your access context could not be loaded.
+      </p>
+    );
   if (resolved?.organization === null) {
     return (
       <section className="space-y-4">
@@ -414,7 +417,7 @@ function CatalogContentLoaded({
         <button
           aria-controls="products-panel"
           aria-selected={view === "products"}
-          className="min-h-11 border-b-2 px-4 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-h-11 border-b-2 px-4 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring form-action"
           onClick={() => setView("products")}
           role="tab"
           type="button"
@@ -424,7 +427,7 @@ function CatalogContentLoaded({
         <button
           aria-controls="categories-panel"
           aria-selected={view === "categories"}
-          className="min-h-11 border-b-2 px-4 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-h-11 border-b-2 px-4 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring form-action"
           onClick={() => setView("categories")}
           role="tab"
           type="button"
@@ -436,6 +439,7 @@ function CatalogContentLoaded({
       {canIncludeInactive ? (
         <label className="flex min-h-11 items-center gap-3 text-sm font-medium">
           <input
+            className="form-choice"
             checked={includeInactive}
             onChange={(event) => setIncludeInactive(event.target.checked)}
             type="checkbox"
@@ -505,6 +509,7 @@ function CatalogContentLoaded({
       ) : (
         <section
           aria-labelledby="categories-heading"
+          className="space-y-5"
           id="categories-panel"
           role="tabpanel"
         >
@@ -608,7 +613,7 @@ function SearchControl({
 }) {
   return (
     <form
-      className="my-5 flex flex-col gap-3 sm:flex-row"
+      className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end [&>label]:flex-1"
       onSubmit={(event) => {
         event.preventDefault();
         onSearch(String(new FormData(event.currentTarget).get("q") ?? ""));
@@ -635,15 +640,12 @@ function ProductListControls({
 }) {
   const categorySelectId = useId();
   return (
-    <div className="my-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_16rem] sm:items-end">
+    <div className="my-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_16rem] md:items-end">
       <SearchControl onSearch={onSearch} search={search} />
-      <label
-        className="grid gap-1 text-sm font-medium"
-        htmlFor={categorySelectId}
-      >
+      <label className="form-field" htmlFor={categorySelectId}>
         Category filter
         <select
-          className="min-h-11 rounded-md border bg-background px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="form-control"
           id={categorySelectId}
           onChange={(event) => onCategoryFilterChange(event.target.value)}
           value={categoryFilter}
@@ -693,7 +695,7 @@ function CategoryCreateForm({
       }}
     >
       <h2 className="font-semibold">Create category</h2>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 mb-4 grid max-w-4xl items-start gap-4 sm:grid-cols-2">
         <Field label="Category name" name="name" required />
         <Textarea label="Description (optional)" name="description" />
       </div>
@@ -752,7 +754,7 @@ function CategoryEditor({
         <StatusBadge status={category.status} />
       </div>
       {canManage ? (
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="mt-4 mb-4 grid max-w-4xl items-start gap-4 sm:grid-cols-2">
           <Field
             defaultValue={category.name}
             label="Category name"
@@ -851,7 +853,7 @@ function ProductCreateForm({
       }}
     >
       <h2 className="font-semibold">Create product</h2>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-4 mb-4 grid max-w-5xl items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <Field label="Product name" name="name" required />
         <Field label="SKU" name="sku" required />
         <Field label="Barcode (optional)" name="barcode" />
@@ -861,10 +863,10 @@ function ProductCreateForm({
           name="basePrice"
           required
         />
-        <label className="grid gap-1 text-sm font-medium" htmlFor={unitId}>
+        <label className="form-field" htmlFor={unitId}>
           Unit
           <select
-            className="min-h-11 rounded-md border bg-background px-3"
+            className="form-control form-control--compact"
             defaultValue="EA"
             id={unitId}
             name="unit"
@@ -874,13 +876,9 @@ function ProductCreateForm({
             ))}
           </select>
         </label>
-        <label className="grid gap-1 text-sm font-medium" htmlFor={categoryId}>
+        <label className="form-field" htmlFor={categoryId}>
           Category (optional)
-          <select
-            className="min-h-11 rounded-md border bg-background px-3"
-            id={categoryId}
-            name="categoryId"
-          >
+          <select className="form-control" id={categoryId} name="categoryId">
             <option value="">Uncategorized</option>
             {categories.map((category) => (
               <option key={category.id} value={category.id}>
@@ -892,7 +890,7 @@ function ProductCreateForm({
         <Textarea label="Description (optional)" name="description" />
       </div>
       {validation ? (
-        <p className="mt-3 text-sm" role="alert">
+        <p className="mt-3 text-sm form-message" role="alert">
           {validation}
         </p>
       ) : null}
@@ -978,7 +976,7 @@ function ProductEditor({
         <StatusBadge status={product.status} />
       </div>
       {canManage ? (
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-4 mb-4 grid max-w-5xl items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <Field
             defaultValue={product.name}
             label="Product name"
@@ -998,13 +996,10 @@ function ProductEditor({
             name="basePrice"
             required
           />
-          <label
-            className="grid gap-1 text-sm font-medium"
-            htmlFor={categorySelectId}
-          >
+          <label className="form-field" htmlFor={categorySelectId}>
             Category (optional)
             <select
-              className="min-h-11 rounded-md border bg-background px-3"
+              className="form-control"
               defaultValue={product.categoryId ?? ""}
               id={categorySelectId}
               name="categoryId"
@@ -1046,7 +1041,7 @@ function ProductEditor({
         </dl>
       )}
       {validation ? (
-        <p className="mt-3 text-sm" role="alert">
+        <p className="mt-3 text-sm form-message" role="alert">
           {validation}
         </p>
       ) : null}

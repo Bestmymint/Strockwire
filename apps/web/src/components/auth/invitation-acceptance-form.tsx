@@ -74,12 +74,16 @@ export function InvitationAcceptanceForm() {
         Accept this invitation while signed in with the verified invited email.
       </p>
       {error === null ? null : (
-        <p aria-live="assertive" className="text-sm text-red-700" role="alert">
+        <p
+          aria-live="assertive"
+          className="text-sm text-red-700 form-message"
+          role="alert"
+        >
           {error}
         </p>
       )}
       <button
-        className="min-h-11 w-full rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="min-h-11 w-full rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 form-action"
         disabled={isSubmitting}
         type="submit"
       >

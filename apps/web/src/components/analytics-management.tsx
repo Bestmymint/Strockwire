@@ -434,7 +434,9 @@ export function AnalyticsManagement() {
   if (contextQuery.isError)
     return (
       <PageFrame>
-        <p role="alert">Your access context could not be loaded.</p>
+        <p className="form-message" role="alert">
+          Your access context could not be loaded.
+        </p>
       </PageFrame>
     );
   if (!resolved?.organization)
@@ -449,7 +451,9 @@ export function AnalyticsManagement() {
   if (resolved.organization.role === "CASHIER")
     return (
       <PageFrame>
-        <p role="alert">Analytics is not available for your current access.</p>
+        <p className="form-message" role="alert">
+          Analytics is not available for your current access.
+        </p>
         <Link href="/app" className="underline">
           Return to workspace
         </Link>
@@ -556,8 +560,8 @@ function AnalyticsContent({
           setPeriod(draftPeriod);
         }}
       >
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="text-sm font-medium">
+        <div className="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-[12rem_12rem_10rem_minmax(0,1fr)]">
+          <label className="form-field">
             From (inclusive)
             <input
               required
@@ -566,10 +570,10 @@ function AnalyticsContent({
               onChange={(event) =>
                 setDraftPeriod({ ...draftPeriod, from: event.target.value })
               }
-              className="mt-1 min-h-11 w-full rounded-md border bg-background px-3"
+              className="form-control form-control--date"
             />
           </label>
-          <label className="text-sm font-medium">
+          <label className="form-field">
             To (exclusive)
             <input
               required
@@ -578,10 +582,10 @@ function AnalyticsContent({
               onChange={(event) =>
                 setDraftPeriod({ ...draftPeriod, to: event.target.value })
               }
-              className="mt-1 min-h-11 w-full rounded-md border bg-background px-3"
+              className="form-control form-control--date"
             />
           </label>
-          <label className="text-sm font-medium">
+          <label className="form-field">
             Granularity
             <select
               value={draftPeriod.granularity}
@@ -592,7 +596,7 @@ function AnalyticsContent({
                     .value as AnalyticsPeriod["granularity"],
                 })
               }
-              className="mt-1 min-h-11 w-full rounded-md border bg-background px-3"
+              className="form-control"
             >
               <option value="day">Day</option>
               <option value="week">Week</option>
@@ -600,7 +604,7 @@ function AnalyticsContent({
               <option value="year">Year</option>
             </select>
           </label>
-          <label className="text-sm font-medium">
+          <label className="form-field">
             Scope
             <select
               aria-label="Analytics scope"
@@ -610,7 +614,7 @@ function AnalyticsContent({
                   : effectiveScope.branchId
               }
               onChange={(event) => setScopeValue(event.target.value)}
-              className="mt-1 min-h-11 w-full rounded-md border bg-background px-3"
+              className="form-control"
             >
               {isWideRole ? (
                 <option value="organization">All organization branches</option>
@@ -625,7 +629,7 @@ function AnalyticsContent({
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
-            className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background"
+            className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background form-action"
             type="submit"
           >
             Apply period
@@ -684,11 +688,15 @@ function AnalyticsContent({
           role={organization.role}
         />
       ) : !enabled ? (
-        <p role="alert">Choose an accessible branch and a valid date range.</p>
+        <p className="form-message" role="alert">
+          Choose an accessible branch and a valid date range.
+        </p>
       ) : salesQuery.isPending ? (
         <p aria-live="polite">Loading sales analytics…</p>
       ) : salesQuery.isError ? (
-        <p role="alert">{errorMessage(salesQuery.error)}</p>
+        <p className="form-message" role="alert">
+          {errorMessage(salesQuery.error)}
+        </p>
       ) : (
         <>
           <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
@@ -700,12 +708,12 @@ function AnalyticsContent({
             <p>Data as of {salesQuery.data.meta.sourceCutoff}</p>
           </div>
           {buckets.length > 0 ? (
-            <label className="block max-w-xs text-sm font-medium">
+            <label className="form-field max-w-xs">
               Selected period
               <select
                 value={activeBucket?.localStartInclusive ?? ""}
                 onChange={(event) => setSelectedBucket(event.target.value)}
-                className="mt-1 min-h-11 w-full rounded-md border bg-card px-3"
+                className="form-control"
               >
                 {buckets.map((bucket) => (
                   <option
@@ -803,7 +811,7 @@ function AnalyticsContent({
                       disabled={categoryQuery.isFetchingNextPage}
                       type="button"
                       onClick={() => void categoryQuery.fetchNextPage()}
-                      className="min-h-11 rounded-md border bg-card px-4 text-sm font-medium disabled:opacity-60"
+                      className="min-h-11 rounded-md border bg-card px-4 text-sm font-medium disabled:opacity-60 form-action"
                     >
                       {categoryQuery.isFetchingNextPage
                         ? "Loading next page…"
@@ -880,7 +888,7 @@ function AnalyticsContent({
                       disabled={branchQuery.isFetchingNextPage}
                       type="button"
                       onClick={() => void branchQuery.fetchNextPage()}
-                      className="min-h-11 rounded-md border bg-card px-4 text-sm font-medium disabled:opacity-60"
+                      className="min-h-11 rounded-md border bg-card px-4 text-sm font-medium disabled:opacity-60 form-action"
                     >
                       {branchQuery.isFetchingNextPage
                         ? "Loading next page…"

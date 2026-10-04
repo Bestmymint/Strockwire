@@ -75,7 +75,11 @@ export function ApplicationContextShell() {
 
   if (contextQuery.isPending) return <p aria-live="polite">Loading access…</p>;
   if (contextQuery.isError)
-    return <p role="alert">Your access context could not be loaded.</p>;
+    return (
+      <p className="form-message" role="alert">
+        Your access context could not be loaded.
+      </p>
+    );
   if (resolved?.organization === null) {
     if (contextQuery.data.organizations.length === 0) {
       if (contextQuery.data.firstOrganizationOnboarding.eligible) {
@@ -98,7 +102,7 @@ export function ApplicationContextShell() {
         <div className="grid gap-3">
           {contextQuery.data.organizations.map((organization) => (
             <button
-              className="min-h-11 rounded-md border px-4 text-left hover:bg-muted"
+              className="min-h-11 rounded-md border px-4 text-left hover:bg-muted form-action"
               key={organization.id}
               onClick={() =>
                 void switchTo(
@@ -128,11 +132,11 @@ export function ApplicationContextShell() {
         <p className="mt-1 text-sm text-muted-foreground">
           {activeOrganization.role.replaceAll("_", " ")}
         </p>
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <label className="text-sm font-medium">
+        <div className="mt-5 grid max-w-4xl gap-4 sm:grid-cols-2">
+          <label className="form-field">
             Organization
             <select
-              className="mt-2 min-h-11 w-full rounded-md border bg-background px-3"
+              className="form-control"
               onChange={(event) => {
                 const organization = contextQuery.data.organizations.find(
                   ({ id }) => id === event.target.value,
@@ -152,10 +156,10 @@ export function ApplicationContextShell() {
               ))}
             </select>
           </label>
-          <label className="text-sm font-medium">
+          <label className="form-field">
             Branch
             <select
-              className="mt-2 min-h-11 w-full rounded-md border bg-background px-3"
+              className="form-control"
               disabled={activeOrganization.branches.length === 0}
               onChange={(event) =>
                 void switchTo(activeOrganization.id, event.target.value)

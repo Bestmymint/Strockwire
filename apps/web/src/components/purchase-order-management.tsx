@@ -183,7 +183,7 @@ function PrimaryButton({
   return (
     <button
       className={cn(
-        "min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60",
+        "form-action rounded-md bg-foreground text-background hover:opacity-90 disabled:opacity-60",
         className,
       )}
       {...props}
@@ -198,7 +198,7 @@ function SecondaryButton({
   return (
     <button
       className={cn(
-        "min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60",
+        "form-action rounded-md border hover:bg-muted disabled:opacity-60",
         className,
       )}
       {...props}
@@ -239,7 +239,11 @@ export function PurchaseOrderManagement() {
 
   if (access.isPending) return <p aria-live="polite">Loading access…</p>;
   if (access.isError)
-    return <p role="alert">Your access context could not be loaded.</p>;
+    return (
+      <p className="form-message" role="alert">
+        Your access context could not be loaded.
+      </p>
+    );
   if (resolved?.organization === null) {
     return (
       <section className="space-y-4">
@@ -283,7 +287,7 @@ export function PurchaseOrderManagement() {
           Back to workspace
         </Link>
         <h1 className="text-2xl font-semibold">Purchase orders</h1>
-        <p role="alert">
+        <p className="form-message" role="alert">
           You do not have permission to manage purchase orders.
         </p>
       </section>
@@ -420,7 +424,11 @@ function PurchaseOrderContent({
           server in THB.
         </p>
       </header>
-      {notice ? <p role="alert">{notice}</p> : null}
+      {notice ? (
+        <p className="form-message" role="alert">
+          {notice}
+        </p>
+      ) : null}
 
       <PurchaseOrderForm
         activeSuppliers={activeSuppliers}
@@ -433,11 +441,11 @@ function PurchaseOrderContent({
         products={products}
       />
 
-      <div className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-5">
-        <label className="grid gap-1 text-sm font-medium">
+      <div className="grid items-end gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_12rem_12rem_auto]">
+        <label className="form-field">
           Status filter
           <select
-            className="min-h-11 rounded-md border bg-background px-3"
+            className="form-control"
             onChange={(event) =>
               setStatus(event.target.value as PurchaseOrderStatus | "all")
             }
@@ -450,10 +458,10 @@ function PurchaseOrderContent({
             ))}
           </select>
         </label>
-        <label className="grid gap-1 text-sm font-medium">
+        <label className="form-field">
           Supplier filter
           <select
-            className="min-h-11 rounded-md border bg-background px-3"
+            className="form-control"
             onChange={(event) => setSupplierId(event.target.value)}
             value={supplierId}
           >
@@ -466,19 +474,19 @@ function PurchaseOrderContent({
             ))}
           </select>
         </label>
-        <label className="grid gap-1 text-sm font-medium">
+        <label className="form-field">
           Order date from
           <input
-            className="min-h-11 rounded-md border bg-background px-3"
+            className="form-control form-control--date"
             onChange={(event) => setOrderDateFrom(event.target.value)}
             type="date"
             value={orderDateFrom}
           />
         </label>
-        <label className="grid gap-1 text-sm font-medium">
+        <label className="form-field">
           Order date to
           <input
-            className="min-h-11 rounded-md border bg-background px-3"
+            className="form-control form-control--date"
             onChange={(event) => setOrderDateTo(event.target.value)}
             type="date"
             value={orderDateTo}
@@ -496,7 +504,11 @@ function PurchaseOrderContent({
       {orders.isPending ? (
         <p aria-live="polite">Loading purchase orders…</p>
       ) : null}
-      {orders.isError ? <p role="alert">{errorMessage(orders.error)}</p> : null}
+      {orders.isError ? (
+        <p className="form-message" role="alert">
+          {errorMessage(orders.error)}
+        </p>
+      ) : null}
       {!orders.isPending && !orders.isError && records.length === 0 ? (
         <p>No purchase orders match this view.</p>
       ) : null}
@@ -544,7 +556,9 @@ function PurchaseOrderContent({
             <p aria-live="polite">Loading purchase order…</p>
           ) : null}
           {detail.isError ? (
-            <p role="alert">{errorMessage(detail.error)}</p>
+            <p className="form-message" role="alert">
+              {errorMessage(detail.error)}
+            </p>
           ) : null}
           {detail.data ? (
             <PurchaseOrderEditor
@@ -662,17 +676,17 @@ function PurchaseOrderForm({
         {initialOrder ? <StatusBadge status={initialOrder.status} /> : null}
       </div>
       {validation ? (
-        <p className="mt-3" id={validationId} role="alert">
+        <p className="mt-3 form-message" id={validationId} role="alert">
           {validation}
         </p>
       ) : null}
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <label className="grid gap-1 text-sm font-medium" htmlFor={supplierId}>
+      <div className="mt-4 grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_12rem_12rem]">
+        <label className="form-field" htmlFor={supplierId}>
           Supplier
           <select
             aria-describedby={describedBy}
             aria-invalid={validation !== null}
-            className="min-h-11 rounded-md border bg-background px-3"
+            className="form-control"
             id={supplierId}
             onChange={(event) =>
               setInput((current) => ({
@@ -699,12 +713,12 @@ function PurchaseOrderForm({
             ))}
           </select>
         </label>
-        <label className="grid gap-1 text-sm font-medium" htmlFor={orderDateId}>
+        <label className="form-field" htmlFor={orderDateId}>
           Order date
           <input
             aria-describedby={describedBy}
             aria-invalid={validation !== null}
-            className="min-h-11 rounded-md border bg-background px-3"
+            className="form-control form-control--date"
             id={orderDateId}
             onChange={(event) =>
               setInput((current) => ({
@@ -716,15 +730,12 @@ function PurchaseOrderForm({
             value={input.orderDate}
           />
         </label>
-        <label
-          className="grid gap-1 text-sm font-medium"
-          htmlFor={expectedDateId}
-        >
+        <label className="form-field" htmlFor={expectedDateId}>
           Expected date (optional)
           <input
             aria-describedby={describedBy}
             aria-invalid={validation !== null}
-            className="min-h-11 rounded-md border bg-background px-3"
+            className="form-control form-control--date"
             id={expectedDateId}
             onChange={(event) =>
               setInput((current) => ({
@@ -751,17 +762,17 @@ function PurchaseOrderForm({
           const selected = productById.get(line.productId);
           return (
             <fieldset
-              className="grid min-w-0 grid-cols-1 gap-3 rounded-md border p-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_9rem_10rem_auto]"
+              className="grid min-w-0 grid-cols-1 gap-3 rounded-md border p-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_9rem_10rem_auto]"
               key={`${line.productId}-${index}`}
             >
               <legend className="sr-only">Product line {index + 1}</legend>
-              <label className="grid min-w-0 gap-1 text-sm font-medium">
+              <label className="form-field">
                 Product
                 <select
                   aria-describedby={describedBy}
                   aria-invalid={validation !== null}
                   aria-label={`Product line ${index + 1} product`}
-                  className="min-h-11 w-full min-w-0 rounded-md border bg-background px-3"
+                  className="form-control"
                   onChange={(event) =>
                     updateLine(index, { productId: event.target.value })
                   }
@@ -778,13 +789,13 @@ function PurchaseOrderForm({
                   ))}
                 </select>
               </label>
-              <label className="grid min-w-0 gap-1 text-sm font-medium">
+              <label className="form-field">
                 Quantity{selected ? ` (${selected.unit})` : ""}
                 <input
                   aria-describedby={describedBy}
                   aria-invalid={validation !== null}
                   aria-label={`Product line ${index + 1} quantity${selected ? ` (${selected.unit})` : ""}`}
-                  className="min-h-11 w-full min-w-0 rounded-md border bg-background px-3"
+                  className="form-control form-control--numeric"
                   inputMode="decimal"
                   onChange={(event) =>
                     updateLine(index, { quantity: event.target.value })
@@ -792,13 +803,13 @@ function PurchaseOrderForm({
                   value={line.quantity}
                 />
               </label>
-              <label className="grid min-w-0 gap-1 text-sm font-medium">
+              <label className="form-field">
                 Expected unit cost (THB)
                 <input
                   aria-describedby={describedBy}
                   aria-invalid={validation !== null}
                   aria-label={`Product line ${index + 1} expected unit cost (THB)`}
-                  className="min-h-11 w-full min-w-0 rounded-md border bg-background px-3"
+                  className="form-control form-control--numeric"
                   inputMode="decimal"
                   onChange={(event) =>
                     updateLine(index, { expectedUnitCost: event.target.value })
@@ -1094,7 +1105,11 @@ function ReceivingPanel({
         <p className="text-sm">
           Received at {receipt.receivedAt}. The purchase order is now RECEIVED.
         </p>
-        {error ? <p role="alert">{error}</p> : null}
+        {error ? (
+          <p className="form-message" role="alert">
+            {error}
+          </p>
+        ) : null}
         {receipt.items.map((item) => (
           <p className="text-sm" key={item.id}>
             {item.productNameSnapshot}: {item.receivedQuantity} at{" "}
@@ -1123,7 +1138,7 @@ function ReceivingPanel({
           <p className="text-sm">
             Expected: {formatMoney(item.expectedUnitCost)} THB
           </p>
-          <label className="grid gap-1 text-sm font-medium">
+          <label className="form-field">
             Actual unit cost (THB)
             <input
               aria-label={`${item.productNameSnapshot} actual unit cost`}
@@ -1131,7 +1146,7 @@ function ReceivingPanel({
                 validationMessage === null ? undefined : validationId
               }
               aria-invalid={costs[item.id] !== "" && !valid(costs[item.id]!)}
-              className="min-h-11 rounded-md border bg-background px-3"
+              className="form-control form-control--numeric"
               inputMode="decimal"
               value={costs[item.id]}
               onChange={(e) => {
@@ -1144,6 +1159,7 @@ function ReceivingPanel({
       ))}
       <label className="flex min-h-11 items-center gap-2 text-sm">
         <input
+          className="form-choice"
           aria-describedby={
             validationMessage === null ? undefined : validationId
           }
@@ -1161,14 +1177,14 @@ function ReceivingPanel({
         Organization VAT registration asserted for this receipt
       </label>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-1 text-sm">
+        <label className="form-field">
           Input VAT rate
           <input
             aria-describedby={
               validationMessage === null ? undefined : validationId
             }
             aria-invalid={!vatValid}
-            className="min-h-11 rounded border px-3"
+            className="form-control form-control--numeric"
             value={vat.inputVatRate}
             onChange={(e) => {
               setVat((v) => ({ ...v, inputVatRate: e.target.value }));
@@ -1176,14 +1192,14 @@ function ReceivingPanel({
             }}
           />
         </label>
-        <label className="grid gap-1 text-sm">
+        <label className="form-field">
           Input VAT amount
           <input
             aria-describedby={
               validationMessage === null ? undefined : validationId
             }
             aria-invalid={!vatValid}
-            className="min-h-11 rounded border px-3"
+            className="form-control form-control--numeric"
             value={vat.inputVatAmount}
             onChange={(e) => {
               setVat((v) => ({ ...v, inputVatAmount: e.target.value }));
@@ -1191,14 +1207,14 @@ function ReceivingPanel({
             }}
           />
         </label>
-        <label className="grid gap-1 text-sm">
+        <label className="form-field">
           Supplier tax document number
           <input
             aria-describedby={
               validationMessage === null ? undefined : validationId
             }
             aria-invalid={!vatValid}
-            className="min-h-11 rounded border px-3"
+            className="form-control"
             value={vat.supplierTaxDocumentNumber}
             onChange={(e) => {
               setVat((v) => ({
@@ -1209,7 +1225,7 @@ function ReceivingPanel({
             }}
           />
         </label>
-        <label className="grid gap-1 text-sm">
+        <label className="form-field">
           Supplier tax document date
           <input
             aria-describedby={
@@ -1217,7 +1233,7 @@ function ReceivingPanel({
             }
             aria-invalid={!vatValid}
             type="date"
-            className="min-h-11 rounded border px-3"
+            className="form-control form-control--date"
             value={vat.supplierTaxDocumentDate}
             onChange={(e) => {
               setVat((v) => ({
@@ -1230,11 +1246,15 @@ function ReceivingPanel({
         </label>
       </div>
       {validationMessage !== null ? (
-        <p className="text-sm" id={validationId} role="alert">
+        <p className="text-sm form-message" id={validationId} role="alert">
           {validationMessage}
         </p>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? (
+        <p className="form-message" role="alert">
+          {error}
+        </p>
+      ) : null}
       <PrimaryButton
         disabled={!complete || !vatValid || pending}
         aria-busy={pending}
@@ -1249,7 +1269,7 @@ function ReceivingPanel({
           aria-modal="true"
           aria-describedby="receive-confirm-description"
           aria-labelledby="receive-confirm-title"
-          className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 grid overflow-y-auto bg-black/40 p-4"
           onKeyDown={(event) => {
             if (event.key === "Escape" && !pending) setConfirm(false);
             if (event.key === "Tab") {
@@ -1259,7 +1279,7 @@ function ReceivingPanel({
             }
           }}
         >
-          <div className="w-full max-w-md rounded bg-card p-5">
+          <div className="my-auto w-full max-w-md justify-self-center rounded bg-card p-5">
             <h2 id="receive-confirm-title" className="font-semibold">
               Confirm irreversible receipt
             </h2>
@@ -1269,7 +1289,7 @@ function ReceivingPanel({
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+                className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
                 disabled={pending}
                 onClick={() => setConfirm(false)}
                 ref={cancel}
@@ -1279,7 +1299,7 @@ function ReceivingPanel({
               </button>
               <button
                 aria-busy={pending}
-                className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+                className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
                 disabled={pending}
                 onClick={() => void submit()}
                 ref={confirmButton}
@@ -1362,7 +1382,7 @@ function ConfirmationDialog({
       aria-describedby="purchase-order-confirmation-description"
       aria-labelledby="purchase-order-confirmation-title"
       aria-modal="true"
-      className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 grid overflow-y-auto bg-black/40 p-4"
       onKeyDown={(event) => {
         if (event.key === "Escape" && !busy) onCancel();
         if (event.key === "Tab") {
@@ -1373,7 +1393,7 @@ function ConfirmationDialog({
       }}
       role="dialog"
     >
-      <div className="w-full max-w-md rounded-lg bg-card p-5 shadow-lg">
+      <div className="my-auto w-full max-w-md justify-self-center rounded-lg bg-card p-5 shadow-lg">
         <h2
           className="text-lg font-semibold"
           id="purchase-order-confirmation-title"
@@ -1392,7 +1412,7 @@ function ConfirmationDialog({
         </p>
         <div className="mt-5 flex flex-wrap justify-end gap-3">
           <button
-            className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+            className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
             disabled={busy}
             onClick={onCancel}
             ref={cancel}
@@ -1402,7 +1422,7 @@ function ConfirmationDialog({
           </button>
           <button
             aria-busy={busy}
-            className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+            className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
             disabled={busy}
             onClick={onConfirm}
             ref={confirm}

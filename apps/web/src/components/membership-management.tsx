@@ -132,7 +132,11 @@ export function MembershipManagement() {
 
   if (contextQuery.isPending) return <p aria-live="polite">Loading access…</p>;
   if (contextQuery.isError)
-    return <p role="alert">Your access context could not be loaded.</p>;
+    return (
+      <p className="form-message" role="alert">
+        Your access context could not be loaded.
+      </p>
+    );
   if (!canManage || organizationId === null || organization === undefined) {
     return (
       <section className="space-y-4">
@@ -182,7 +186,9 @@ export function MembershipManagement() {
         </h2>
         {invitationsQuery.isPending ? <p>Loading invitations…</p> : null}
         {invitationsQuery.isError ? (
-          <p role="alert">Pending invitations could not be loaded.</p>
+          <p className="form-message" role="alert">
+            Pending invitations could not be loaded.
+          </p>
         ) : null}
         {invitations.map((item) => (
           <InvitationCard
@@ -195,7 +201,7 @@ export function MembershipManagement() {
         ))}
         {invitationsQuery.hasNextPage ? (
           <button
-            className="min-h-11 rounded-md border px-4 text-sm font-medium"
+            className="min-h-11 rounded-md border px-4 text-sm font-medium form-action"
             onClick={() => void invitationsQuery.fetchNextPage()}
             type="button"
           >
@@ -211,6 +217,7 @@ export function MembershipManagement() {
           </h2>
           <label className="flex min-h-11 items-center gap-2 text-sm">
             <input
+              className="form-choice"
               checked={includeInactive}
               onChange={(event) => setIncludeInactive(event.target.checked)}
               type="checkbox"
@@ -220,7 +227,9 @@ export function MembershipManagement() {
         </div>
         {membersQuery.isPending ? <p>Loading members…</p> : null}
         {membersQuery.isError ? (
-          <p role="alert">Members could not be loaded.</p>
+          <p className="form-message" role="alert">
+            Members could not be loaded.
+          </p>
         ) : null}
         {members.map((item) => (
           <MemberEditor
@@ -234,7 +243,7 @@ export function MembershipManagement() {
         ))}
         {membersQuery.hasNextPage ? (
           <button
-            className="min-h-11 rounded-md border px-4 text-sm font-medium"
+            className="min-h-11 rounded-md border px-4 text-sm font-medium form-action"
             onClick={() => void membersQuery.fetchNextPage()}
             type="button"
           >
@@ -280,11 +289,11 @@ function InviteForm({
   return (
     <form className="rounded-lg border p-5" onSubmit={submit}>
       <h2 className="text-xl font-semibold">Invite member</h2>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <label className="text-sm font-medium">
+      <div className="mt-4 grid max-w-4xl gap-4 sm:grid-cols-2">
+        <label className="form-field">
           Email
           <input
-            className="mt-2 min-h-11 w-full rounded-md border bg-background px-3"
+            className="form-control"
             onChange={(event) => setEmail(event.target.value)}
             required
             type="email"
@@ -312,12 +321,12 @@ function InviteForm({
         </p>
       ) : null}
       {mutation.isError ? (
-        <p className="mt-3 text-sm text-red-700" role="alert">
+        <p className="mt-3 text-sm text-red-700 form-message" role="alert">
           {errorMessage(mutation.error)}
         </p>
       ) : null}
       <button
-        className="mt-4 min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background disabled:opacity-60"
+        className="mt-4 min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background disabled:opacity-60 form-action"
         disabled={mutation.isPending || needsBranchScope}
         type="submit"
       >
@@ -373,21 +382,21 @@ function InvitationCard({
           : "Organization-wide scope"}
       </p>
       {failure ? (
-        <p className="mt-3 text-sm text-red-700" role="alert">
+        <p className="mt-3 text-sm text-red-700 form-message" role="alert">
           {errorMessage(failure)}
         </p>
       ) : null}
       {canMutate ? (
         <div className="mt-3 flex flex-wrap gap-2">
           <button
-            className="min-h-11 rounded-md border px-4 text-sm"
+            className="min-h-11 rounded-md border px-4 text-sm form-action"
             onClick={() => reissue.mutate()}
             type="button"
           >
             Reissue
           </button>
           <button
-            className="min-h-11 rounded-md border px-4 text-sm"
+            className="min-h-11 rounded-md border px-4 text-sm form-action"
             onClick={() => revoke.mutate()}
             type="button"
           >
@@ -467,13 +476,13 @@ function MemberEditor({
             selected={branchIds}
           />
           {failure ? (
-            <p className="mt-3 text-sm text-red-700" role="alert">
+            <p className="mt-3 text-sm text-red-700 form-message" role="alert">
               {errorMessage(failure)}
             </p>
           ) : null}
           <div className="mt-4 flex flex-wrap gap-2">
             <button
-              className="min-h-11 rounded-md border px-4 text-sm"
+              className="min-h-11 rounded-md border px-4 text-sm form-action"
               onClick={() => save.mutate()}
               type="button"
             >
@@ -483,7 +492,7 @@ function MemberEditor({
             </button>
             {member.status === "ACTIVE" ? (
               <button
-                className="min-h-11 rounded-md border px-4 text-sm"
+                className="min-h-11 rounded-md border px-4 text-sm form-action"
                 onClick={() => deactivate.mutate()}
                 type="button"
               >
@@ -515,10 +524,10 @@ function RoleSelect({
       ? ALL_ROLES
       : ALL_ROLES.filter((role) => role !== "OWNER");
   return (
-    <label className="text-sm font-medium">
+    <label className="form-field">
       Role
       <select
-        className="mt-2 min-h-11 w-full rounded-md border bg-background px-3"
+        className="form-control mt-1"
         onChange={(event) => onChange(event.target.value as MembershipRole)}
         value={value}
       >
@@ -560,6 +569,7 @@ function ScopeFields({
             key={branch.id}
           >
             <input
+              className="form-choice"
               checked={selected.includes(branch.id)}
               onChange={(event) =>
                 onChange(

@@ -93,7 +93,7 @@ function errorMessage(error: unknown): string {
 function SecondaryButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
-      className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+      className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
       {...props}
     />
   );
@@ -129,7 +129,11 @@ export function SalesHistoryManagement() {
 
   if (contextQuery.isPending) return <p aria-live="polite">Loading access…</p>;
   if (contextQuery.isError)
-    return <p role="alert">Your access context could not be loaded.</p>;
+    return (
+      <p className="form-message" role="alert">
+        Your access context could not be loaded.
+      </p>
+    );
   if (resolved?.organization === null) {
     return (
       <ContextUnavailable message="Choose an active organization from the workspace before viewing sales." />
@@ -248,11 +252,11 @@ function SalesHistoryContent({
           setActorUserId(value === "" ? undefined : value);
         }}
       >
-        <label className="grid min-w-64 gap-1 text-sm font-medium">
+        <label className="form-field w-full sm:w-96">
           Cashier user ID (optional)
           <input
             aria-describedby={filterError ? "sales-filter-error" : undefined}
-            className="min-h-11 rounded-md border bg-background px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="form-control"
             onChange={(event) => setActorInput(event.target.value)}
             placeholder="Exact UUID only"
             value={actorInput}
@@ -271,7 +275,7 @@ function SalesHistoryContent({
           Clear filter
         </SecondaryButton>
         {filterError ? (
-          <p id="sales-filter-error" role="alert">
+          <p className="form-message" id="sales-filter-error" role="alert">
             {filterError}
           </p>
         ) : null}
@@ -319,7 +323,12 @@ function SalesList({
   selectedSaleId: string | null;
 }) {
   if (isLoading) return <p aria-live="polite">Loading sales history…</p>;
-  if (error !== null) return <p role="alert">{errorMessage(error)}</p>;
+  if (error !== null)
+    return (
+      <p className="form-message" role="alert">
+        {errorMessage(error)}
+      </p>
+    );
   if (sales.length === 0) {
     return (
       <p className="rounded-lg border p-5 text-muted-foreground">
@@ -410,7 +419,9 @@ function SalesDetail({
     >
       {detailQuery.isPending ? <p>Loading sale detail…</p> : null}
       {detailQuery.isError ? (
-        <p role="alert">{errorMessage(detailQuery.error)}</p>
+        <p className="form-message" role="alert">
+          {errorMessage(detailQuery.error)}
+        </p>
       ) : null}
       {detailQuery.data ? (
         <SaleDetailContent
@@ -653,10 +664,10 @@ function RefundPanel({
               {item.productName} · {item.remainingRefundableQuantity}{" "}
               {item.unit} remaining
             </legend>
-            <label className="grid gap-1 text-sm">
+            <label className="form-field">
               Refund quantity
               <input
-                className="min-h-11 rounded-md border bg-background px-3"
+                className="form-control form-control--numeric"
                 inputMode="decimal"
                 onChange={(event) =>
                   setLines((current) => ({
@@ -671,10 +682,10 @@ function RefundPanel({
                 value={lines[item.id]?.quantity ?? ""}
               />
             </label>
-            <label className="grid gap-1 text-sm">
+            <label className="form-field">
               Restock quantity
               <input
-                className="min-h-11 rounded-md border bg-background px-3"
+                className="form-control form-control--numeric"
                 inputMode="decimal"
                 onChange={(event) =>
                   setLines((current) => ({
@@ -691,10 +702,10 @@ function RefundPanel({
           </fieldset>
         ))}
       </div>
-      <label className="grid gap-1 text-sm font-medium">
+      <label className="form-field">
         Reason
         <textarea
-          className="min-h-24 rounded-md border bg-background p-3"
+          className="form-control"
           maxLength={200}
           onChange={(event) => setReason(event.target.value)}
           required
@@ -702,10 +713,10 @@ function RefundPanel({
         />
       </label>
       {sale.payment.method === "TRANSFER" ? (
-        <label className="grid gap-1 text-sm font-medium">
+        <label className="form-field">
           Confirmed transfer reference
           <input
-            className="min-h-11 rounded-md border bg-background px-3"
+            className="form-control"
             maxLength={100}
             onChange={(event) => setTransferReference(event.target.value)}
             required
@@ -713,9 +724,15 @@ function RefundPanel({
           />
         </label>
       ) : null}
-      {validationError !== null ? <p role="alert">{validationError}</p> : null}
+      {validationError !== null ? (
+        <p className="form-message" role="alert">
+          {validationError}
+        </p>
+      ) : null}
       {mutation.isError ? (
-        <p role="alert">{errorMessage(mutation.error)}</p>
+        <p className="form-message" role="alert">
+          {errorMessage(mutation.error)}
+        </p>
       ) : null}
       {mutation.data ? (
         <p role="status">Refund {mutation.data.reference} completed.</p>

@@ -39,6 +39,52 @@ body {
   font-family: var(--font-sans);
 }
 
+@layer components {
+  .form-field {
+    @apply grid min-w-0 content-start gap-1 text-sm font-medium;
+  }
+
+  .form-control {
+    @apply h-11 w-full min-w-0 max-w-full rounded-md border bg-background px-3 py-2 text-sm font-normal outline-none;
+    @apply focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+    @apply disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  textarea.form-control {
+    @apply h-auto min-h-24 resize-y;
+  }
+
+  .form-control[aria-invalid="true"] {
+    @apply border-red-700;
+  }
+
+  .form-control--numeric {
+    max-width: min(100%, 12rem);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .form-control--compact {
+    max-width: min(100%, 16rem);
+  }
+
+  .form-control--date {
+    max-width: min(100%, 12rem);
+  }
+
+  .form-choice {
+    @apply size-4 shrink-0 accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+  }
+
+  .form-action {
+    @apply min-h-11 px-4 py-2 text-sm font-medium;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+  }
+
+  .form-message {
+    @apply text-sm leading-5 break-words text-red-700;
+  }
+}
+
 @media print {
   body * {
     visibility: hidden;

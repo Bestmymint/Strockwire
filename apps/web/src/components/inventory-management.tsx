@@ -121,7 +121,7 @@ function createIdempotencyKey(): string {
 function SecondaryButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
-      className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+      className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
       {...props}
     />
   );
@@ -130,7 +130,7 @@ function SecondaryButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
 function PrimaryButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
-      className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+      className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
       {...props}
     />
   );
@@ -169,7 +169,11 @@ export function InventoryManagement() {
 
   if (contextQuery.isPending) return <p aria-live="polite">Loading access…</p>;
   if (contextQuery.isError)
-    return <p role="alert">Your access context could not be loaded.</p>;
+    return (
+      <p className="form-message" role="alert">
+        Your access context could not be loaded.
+      </p>
+    );
   if (resolved?.organization === null) {
     return (
       <section className="space-y-4">
@@ -259,10 +263,10 @@ function InventoryContent({
       </header>
 
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <label className="grid gap-1 text-sm font-medium">
+        <label className="form-field">
           Product status
           <select
-            className="min-h-11 rounded-md border bg-background px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="form-control"
             onChange={(event) =>
               setStatus(event.target.value as InventoryStatus)
             }
@@ -324,7 +328,12 @@ function BalanceList({
   selectedProductId: string | null;
 }) {
   if (isLoading) return <p aria-live="polite">Loading inventory balances…</p>;
-  if (error !== null) return <p role="alert">{errorMessage(error)}</p>;
+  if (error !== null)
+    return (
+      <p className="form-message" role="alert">
+        {errorMessage(error)}
+      </p>
+    );
   if (items.length === 0) {
     return (
       <p className="rounded-lg border p-5 text-muted-foreground">
@@ -419,7 +428,9 @@ function InventoryDetail({
     >
       {detailQuery.isPending ? <p>Loading product inventory…</p> : null}
       {detailQuery.isError ? (
-        <p role="alert">{errorMessage(detailQuery.error)}</p>
+        <p className="form-message" role="alert">
+          {errorMessage(detailQuery.error)}
+        </p>
       ) : null}
       {detailQuery.data ? (
         <>
@@ -539,12 +550,12 @@ function AdjustmentForm({
           it.
         </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-1 text-sm font-medium" htmlFor={deltaId}>
+      <div className="grid gap-4 sm:grid-cols-[12rem_minmax(0,1fr)]">
+        <label className="form-field" htmlFor={deltaId}>
           Signed adjustment ({product.product.unit})
           <input
             aria-describedby={validation ? errorId : undefined}
-            className="min-h-11 rounded-md border bg-background px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="form-control form-control--numeric"
             id={deltaId}
             inputMode="decimal"
             name="delta"
@@ -552,10 +563,10 @@ function AdjustmentForm({
             required
           />
         </label>
-        <label className="grid gap-1 text-sm font-medium" htmlFor={reasonId}>
+        <label className="form-field" htmlFor={reasonId}>
           Reason
           <select
-            className="min-h-11 rounded-md border bg-background px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="form-control form-control--compact"
             defaultValue="STOCK_COUNT"
             id={reasonId}
             name="reason"
@@ -568,17 +579,17 @@ function AdjustmentForm({
           </select>
         </label>
       </div>
-      <label className="grid gap-1 text-sm font-medium" htmlFor={noteId}>
+      <label className="form-field" htmlFor={noteId}>
         Note (required for OTHER)
         <textarea
           aria-describedby={validation ? errorId : undefined}
-          className="min-h-24 rounded-md border bg-background px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="form-control"
           id={noteId}
           name="note"
         />
       </label>
       {validation ? (
-        <p id={errorId} role="alert">
+        <p className="form-message" id={errorId} role="alert">
           {validation}
         </p>
       ) : null}
@@ -628,7 +639,11 @@ function HistoryList({
       {isLoading ? (
         <p aria-live="polite">Loading transaction history…</p>
       ) : null}
-      {error !== null ? <p role="alert">{errorMessage(error)}</p> : null}
+      {error !== null ? (
+        <p className="form-message" role="alert">
+          {errorMessage(error)}
+        </p>
+      ) : null}
       {!isLoading && error === null && transactions.length === 0 ? (
         <p className="rounded-md border p-4 text-muted-foreground">
           No transactions have been recorded for this product at this branch.

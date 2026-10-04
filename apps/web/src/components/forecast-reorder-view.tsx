@@ -109,7 +109,7 @@ export function ForecastReorderView({
         </p>
       </div>
       <div className="grid gap-4 rounded-lg border bg-card p-4 sm:grid-cols-3">
-        <label className="text-sm font-medium">
+        <label className="form-field">
           Branch
           <select
             value={activeBranch?.id ?? ""}
@@ -117,7 +117,7 @@ export function ForecastReorderView({
               setBranchId(event.target.value);
               setProductId("");
             }}
-            className="mt-1 min-h-11 w-full rounded-md border bg-background px-3"
+            className="form-control"
           >
             {organization.branches.map((branch) => (
               <option key={branch.id} value={branch.id}>
@@ -127,7 +127,7 @@ export function ForecastReorderView({
           </select>
         </label>
         <div className="space-y-2">
-          <label className="block text-sm font-medium">
+          <label className="form-field">
             Find Product
             <input
               type="search"
@@ -136,15 +136,15 @@ export function ForecastReorderView({
                 setSearch(event.target.value);
                 setProductId("");
               }}
-              className="mt-1 min-h-11 w-full rounded-md border bg-background px-3"
+              className="form-control"
             />
           </label>
-          <label className="block text-sm font-medium">
+          <label className="form-field">
             Product
             <select
               value={chosenProduct?.id ?? ""}
               onChange={(event) => setProductId(event.target.value)}
-              className="mt-1 min-h-11 w-full rounded-md border bg-background px-3"
+              className="form-control"
             >
               <option value="">Choose a Product</option>
               {options.map((product) => (
@@ -161,7 +161,7 @@ export function ForecastReorderView({
             </p>
           ) : null}
           {products.isError ? (
-            <p role="alert" className="text-sm">
+            <p role="alert" className="text-sm form-message">
               Products could not be loaded.
             </p>
           ) : null}
@@ -179,7 +179,7 @@ export function ForecastReorderView({
             </button>
           ) : null}
         </div>
-        <label className="text-sm font-medium">
+        <label className="form-field">
           Planning lead time
           <select
             value={leadTimeDays ?? ""}
@@ -188,7 +188,7 @@ export function ForecastReorderView({
                 event.target.value === "" ? null : Number(event.target.value),
               )
             }
-            className="mt-1 min-h-11 w-full rounded-md border bg-background px-3"
+            className="form-control form-control--compact"
           >
             <option value="">Choose 1–7 days</option>
             {[1, 2, 3, 4, 5, 6, 7].map((days) => (
@@ -200,7 +200,9 @@ export function ForecastReorderView({
         </label>
       </div>
       {!activeBranch ? (
-        <p role="alert">No accessible active Branch is available.</p>
+        <p className="form-message" role="alert">
+          No accessible active Branch is available.
+        </p>
       ) : !chosenProduct ? (
         <p>Choose a Product to see its forecast and reorder status.</p>
       ) : (
@@ -213,7 +215,9 @@ export function ForecastReorderView({
             {forecast.isPending ? (
               <p aria-live="polite">Loading forecast…</p>
             ) : forecast.isError ? (
-              <p role="alert">{requestError(forecast.error)}</p>
+              <p className="form-message" role="alert">
+                {requestError(forecast.error)}
+              </p>
             ) : forecastResult ? (
               <>
                 <p className="text-sm">
@@ -277,7 +281,9 @@ export function ForecastReorderView({
             {reorder.isPending ? (
               <p aria-live="polite">Loading reorder recommendation…</p>
             ) : reorder.isError ? (
-              <p role="alert">{requestError(reorder.error)}</p>
+              <p className="form-message" role="alert">
+                {requestError(reorder.error)}
+              </p>
             ) : reorderResult ? (
               <>
                 <p className="text-sm">

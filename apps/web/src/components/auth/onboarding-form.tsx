@@ -126,11 +126,11 @@ export function OnboardingForm() {
         value={fields.branchPhone}
       />
       <div>
-        <label className="text-sm font-medium" htmlFor="onboarding-address">
+        <label className="form-field" htmlFor="onboarding-address">
           Branch address (optional)
         </label>
         <textarea
-          className="mt-2 min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="form-control mt-1"
           disabled={isSubmitting}
           id="onboarding-address"
           maxLength={500}
@@ -140,12 +140,16 @@ export function OnboardingForm() {
         />
       </div>
       {error === null ? null : (
-        <p aria-live="assertive" className="text-sm text-red-700" role="alert">
+        <p
+          aria-live="assertive"
+          className="text-sm text-red-700 form-message"
+          role="alert"
+        >
           {error}
         </p>
       )}
       <button
-        className="min-h-11 w-full rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="min-h-11 w-full rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 form-action"
         disabled={isSubmitting}
         type="submit"
       >
@@ -176,12 +180,12 @@ function TextField({
 }) {
   return (
     <div>
-      <label className="text-sm font-medium" htmlFor={id}>
+      <label className="form-field" htmlFor={id}>
         {label}
       </label>
       <input
         autoComplete={autoComplete}
-        className="mt-2 min-h-11 w-full rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="form-control mt-1"
         disabled={disabled}
         id={id}
         maxLength={maxLength}

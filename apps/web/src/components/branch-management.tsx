@@ -62,7 +62,11 @@ export function BranchManagement() {
 
   if (contextQuery.isPending) return <p>Loading access…</p>;
   if (contextQuery.isError)
-    return <p role="alert">Access could not be loaded.</p>;
+    return (
+      <p className="form-message" role="alert">
+        Access could not be loaded.
+      </p>
+    );
   if (!canManage || organizationId === null) {
     return (
       <section className="space-y-4">
@@ -94,7 +98,9 @@ export function BranchManagement() {
       <CreateBranchForm organizationId={organizationId} onSaved={refresh} />
       {branchesQuery.isPending ? <p>Loading branches…</p> : null}
       {branchesQuery.isError ? (
-        <p role="alert">{errorMessage(branchesQuery.error)}</p>
+        <p className="form-message" role="alert">
+          {errorMessage(branchesQuery.error)}
+        </p>
       ) : null}
       <div className="grid gap-4">
         {branchesQuery.data?.map((branch) => (
@@ -146,19 +152,19 @@ function CreateBranchForm({
   return (
     <form className="rounded-lg border bg-card p-5" onSubmit={submit}>
       <h2 className="font-semibold">Create branch</h2>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid max-w-4xl items-start gap-4 sm:grid-cols-2">
         <Field label="Code" maxLength={16} name="code" required />
         <Field label="Name" maxLength={200} name="name" required />
         <Field label="Phone (optional)" maxLength={32} name="phone" />
         <Field label="Address (optional)" maxLength={500} name="address" />
       </div>
       {error ? (
-        <p className="mt-3 text-sm text-red-700" role="alert">
+        <p className="mt-3 text-sm text-red-700 form-message" role="alert">
           {error}
         </p>
       ) : null}
       <button
-        className="mt-4 min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background disabled:opacity-60"
+        className="mt-4 min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background disabled:opacity-60 form-action"
         disabled={mutation.isPending}
         type="submit"
       >
@@ -216,7 +222,7 @@ function BranchEditor({
         <h2 className="font-semibold">{branch.code}</h2>
         <span className="text-sm text-muted-foreground">{branch.status}</span>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid max-w-4xl items-start gap-4 sm:grid-cols-2">
         <Field
           defaultValue={branch.name}
           label="Name"
@@ -238,20 +244,20 @@ function BranchEditor({
         />
       </div>
       {error ? (
-        <p className="mt-3 text-sm text-red-700" role="alert">
+        <p className="mt-3 text-sm text-red-700 form-message" role="alert">
           {error}
         </p>
       ) : null}
       <div className="mt-4 flex flex-wrap gap-3">
         <button
-          className="min-h-11 rounded-md border px-4 text-sm font-medium disabled:opacity-60"
+          className="min-h-11 rounded-md border px-4 text-sm font-medium disabled:opacity-60 form-action"
           disabled={updateMutation.isPending || lifecycleMutation.isPending}
           type="submit"
         >
           Save changes
         </button>
         <button
-          className="min-h-11 rounded-md border px-4 text-sm font-medium disabled:opacity-60"
+          className="min-h-11 rounded-md border px-4 text-sm font-medium disabled:opacity-60 form-action"
           disabled={updateMutation.isPending || lifecycleMutation.isPending}
           onClick={() => void run(() => lifecycleMutation.mutateAsync())}
           type="button"
@@ -272,10 +278,18 @@ function Field({
   name: string;
 }) {
   return (
-    <label className="text-sm font-medium">
+    <label
+      className={name === "address" ? "form-field sm:col-span-2" : "form-field"}
+    >
       {label}
       <input
-        className="mt-2 min-h-11 w-full rounded-md border bg-background px-3"
+        className={
+          name === "code"
+            ? "form-control form-control--compact"
+            : name === "phone"
+              ? "form-control form-control--compact"
+              : "form-control"
+        }
         name={name}
         type="text"
         {...props}
