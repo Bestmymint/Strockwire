@@ -593,8 +593,8 @@ model SaleRefundItem {
   cogsReversalAmount     Decimal?                @map("cogs_reversal_amount") @db.Decimal(38, 10)
   createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  saleRefund           SaleRefund            @relation(fields: [saleRefundId, organizationId, branchId, saleId], references: [id, organizationId, branchId, saleId], onDelete: Restrict, onUpdate: Restrict)
-  saleItem             SaleItem              @relation(fields: [saleItemId, saleId, organizationId, branchId, productId], references: [id, saleId, organizationId, branchId, productId], onDelete: Restrict, onUpdate: Restrict)
+  saleRefund           SaleRefund            @relation(fields: [saleRefundId, organizationId, branchId, saleId], references: [id, organizationId, branchId, saleId], onDelete: Restrict, onUpdate: Restrict, map: "sale_refund_items_sale_refund_scope_fkey")
+  saleItem             SaleItem              @relation(fields: [saleItemId, saleId, organizationId, branchId, productId], references: [id, saleId, organizationId, branchId, productId], onDelete: Restrict, onUpdate: Restrict, map: "sale_refund_items_sale_item_scope_fkey")
   product              Product               @relation(fields: [productId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
   inventoryTransaction InventoryTransaction?
 
