@@ -27,6 +27,8 @@ Every task row includes:
 
 Completing checks makes work ready for commit; it does not authorize a commit, push, PR, or other Git action. Follow `AGENTS.md`.
 
+Historical Phase 7 task/evidence records are maintained in the external StockWise Obsidian project records. Keep canonical roadmap/system documentation in this repository; follow the documentation location policy in `AGENTS.md`.
+
 ## Phase 0 — Product and architecture documentation freeze
 
 ### Milestone 0.1 — Source of Truth baseline
@@ -206,7 +208,7 @@ does not resolve or assign that separate rule. Phase 7 is COMPLETE under
 and P7-M3-T03 are COMPLETE. Milestone 7.4 is COMPLETE: T01/T02 accepted;
 post-remediation T03 acceptance satisfied with the explicit user-accepted L04
 tooling-observation limitation. MT-L04 remains BLOCKED. PRE-CLOUD READY YES;
-Phase8 NOT STARTED. See docs/P7-M4-ACCEPTANCE.md.
+Phase8 NOT STARTED. See the external P7-M4 acceptance record.
 
 ### Milestone 6.1 — Definitions and period engine
 
@@ -316,19 +318,19 @@ or the final dependency/container/IaC security audit. Those remain Phase 9 work.
 
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
-| [x] **P7-M4-T01 — Stable/LTS runtime and dependency baseline (COMPLETE)** | Establish the supported pre-cloud runtime/dependency baseline | Review current Node.js, pnpm, Next.js, React, Express, Prisma, Zod, Vitest, Playwright, TypeScript, PostgreSQL, Docker images, and other relevant direct runtime/build dependencies. Prefer supported stable/LTS and compatible, justified patch/minor versions; do not chase a major version solely because it is newer; no beta/RC/canary/preview. Pin/reproduce versions and inspect deprecations/compatibility; major upgrades require explicit justification and impact review. | Phase 7 feature implementation | Document accepted versions; no knowingly obsolete/unsupported critical runtime; review compatibility; exact changes reviewable before regression testing | Verified/accepted 2026-10-02: Node 24.21.0, Next/plugin 16.3.8, PostgreSQL 16.15, API/web Node types 24.19.0; compatible transitive security fixes. Frozen install, Prisma validate/generate, lint/typecheck/build, tracked-file formatting, 1,149 passed/1 intentional skip, and Chromium smoke 9/9 passed. Root format fails only on preserved untracked diagrams; two MySQL-only Prisma tooling advisories deferred. See `docs/P7-M4-T01-BASELINE.md`; these are T01 results, not T02 evidence. |
-| [x] **P7-M4-T02 — Post-baseline automated regression (COMPLETE / VERIFIED / ACCEPTED)** | Prove the accepted Stable/LTS baseline did not break StockWise | Reproducible install; Prisma validate/generate; migrations from zero on a fresh guarded database; lint, typecheck, build, full automated suite and relevant E2E; demo fixture; container startup/smoke; authentication and business-critical regressions as applicable. | T01; completed application features | Automated gates pass on the final local baseline; migrations/schema remain reproducible; no unresolved baseline-induced regression; exact accepted versions are those carried into Manual UAT | Full automated regression and applicable guarded database, E2E, demo, and container checks. Fresh 2026-10-02: frozen install; Prisma validate/generate; 15 migrations from zero; lint/typecheck/build/format; 1,150 tests, zero skips; Chromium 23/23; demo generation/no-op/goldens; PostgreSQL and compiled app smoke PASS. Additional pre-existing refund FK-name drift disclosed, no baseline-induced regression. See `docs/P7-M4-T02-REGRESSION.md`. |
+| [x] **P7-M4-T01 — Stable/LTS runtime and dependency baseline (COMPLETE)** | Establish the supported pre-cloud runtime/dependency baseline | Review current Node.js, pnpm, Next.js, React, Express, Prisma, Zod, Vitest, Playwright, TypeScript, PostgreSQL, Docker images, and other relevant direct runtime/build dependencies. Prefer supported stable/LTS and compatible, justified patch/minor versions; do not chase a major version solely because it is newer; no beta/RC/canary/preview. Pin/reproduce versions and inspect deprecations/compatibility; major upgrades require explicit justification and impact review. | Phase 7 feature implementation | Document accepted versions; no knowingly obsolete/unsupported critical runtime; review compatibility; exact changes reviewable before regression testing | Verified/accepted 2026-10-02: Node 24.21.0, Next/plugin 16.3.8, PostgreSQL 16.15, API/web Node types 24.19.0; compatible transitive security fixes. Frozen install, Prisma validate/generate, lint/typecheck/build, tracked-file formatting, 1,149 passed/1 intentional skip, and Chromium smoke 9/9 passed. Root format fails only on preserved untracked diagrams; two MySQL-only Prisma tooling advisories deferred. See the external P7-M4-T01 baseline record; these are T01 results, not T02 evidence. |
+| [x] **P7-M4-T02 — Post-baseline automated regression (COMPLETE / VERIFIED / ACCEPTED)** | Prove the accepted Stable/LTS baseline did not break StockWise | Reproducible install; Prisma validate/generate; migrations from zero on a fresh guarded database; lint, typecheck, build, full automated suite and relevant E2E; demo fixture; container startup/smoke; authentication and business-critical regressions as applicable. | T01; completed application features | Automated gates pass on the final local baseline; migrations/schema remain reproducible; no unresolved baseline-induced regression; exact accepted versions are those carried into Manual UAT | Full automated regression and applicable guarded database, E2E, demo, and container checks. Fresh 2026-10-02: frozen install; Prisma validate/generate; 15 migrations from zero; lint/typecheck/build/format; 1,150 tests, zero skips; Chromium 23/23; demo generation/no-op/goldens; PostgreSQL and compiled app smoke PASS. Additional pre-existing refund FK-name drift disclosed, no baseline-induced regression. See the external P7-M4-T02 regression record. |
 | [x] **P7-M4-T03 — Full local manual business UAT (POST-REMEDIATION ACCEPTED WITH L04 LIMITATION)** | Manually validate feature-complete StockWise business workflows locally before AWS complexity | Human-executed UAT plan covering identity, email verification where configured, password lifecycle, onboarding, invitations, memberships, branch context; OWNER/ADMIN/BRANCH_MANAGER/INVENTORY_STAFF/CASHIER permissions and tenant/Branch isolation; Category/Product, Supplier, Inventory/adjustments, Purchasing/PO/Receiving, POS/payment, Sales History/receipt/refund/restock; Sales/Category/Branch/Inventory analytics, Forecast, Reorder; and scheduled AI snapshot generation plus provider/job/persisted insight flows once Phase 7.2/7.3 exist. Each case records prerequisite, actor/role, steps, expected UI/API result, expected business/database effect where relevant, negative/auth test, edge cases, and pass/fail evidence. | T02; feature-complete local application | Critical accepted flows manually exercised; failures resolved or explicitly blocking; no known blocker to AWS deployment; local application declared PRE-CLOUD READY | Human-executed plan with recorded outcomes and evidence; this task defines the plan, not UAT tooling |
 
 P7-M4-T01/T02 remain COMPLETE (verified/accepted). Historical T03 execution is
 CONCLUDED / NOT ACCEPTED at its original checkpoint: 250 PASS /7 FAIL /3 BLOCKED
-/0 N/A /0 pending=260; see docs/P7-M4-T03-UAT.md. Later REM-01/REM-VERIFY-01
+/0 N/A /0 pending=260; see the external P7-M4-T03 UAT record. Later REM-01/REM-VERIFY-01
 establish all eight findings VERIFIED FIXED and M11/P08 PASS. User explicitly
 accepted L04's tooling-observation limitation on2026-10-04; MT-L04 stays BLOCKED,
 with native layout/clipping/scaling/pagination/blank-page behavior unverified.
 Final canonical review accepts post-remediation T03 with this limitation:
 P7-M4 COMPLETE, Phase7 COMPLETE, PRE-CLOUD READY YES; Phase8 NOT STARTED.
-See [final acceptance](docs/P7-M4-ACCEPTANCE.md). This local
+See the external P7-M4 acceptance record. This local
 compatibility/regression/UAT gate does not replace **P9-M1-T02 — Dependency/
 container/IaC security review**, the final security-oriented audit in deployed/
 cloud context, or **P9-M4-T01 — End-to-end regression**, the complete regression
@@ -345,8 +347,8 @@ limitation.
 | Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
 | --- | --- | --- | --- | --- | --- |
 | [x] **P7-POST-M2-T01 — Desktop application sidebar and authentication navigation** | Make existing application destinations available across pages | Shared access-context-aware desktop sidebar, compact mobile menu, scoped Home/logo links, existing Log out flow; remove Home module-button navigation | Accepted Phase 7 local gate | Correct authenticated/signed-out navigation, role/scope visibility, accessible responsive behavior; no backend policy/session changes | Focused 46/46; full 1180 PASS/1 conditional demo SKIP/0 FAIL; focused Chromium 5/5 and production Chromium suite 32/32; axe checks, screenshot review, lint/format/typecheck/web build and diff checks passed 2026-10-05; no commit |
-| [x] **P7-POST-M2-T02 — Central monetary display formatting** | Display at least two fractional digits while retaining meaningful additional digits | Shared exact-string frontend formatter; Catalog, PO/Receiving, POS/checkout, Sales/refunds/receipt and Analytics monetary displays; preserve input and non-money precision | T01; accepted exact-decimal domain contracts | `4.0000` displays as `4.00`; meaningful precision and existing currency conventions retained; schema/API/calculations unchanged | Focused 113/113 (25 formatter, 88 component); full 1214 PASS/1 conditional demo SKIP/0 FAIL; Chromium 33/33; screenshot review, lint/format/typecheck/web build and diff checks passed 2026-10-05; no commit. See [validation record](docs/P7-POST-M2-T02-MONEY-DISPLAY.md) |
-| [x] **P7-POST-M2-T03 — Form/input UI consistency** | Make existing data-entry controls proportionate and consistent | Audit all 74 native control declarations; shared native-control styles, semantic widths, responsive form/toolbar layout, labels/errors/actions and existing dialog presentation | T02; accepted Phase 7 local gate | Consistent control heights and field proportions; mobile containment; unchanged payloads, validation, precision, authorization and workflows | Focused 185/185; full 1215 PASS/1 conditional demo SKIP/0 FAIL; production Chromium 40/40 including seven new layout scenarios; six-width screenshot review, lint/format/typecheck/web/API build and diff checks passed 2026-10-05; no commit. See [validation record](docs/P7-POST-M2-T03-FORM-UI.md) |
+| [x] **P7-POST-M2-T02 — Central monetary display formatting** | Display at least two fractional digits while retaining meaningful additional digits | Shared exact-string frontend formatter; Catalog, PO/Receiving, POS/checkout, Sales/refunds/receipt and Analytics monetary displays; preserve input and non-money precision | T01; accepted exact-decimal domain contracts | `4.0000` displays as `4.00`; meaningful precision and existing currency conventions retained; schema/API/calculations unchanged | Focused 113/113 (25 formatter, 88 component); full 1214 PASS/1 conditional demo SKIP/0 FAIL; Chromium 33/33; screenshot review, lint/format/typecheck/web build and diff checks passed 2026-10-05; no commit. See the external P7-POST-M2-T02 validation record |
+| [x] **P7-POST-M2-T03 — Form/input UI consistency** | Make existing data-entry controls proportionate and consistent | Audit all 74 native control declarations; shared native-control styles, semantic widths, responsive form/toolbar layout, labels/errors/actions and existing dialog presentation | T02; accepted Phase 7 local gate | Consistent control heights and field proportions; mobile containment; unchanged payloads, validation, precision, authorization and workflows | Focused 185/185; full 1215 PASS/1 conditional demo SKIP/0 FAIL; production Chromium 40/40 including seven new layout scenarios; six-width screenshot review, lint/format/typecheck/web/API build and diff checks passed 2026-10-05; no commit. See the external P7-POST-M2-T03 validation record |
 
 ## Phase 8 — AWS cloud delivery
 
@@ -471,8 +473,8 @@ Current-state constraints that the next task must preserve:
 
 ### Current final acceptance handoff — P7-M4 COMPLETE with accepted L04 limitation
 
-Final canonical review is [P7-M4-ACCEPTANCE](docs/P7-M4-ACCEPTANCE.md),
-2026-10-04/main/d66bb7720c015d636a732ee4b6db931c41eb65e2. All eight product
+Final canonical review is the external P7-M4 acceptance record,
+2026-10-04/main/5857d93cdecf1b5f526a386083f03c3068932075. All eight product
 findings VERIFIED FIXED; M11/P08 PASS; MT-L04 remains BLOCKED with explicitly
 accepted tooling-observation limitation. Native preview layout, clipping, scaling,
 pagination and blank-page behavior remain unverified. Latest L04 attempt made
@@ -489,14 +491,14 @@ authorization in a NEW THREAD.
 
 ### Historical REM-VERIFY-01 handoff — before L04 disposition
 
-P7-M4-REM-01 is committed at edcdc42832002951a6cedc1c70840102625fdef2.
-Its preceding automated gates remain recorded in [REM-01](docs/P7-M4-REM-01.md).
+P7-M4-REM-01 is committed at 05defc7dc2103e8f3797438449efd0749f6ae95e.
+Its preceding automated gates remain recorded in the external P7-M4-REM-01 remediation record.
 The separate authorized P7-M4-REM-VERIFY-01 directly verifies MT-001–007 and
 T03-AI-001 as VERIFIED FIXED, with real UI/persistence and controlled local AI
 responses. Headed390px viewport/375px client and supplementary390/375px client
 checks fit; tablet/desktop comparisons pass. MT-M11 independent timezone and
 MT-P08 normal client-JS cookie observations PASS. MT-L04 native print preview
-remains BLOCKED after one bounded attempt. See [VERIFY-01](docs/P7-M4-REM-VERIFY-01.md).
+remains BLOCKED after one bounded attempt. See the external P7-M4-REM-VERIFY-01 verification record.
 
 Historical T03 remains 250 PASS /7 FAIL /3 BLOCKED /0 N/A /0 pending; acceptance
 NOT MET, P7-M4 incomplete and PRE-CLOUD READY NO. No product finding remains
@@ -514,7 +516,7 @@ MODEL: GPT-6.1 Sol
 EFFORT: High
 SKILLS: project-operating-standard; stockwise-source-of-truth-change-gate
 
-Read AGENTS.md, PROJECT_PLAN.md, docs/P7-M4-T03-UAT.md and final-state-20261004.json
+Read AGENTS.md, PROJECT_PLAN.md, the external P7-M4-T03 UAT record and final-state-20261004.json
 in the preserved P7-M4-T03-20261002 evidence namespace. All260 classified:
 250 PASS /7 FAIL /3 BLOCKED /0 N/A /0 pending; MT-P01–P06 PASS, lastMT-P06.
 T03 acceptance NOT MET; P7-M4 incomplete; PRE-CLOUD READY NO; Phase8 not started.
