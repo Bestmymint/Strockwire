@@ -589,6 +589,13 @@ Owning a table does not mean bypassing another module's invariant. For example, 
 - Use Tailwind CSS and shadcn/ui for the component system.
 - Use Recharts for accessible, labeled chart views; provide textual/tabular alternatives for critical numbers.
 - Keep authorization enforced on the API even if the UI hides inaccessible actions.
+- The shared application shell reads the existing `access-context` query for
+  authentication and resolves URL candidates through `resolveApplicationContext`.
+  Authenticated desktop navigation uses a persistent left sidebar; smaller
+  screens use an expandable menu. Home and the StockWise logo target the scoped
+  `/app` workspace. Existing role/scope visibility is UX only; Express remains
+  authoritative. Log out reuses the current-session logout flow at the sidebar
+  bottom. Signed-out navigation retains Sign in without application destinations.
 - Treat selected organization/branch as navigation context, not proof of permission.
 - Present loading, empty, stale, partial-data, error, and retry states.
 - Never compute authoritative checkout prices or analytics in the browser.

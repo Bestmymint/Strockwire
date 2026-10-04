@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
+import { type ReactNode, Suspense } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import { QueryProvider } from "@/providers/query-provider";
@@ -20,7 +20,9 @@ export default function RootLayout({ children }: RootLayoutProps) {
     <html lang="en">
       <body>
         <QueryProvider>
-          <AppShell>{children}</AppShell>
+          <Suspense fallback={<p aria-live="polite">Loading StockWise…</p>}>
+            <AppShell>{children}</AppShell>
+          </Suspense>
         </QueryProvider>
       </body>
     </html>

@@ -24,6 +24,7 @@ test("owner navigates sales, category, and branch analytics at tablet width", as
   await signIn(page, E2E_OWNER_EMAIL);
   await page.setViewportSize({ width: 768, height: 900 });
   await page.getByRole("button", { name: "Catalog E2E Store" }).click();
+  await page.getByRole("button", { name: "Menu", exact: true }).click();
   await page.getByRole("link", { name: "Analytics" }).click();
   await expect(page).toHaveURL(/\/app\/analytics/);
   await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
@@ -130,6 +131,7 @@ test("owner reads a stale AI summary safely on mobile", async ({ page }) => {
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Catalog E2E Store" }).click();
+  await page.getByRole("button", { name: "Menu", exact: true }).click();
   await page.getByRole("link", { name: "Analytics" }).click();
   await page.getByRole("button", { name: "AI insights" }).click();
   await expect(page.getByText("Latest scheduled report failed")).toBeVisible();

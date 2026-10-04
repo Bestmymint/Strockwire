@@ -70,6 +70,8 @@ test("manager may edit Suppliers but cashier receives no Supplier access", async
     page.getByRole("button", { name: "Create supplier" }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Deactivate" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Log out" }).click();
+  await expect(page).toHaveURL("/login");
   await signIn(page, E2E_CASHIER_EMAIL);
   await page.goto(supplierPath);
   await expect(

@@ -46,7 +46,7 @@ export function LogoutButton() {
         onClick={handleLogout}
         type="button"
       >
-        {isSubmitting ? "Signing out…" : "Sign out"}
+        {isSubmitting ? "Logging out…" : "Log out"}
       </button>
     </div>
   );

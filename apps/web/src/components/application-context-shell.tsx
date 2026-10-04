@@ -1,7 +1,6 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 
@@ -11,7 +10,6 @@ import {
   clearPreviousBranchQueries,
   resolveApplicationContext,
 } from "@/application-context";
-import { LogoutButton } from "@/components/auth/logout-button";
 
 export function ApplicationContextShell() {
   const router = useRouter();
@@ -91,7 +89,6 @@ export function ApplicationContextShell() {
           <p className="text-muted-foreground">
             Ask an organization owner or administrator to restore access.
           </p>
-          <LogoutButton />
         </section>
       );
     }
@@ -121,9 +118,6 @@ export function ApplicationContextShell() {
 
   if (resolved === null) return null;
   const activeOrganization = resolved.organization;
-  const canManage =
-    activeOrganization.role === "OWNER" || activeOrganization.role === "ADMIN";
-
   return (
     <section className="w-full space-y-8">
       <div className="rounded-lg border bg-card p-5 sm:p-7">
@@ -179,80 +173,6 @@ export function ApplicationContextShell() {
             </select>
           </label>
         </div>
-      </div>
-      <div className="flex flex-wrap gap-3">
-        <Link
-          className="inline-flex min-h-11 items-center rounded-md bg-foreground px-4 text-sm font-medium text-background"
-          href={`/app/catalog?organizationId=${activeOrganization.id}&branchId=${resolved.branch?.id ?? ""}`}
-        >
-          Catalog
-        </Link>
-        <Link
-          className="inline-flex min-h-11 items-center rounded-md bg-foreground px-4 text-sm font-medium text-background"
-          href={`/app/inventory?organizationId=${activeOrganization.id}&branchId=${resolved.branch?.id ?? ""}`}
-        >
-          Inventory
-        </Link>
-        {activeOrganization.role !== "INVENTORY_STAFF" ? (
-          <Link
-            className="inline-flex min-h-11 items-center rounded-md bg-foreground px-4 text-sm font-medium text-background"
-            href={`/app/pos?organizationId=${activeOrganization.id}&branchId=${resolved.branch?.id ?? ""}`}
-          >
-            Point of sale
-          </Link>
-        ) : null}
-        {activeOrganization.role === "OWNER" ||
-        activeOrganization.role === "ADMIN" ||
-        activeOrganization.role === "BRANCH_MANAGER" ||
-        activeOrganization.role === "INVENTORY_STAFF" ? (
-          <Link
-            className="inline-flex min-h-11 items-center rounded-md bg-foreground px-4 text-sm font-medium text-background"
-            href={`/app/analytics?organizationId=${activeOrganization.id}&branchId=${resolved.branch?.id ?? ""}`}
-          >
-            Analytics
-          </Link>
-        ) : null}
-        {activeOrganization.role !== "INVENTORY_STAFF" ? (
-          <Link
-            className="inline-flex min-h-11 items-center rounded-md bg-foreground px-4 text-sm font-medium text-background"
-            href={`/app/sales?organizationId=${activeOrganization.id}&branchId=${resolved.branch?.id ?? ""}`}
-          >
-            Sales history
-          </Link>
-        ) : null}
-        {activeOrganization.role !== "CASHIER" ? (
-          <Link
-            className="inline-flex min-h-11 items-center rounded-md bg-foreground px-4 text-sm font-medium text-background"
-            href={`/app/suppliers?organizationId=${activeOrganization.id}&branchId=${resolved.branch?.id ?? ""}`}
-          >
-            Suppliers
-          </Link>
-        ) : null}
-        {activeOrganization.role !== "CASHIER" ? (
-          <Link
-            className="inline-flex min-h-11 items-center rounded-md bg-foreground px-4 text-sm font-medium text-background"
-            href={`/app/purchase-orders?organizationId=${activeOrganization.id}&branchId=${resolved.branch?.id ?? ""}`}
-          >
-            Purchase orders
-          </Link>
-        ) : null}
-        {canManage ? (
-          <>
-            <Link
-              className="inline-flex min-h-11 items-center rounded-md bg-foreground px-4 text-sm font-medium text-background"
-              href={`/app/branches?organizationId=${activeOrganization.id}&branchId=${resolved.branch?.id ?? ""}`}
-            >
-              Manage branches
-            </Link>
-            <Link
-              className="inline-flex min-h-11 items-center rounded-md border px-4 text-sm font-medium"
-              href={`/app/members?organizationId=${activeOrganization.id}&branchId=${resolved.branch?.id ?? ""}`}
-            >
-              Manage members
-            </Link>
-          </>
-        ) : null}
-        <LogoutButton />
       </div>
     </section>
   );

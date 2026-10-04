@@ -471,7 +471,7 @@ describe("password recovery and logout", () => {
       organizations: [],
       user: { displayName: null, email: "person@example.com", id: "user-id" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
     await waitFor(() => expect(logout).toHaveBeenCalledTimes(1));
     expect(routerPush).toHaveBeenCalledWith("/login");
     expect(queryClient.getQueryData(["access-context"])).toBeUndefined();

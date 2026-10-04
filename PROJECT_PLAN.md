@@ -336,6 +336,16 @@ in a production-like environment after cloud/hardening. Phase 9 retains producti
 cloud hardening, security, resilience, performance, experiments, and final
 production-readiness.
 
+## Post-Phase-7 UI maintenance
+
+This work preserves Phase 7 completion and PRE-CLOUD READY YES; Phase 8 remains
+NOT STARTED. It does not alter historical UAT evidence or the accepted MT-L04
+limitation.
+
+| Status / Task | Objective | Scope | Dependencies | Acceptance | Testing |
+| --- | --- | --- | --- | --- | --- |
+| [x] **P7-POST-M2-T01 — Desktop application sidebar and authentication navigation** | Make existing application destinations available across pages | Shared access-context-aware desktop sidebar, compact mobile menu, scoped Home/logo links, existing Log out flow; remove Home module-button navigation | Accepted Phase 7 local gate | Correct authenticated/signed-out navigation, role/scope visibility, accessible responsive behavior; no backend policy/session changes | Focused 46/46; full 1180 PASS/1 conditional demo SKIP/0 FAIL; focused Chromium 5/5 and production Chromium suite 32/32; axe checks, screenshot review, lint/format/typecheck/web build and diff checks passed 2026-10-05; no commit |
+
 ## Phase 8 — AWS cloud delivery
 
 ### Milestone 8.1 — Production architecture and IaC decision gate

@@ -104,24 +104,13 @@ describe("application context shell", () => {
       await screen.findByRole("heading", { name: "Store One" }),
     ).toBeTruthy();
     expect(screen.getByLabelText("Branch")).toHaveProperty("value", BRANCH_A);
-    expect(
-      screen.getByRole("link", { name: "Catalog" }).getAttribute("href"),
-    ).toBe(`/app/catalog?organizationId=${ORG_ONE}&branchId=${BRANCH_A}`);
-    expect(
-      screen.getByRole("link", { name: "Inventory" }).getAttribute("href"),
-    ).toBe(`/app/inventory?organizationId=${ORG_ONE}&branchId=${BRANCH_A}`);
-    expect(
-      screen.getByRole("link", { name: "Point of sale" }).getAttribute("href"),
-    ).toBe(`/app/pos?organizationId=${ORG_ONE}&branchId=${BRANCH_A}`);
-    expect(
-      screen.getByRole("link", { name: "Sales history" }).getAttribute("href"),
-    ).toBe(`/app/sales?organizationId=${ORG_ONE}&branchId=${BRANCH_A}`);
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Log out" })).toBeNull();
     await waitFor(() =>
       expect(replace).toHaveBeenCalledWith(
         `/app?organizationId=${ORG_ONE}&branchId=${BRANCH_A}`,
       ),
     );
-    expect(screen.getByRole("link", { name: "Manage branches" })).toBeTruthy();
   });
 
   it("requires an organization choice when several are accessible", async () => {
@@ -199,7 +188,7 @@ describe("application context shell", () => {
         name: "No active organization access",
       }),
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Log out" })).toBeNull();
   });
 
   it("shows a safe error without rendering setup when access context is unavailable", async () => {
@@ -212,7 +201,7 @@ describe("application context shell", () => {
     expect(screen.queryByText("Set up StockWise")).toBeNull();
   });
 
-  it("does not offer sales history navigation to inventory staff", async () => {
+  it("keeps the workspace selectors without duplicated module navigation", async () => {
     vi.stubGlobal(
       "fetch",
       vi
@@ -225,6 +214,6 @@ describe("application context shell", () => {
 
     await screen.findByRole("heading", { name: "Store One" });
     expect(screen.queryByRole("link", { name: "Sales history" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Analytics" })).toBeTruthy();
+    expect(screen.getByLabelText("Branch")).toBeTruthy();
   });
 });
