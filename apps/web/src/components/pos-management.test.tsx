@@ -68,23 +68,28 @@ const unavailableTea = {
   sku: "TEA-02",
 };
 const completedSale = {
+  actorDisplayNameSnapshot: "Historical cashier",
   branchCodeSnapshot: "MAIN",
   branchNameSnapshot: "Main",
   currency: "THB" as const,
   discount: null,
   discountAmount: "0.00",
+  id: "50000000-0000-4000-8000-000000000001",
   items: [
     {
+      id: "60000000-0000-4000-8000-000000000001",
       lineDiscount: "0.00",
       lineGross: "0.30",
       lineNet: "0.30",
       nameSnapshot: "Coffee",
       quantity: "3",
+      skuSnapshot: "COFFEE-01",
       unitPrice: "0.1000",
       unitSnapshot: "EA" as const,
     },
   ],
   occurredAt: "2026-09-18T10:00:00.000Z",
+  organizationNameSnapshot: "Historical shop",
   outputVatAmount: "0.00",
   payment: {
     amount: "0.30",
@@ -95,6 +100,7 @@ const completedSale = {
   },
   reference: "SALE-001",
   subtotalAmount: "0.30",
+  taxableAmount: null,
   totalAmount: "0.30",
 };
 
@@ -425,7 +431,18 @@ describe("POS management UI", () => {
     expect(
       await screen.findByRole("heading", { name: "Sale completed" }),
     ).toBeTruthy();
-    expect(screen.getByText(/SALE-001/)).toBeTruthy();
+    const receipt = screen.getByLabelText("Printable receipt");
+    expect(receipt.textContent).toContain("Sale SALE-001");
+    expect(receipt.textContent).toContain("Historical shop");
+    expect(receipt.textContent).toContain("Cashier: Historical cashier");
+    expect(receipt.textContent).toContain("3 EA × THB 0.10");
+    expect(receipt.textContent).toContain(
+      "Tendered THB 1.00 · Change THB 0.70",
+    );
+    const print = vi.spyOn(window, "print").mockImplementation(() => {});
+    fireEvent.click(screen.getByRole("button", { name: "Print receipt" }));
+    expect(print).toHaveBeenCalledTimes(1);
+    print.mockRestore();
     expect(checkoutSale).toHaveBeenCalledWith(
       { branchId: BRANCH_ID, organizationId: ORGANIZATION_ID },
       "checkout-key-one",
@@ -435,6 +452,7 @@ describe("POS management UI", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "New sale" }));
     expect(await screen.findByText(/add an available product/i)).toBeTruthy();
+    expect(screen.queryByLabelText("Printable receipt")).toBeNull();
   });
 
   it("posts a successful TRANSFER sale with its optional reference", async () => {

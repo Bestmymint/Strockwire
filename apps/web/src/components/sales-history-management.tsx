@@ -12,6 +12,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { formatThb } from "@/money-display";
+import { SaleReceipt } from "@/components/sale-receipt";
 import {
   applicationContextUrl,
   resolveApplicationContext,
@@ -475,7 +476,7 @@ function SaleDetailContent({
           scopeKey={scopeKey}
         />
       ) : null}
-      <Receipt sale={sale} />
+      <SaleReceipt sale={sale} />
     </>
   );
 }
@@ -752,7 +753,12 @@ function SaleItems({ sale }: { sale: SalesHistoryDetail }) {
       <h3 className="font-semibold" id="sale-items-heading">
         Items
       </h3>
-      <div className="overflow-x-auto rounded-md border">
+      <div
+        aria-label="Sale item details"
+        className="overflow-x-auto rounded-md border focus-visible:outline-2 focus-visible:outline-ring"
+        role="region"
+        tabIndex={0}
+      >
         <table className="w-full min-w-[40rem] text-left text-sm">
           <thead className="border-b bg-muted text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
@@ -880,67 +886,5 @@ function CostDetails({ sale }: { sale: SalesHistoryDetail }) {
         )}
       </ul>
     </section>
-  );
-}
-
-function Receipt({ sale }: { sale: SalesHistoryDetail }) {
-  return (
-    <article
-      aria-label="Printable receipt"
-      className="sales-receipt rounded-lg border p-5 sm:p-7"
-    >
-      <header className="border-b pb-4 text-center">
-        <h2 className="text-xl font-semibold">{sale.organizationName}</h2>
-        <p>
-          {sale.branchCode} — {sale.branchName}
-        </p>
-        <p className="mt-2 text-sm">Operational sale receipt</p>
-      </header>
-      <div className="space-y-1 py-4 text-sm">
-        <p>Sale {sale.reference}</p>
-        <p>{formatAbsoluteTimestamp(sale.createdAt)}</p>
-        <p>Cashier: {sale.actorDisplayName}</p>
-      </div>
-      <ul className="space-y-3 border-y py-4 text-sm">
-        {sale.items.map((item) => (
-          <li key={item.id}>
-            <div className="flex justify-between gap-3">
-              <span className="font-medium">{item.productName}</span>
-              <span>{formatThb(item.lineNet)}</span>
-            </div>
-            <p className="text-muted-foreground">
-              {item.productSku} · {item.quantity} {item.unit} ×{" "}
-              {formatThb(item.unitPrice)}
-            </p>
-          </li>
-        ))}
-      </ul>
-      <div className="space-y-2 py-4 text-sm">
-        <TotalRow label="Subtotal" value={sale.subtotalAmount} />
-        {sale.discountAmount !== "0.00" ? (
-          <TotalRow label="Discount" value={sale.discountAmount} />
-        ) : null}
-        {sale.taxableAmount !== null ? (
-          <TotalRow label="Taxable amount" value={sale.taxableAmount} />
-        ) : null}
-        <TotalRow label="VAT" value={sale.outputVatAmount} />
-        <TotalRow emphasis label="Total" value={sale.totalAmount} />
-      </div>
-      <footer className="border-t pt-4 text-sm">
-        <p>
-          Payment: {sale.payment.method} · {formatThb(sale.payment.amount)}
-        </p>
-        {sale.payment.method === "CASH" ? (
-          <p>
-            Tendered {formatThb(sale.payment.amountTendered)} · Change{" "}
-            {formatThb(sale.payment.changeAmount)}
-          </p>
-        ) : null}
-        {sale.payment.method === "TRANSFER" &&
-        sale.payment.reference !== null ? (
-          <p>Transfer reference: {sale.payment.reference}</p>
-        ) : null}
-      </footer>
-    </article>
   );
 }

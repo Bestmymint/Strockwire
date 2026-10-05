@@ -20,6 +20,7 @@ import {
 } from "@/sales-api-client";
 
 import { SalesHistoryManagement } from "./sales-history-management";
+import { SaleReceipt } from "./sale-receipt";
 
 const ORGANIZATION_ID = "10000000-0000-4000-8000-000000000001";
 const BRANCH_ID = "20000000-0000-4000-8000-000000000001";
@@ -183,6 +184,104 @@ afterEach(() => {
 });
 
 describe("sales history UI", () => {
+  it("renders the receipt identity and frozen totals including registered VAT and discount", () => {
+    render(
+      <SaleReceipt
+        sale={{
+          ...detail,
+          discount: {
+            type: "AMOUNT",
+            amount: "1.34",
+            reason: "Approved discount",
+          },
+          discountAmount: "1.34",
+          subtotalAmount: "12.34",
+          taxableAmount: "10.28",
+          outputVatAmount: "0.72",
+          salesVatStatus: "REGISTERED",
+          salesVatRate: "7",
+          totalAmount: "11.00",
+          items: [
+            {
+              ...detail.items[0]!,
+              lineDiscount: "1.34",
+              lineNet: "11.00",
+              lineTaxable: "10.28",
+              lineOutputVat: "0.72",
+            },
+          ],
+          payment: {
+            method: "CASH",
+            amount: "11.00",
+            amountTendered: "20.00",
+            changeAmount: "9.00",
+            reference: null,
+          },
+        }}
+      />,
+    );
+    const receipt = screen.getByLabelText("Printable receipt");
+    expect(receipt.textContent).toContain("SALE-IMMUTABLE-001");
+    expect(receipt.textContent).toContain("2026-09-18 10:00:00 UTC");
+    expect(receipt.textContent).toContain("Historical cashier");
+    for (const value of [
+      "SubtotalTHB 12.34",
+      "DiscountTHB 1.34",
+      "Taxable amountTHB 10.28",
+      "VATTHB 0.72",
+      "TotalTHB 11.00",
+    ]) {
+      expect(receipt.textContent).toContain(value);
+    }
+  });
+
+  it("omits unsupported optional fields and renders long catalog text safely", () => {
+    const productName =
+      "<img src=x onerror=alert(1)> " + "Long product name ".repeat(30);
+    render(
+      <SaleReceipt
+        sale={{
+          ...detail,
+          payment: {
+            method: "TRANSFER",
+            amount: "12.34",
+            amountTendered: null,
+            changeAmount: null,
+            reference: null,
+          },
+          items: [{ ...detail.items[0]!, productName }],
+        }}
+      />,
+    );
+    const receipt = screen.getByLabelText("Printable receipt");
+    expect(receipt.textContent).toContain(productName);
+    expect(receipt.querySelector("img")).toBeNull();
+    expect(receipt.textContent).toContain("Payment: TRANSFER · THB 12.34");
+    expect(receipt.textContent).not.toMatch(
+      /Taxable amount|Discount|Tendered|Change|Transfer reference|CARD|Stripe/,
+    );
+  });
+
+  it("retains every line in a long receipt and the authoritative total without recalculation", () => {
+    render(
+      <SaleReceipt
+        sale={{
+          ...detail,
+          items: Array.from({ length: 80 }, (_, index) => ({
+            ...detail.items[0]!,
+            id: String(index),
+            productName: `Historical item ${index}`,
+            unitPrice: "9007199254740993.1234",
+          })),
+        }}
+      />,
+    );
+    const receipt = screen.getByLabelText("Printable receipt");
+    expect(receipt.querySelectorAll("li")).toHaveLength(80);
+    expect(receipt.textContent).toContain("THB 9007199254740993.1234");
+    expect(receipt.textContent).toContain("TotalTHB 12.34");
+  });
+
   it.each([
     ["4.0000", "4.00"],
     ["4.1230", "4.123"],

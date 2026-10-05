@@ -41,23 +41,28 @@ const checkoutDiscountSchema = z.discriminatedUnion("type", [
   }),
 ]);
 const saleSchema = z.object({
+  actorDisplayNameSnapshot: z.string(),
   branchCodeSnapshot: z.string(),
   branchNameSnapshot: z.string(),
   currency: z.literal("THB"),
   discount: checkoutDiscountSchema.nullable(),
   discountAmount: z.string(),
+  id: z.string().uuid(),
   items: z.array(
     z.object({
+      id: z.string().uuid(),
       lineDiscount: z.string(),
       lineGross: z.string(),
       lineNet: z.string(),
       nameSnapshot: z.string(),
       quantity: z.string(),
+      skuSnapshot: z.string(),
       unitPrice: z.string(),
       unitSnapshot: productUnitSchema,
     }),
   ),
   occurredAt: timestampSchema,
+  organizationNameSnapshot: z.string(),
   outputVatAmount: z.string(),
   payment: z.discriminatedUnion("method", [
     z.object({
@@ -77,6 +82,7 @@ const saleSchema = z.object({
   ]),
   reference: z.string(),
   subtotalAmount: z.string(),
+  taxableAmount: z.string().nullable(),
   totalAmount: z.string(),
 });
 

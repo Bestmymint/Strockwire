@@ -77,6 +77,34 @@ entitlement state is implemented. Public-route browser tests can run with
 `pnpm exec playwright test --config playwright.public.config.ts` after a web
 production build, without API/database setup.
 
+### Thermal Sale receipt
+
+`P7-POST-M5-T01` shares one `SaleReceipt` presentation between the completed POS
+checkout and Sales History detail/reprint. Both existing API projections provide
+immutable Sale/item/payment/business/branch/cashier snapshots; the frontend adapts
+their field names without recalculating economics or reading current Catalog prices.
+Exact strings use the central monetary formatter. Existing quantity strings and UTC
+timestamp conventions are retained. Subtotal, optional discount/taxable amount, VAT,
+total, CASH tender/change and optional manual TRANSFER reference come from Sale data.
+Internal costs and linked refunds remain outside the receipt.
+
+Both flows expose an on-screen preview and `window.print()`. Receipt-scoped print CSS
+removes unrelated chrome/controls from layout and resets its ancestors, so hidden
+application content cannot create paginated whitespace. The primary preset is 80 mm
+paper, 4 mm margins and a 72 mm content width, with 10 pt text, safe wrapping, item
+break avoidance and a kept-together totals/payment group. CSS uses an 80 × 297 mm
+paged fallback because page size requires two dimensions; the receipt has no fixed
+height and long sales paginate naturally. Operators select the driver's 80 mm paper
+size, 100% scale and disable browser headers/footers. No direct printer protocol or
+printer-profile system is introduced.
+
+After a production web build, receipt/label browser checks reuse
+`pnpm exec playwright test --config playwright.labels.config.ts` with controlled API
+responses and no database. DOM/CSS, print invocation, responsive screenshots and
+headless PDF are software evidence. Native browser print preview remains UNVERIFIED
+pending human-assisted `P7-POST-M5-T02`; physical thermal printing remains UNVERIFIED.
+Historical MT-L04 and the accepted Phase 7 checkpoint are unchanged.
+
 ### Catalog barcode labels
 
 Catalog labels reuse the existing optional Product barcode under `ADR-022`,

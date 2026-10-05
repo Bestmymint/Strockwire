@@ -87,23 +87,28 @@ describe("sales API client", () => {
         {
           data: {
             sale: {
+              actorDisplayNameSnapshot: "Historical cashier",
               branchCodeSnapshot: "MAIN",
               branchNameSnapshot: "Main",
               currency: "THB",
               discount: null,
               discountAmount: "0.00",
+              id: SALE_ID,
               items: [
                 {
+                  id: "50000000-0000-4000-8000-000000000001",
                   lineDiscount: "0.00",
                   lineGross: "60.12",
                   lineNet: "60.12",
                   nameSnapshot: "Coffee",
                   quantity: "1",
+                  skuSnapshot: "COFFEE",
                   unitPrice: "60.1234",
                   unitSnapshot: "EA",
                 },
               ],
               occurredAt: "2026-09-18T10:00:00.000Z",
+              organizationNameSnapshot: "Historical shop",
               outputVatAmount: "0.00",
               payment: {
                 amount: "60.12",
@@ -114,6 +119,7 @@ describe("sales API client", () => {
               },
               reference: "SALE-001",
               subtotalAmount: "60.12",
+              taxableAmount: null,
               totalAmount: "60.12",
             },
           },
@@ -140,6 +146,10 @@ describe("sales API client", () => {
     );
 
     expect(sale.totalAmount).toBe("60.12");
+    expect(sale.actorDisplayNameSnapshot).toBe("Historical cashier");
+    expect(sale.organizationNameSnapshot).toBe("Historical shop");
+    expect(sale.items[0]?.skuSnapshot).toBe("COFFEE");
+    expect(sale.taxableAmount).toBeNull();
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(init.credentials).toBe("same-origin");
     expect(init.headers).toMatchObject({ "Idempotency-Key": "checkout-key" });

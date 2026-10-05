@@ -12,6 +12,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { PosBarcodeScanner } from "./pos-barcode-scanner";
+import { SaleReceipt } from "./sale-receipt";
 
 import { formatThb } from "@/money-display";
 import {
@@ -1145,6 +1146,10 @@ function SaleComplete({
       <PrimaryButton onClick={onNewSale} type="button">
         New sale
       </PrimaryButton>
+      <PrimaryButton onClick={() => window.print()} type="button">
+        Print receipt
+      </PrimaryButton>
+      <SaleReceipt sale={sale} />
     </section>
   );
 }

@@ -85,25 +85,130 @@ body {
   }
 }
 
+.sales-receipt {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 30rem;
+  margin-inline: auto;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  background: white;
+  color: black;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.sales-receipt-header {
+  text-align: center;
+}
+
+.sales-receipt-header h2 {
+  font-size: 1.125em;
+  font-weight: 700;
+}
+
+.sales-receipt-identity,
+.sales-receipt-items,
+.sales-receipt-summary {
+  margin-top: 0.75em;
+  padding-top: 0.75em;
+  border-top: 1px dashed #777;
+}
+
+.sales-receipt-items li + li {
+  margin-top: 0.75em;
+}
+
+.sales-receipt-item-name {
+  font-weight: 600;
+}
+
+.sales-receipt-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  align-items: baseline;
+  gap: 0.5em;
+}
+
+.sales-receipt-row > :last-child {
+  text-align: right;
+}
+
+.sales-receipt-sku {
+  font-size: 0.85em;
+}
+
+.sales-receipt-total {
+  margin-top: 0.5em;
+  padding-top: 0.5em;
+  border-top: 1px solid black;
+  font-weight: 700;
+}
+
+.sales-receipt footer {
+  margin-top: 0.75em;
+}
+
+.sales-receipt-thanks {
+  margin-top: 0.75em;
+  text-align: center;
+}
+
+/* CSS requires two lengths: a paged fallback, not a fixed-height receipt. */
+@page sale-receipt {
+  size: 80mm 297mm;
+  margin: 4mm;
+}
+
 @media print {
-  body * {
-    visibility: hidden;
+  /* Remove unrelated layout, rather than leaving invisible paginated space. */
+  body:has(.sales-receipt)
+    *:not(.sales-receipt):not(.sales-receipt *):not(:has(.sales-receipt)) {
+    display: none !important;
   }
 
-  .sales-receipt,
-  .sales-receipt * {
-    visibility: visible;
+  html:has(.sales-receipt),
+  body:has(.sales-receipt),
+  body:has(.sales-receipt) *:has(.sales-receipt) {
+    display: block;
+    position: static;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    overflow: visible;
+    background: white;
+  }
+
+  body:has(.sales-receipt) {
+    page: sale-receipt;
   }
 
   .sales-receipt {
-    border: 0;
-    left: 0;
+    width: 72mm;
+    max-width: 100%;
     margin: 0;
-    max-width: 44rem;
-    padding: 1.5rem;
-    position: absolute;
-    top: 0;
-    width: 100%;
+    padding: 0;
+    border: 0;
+    font-size: 10pt;
+  }
+
+  .sales-receipt-header,
+  .sales-receipt-identity,
+  .sales-receipt-items li,
+  .sales-receipt-summary {
+    break-inside: avoid;
+  }
+
+  .sales-receipt-items {
+    orphans: 2;
+    widows: 2;
   }
 }
 
