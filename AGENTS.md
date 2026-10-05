@@ -19,13 +19,13 @@ The repository contains the repository/tooling foundation; identity, tenancy, au
 2. Inspect the actual repository, current branch/status if Git exists, and existing implementation.
 3. Read the authoritative document for the task:
    - Product scope/open questions: `BUILD_SPEC.md`
-   - Architecture: `docs/ARCHITECTURE.md`
-   - Data: `docs/DATABASE.md`
-   - Analytics/formulas: `docs/ANALYTICS.md`
+   - Architecture: `docs/architecture/ARCHITECTURE.md`
+   - Data: `docs/architecture/DATABASE.md`
+   - Analytics/formulas: `docs/contracts/ANALYTICS.md`
    - Behavior: `USE_CASE_SPECS.md`
-   - HTTP contracts: `docs/API.md`
+   - HTTP contracts: `docs/contracts/API.md`
    - Delivery order/status: `PROJECT_PLAN.md`
-   - Decision rationale: `docs/DECISIONS.md`
+   - Decision rationale: `docs/architecture/DECISIONS.md`
 4. Search for existing code and tests before creating new abstractions.
 5. Identify any blocking Open Question by its `OQ-*` ID. Do not guess its answer.
 
@@ -47,7 +47,7 @@ At minimum, enforce these gates:
 - Analytics periods/base metrics: `ADR-029`; fixed Branch/Product coverage
   classification: `ADR-030`; Forecasting V1: `ADR-031` (`OQ-012` resolved);
   stockout risk still requires a separate accepted policy; reorder follows `ADR-032` plus any
-  metric-specific dependency documented in `docs/ANALYTICS.md`
+  metric-specific dependency documented in `docs/contracts/ANALYTICS.md`
 
 The accepted MVP roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_STAFF`, and `CASHIER`. Authorization is fixed, deny-by-default RBAC from `ADR-016` and `BUILD_SPEC.md` section 8: a user has one organization role per organization; `OWNER`/`ADMIN` have organization-wide branch access; the remaining roles need explicit branch assignments. The Express API, not the frontend, is the security boundary. At least one OWNER must remain. `ADR-028` allows refund creation only for `OWNER`, `ADMIN`, and assigned `BRANCH_MANAGER`; authorized `CASHIER` may view refund records but cannot create them, and `INVENTORY_STAFF` has no refund access.
 
@@ -246,7 +246,7 @@ These rules are accepted; exact formatter/linter configuration is part of Reposi
 - React components and exported types/classes: `PascalCase`.
 - Functions, variables, and object properties: `camelCase`.
 - Constants: `UPPER_SNAKE_CASE` only for true constants/environment keys.
-- Database tables/columns and Prisma mapping: select one consistent convention during schema foundation and document it in `docs/DATABASE.md`.
+- Database tables/columns and Prisma mapping: select one consistent convention during schema foundation and document it in `docs/architecture/DATABASE.md`.
 - REST paths: plural kebab-case resources under `/api/v1`.
 - Zod schemas: descriptive names ending in `Schema`.
 - Tests: name by behavior, for example `rejects checkout from another branch`.
@@ -267,7 +267,7 @@ These rules are accepted; exact formatter/linter configuration is part of Reposi
    Branch reporting timezone and never uses server/browser local time as authority.
 10. Use explicit idempotency for retryable creates such as checkout and scheduled snapshots.
 11. Do not hard-delete ledger, completed sale, payment, or completed receipt history. Use an explicit lifecycle/reversal rule.
-12. Physical ID types, exact columns, status enums, delete/retention behavior, costing, and receipt numbering must follow `docs/DATABASE.md` and unresolved Open Questions.
+12. Physical ID types, exact columns, status enums, delete/retention behavior, costing, and receipt numbering must follow `docs/architecture/DATABASE.md` and unresolved Open Questions.
 
 ## 9. Migration policy
 
@@ -282,16 +282,16 @@ These rules are accepted; exact formatter/linter configuration is part of Reposi
 
 ## 10. API rules
 
-- Use REST under `/api/v1` and the contracts in `docs/API.md`.
+- Use REST under `/api/v1` and the contracts in `docs/contracts/API.md`.
 - Authenticate and authorize on the server for every protected endpoint.
 - Validate path, query, header, and body input with Zod.
 - Recalculate trusted prices, totals, organization scope, branch scope, and actor on the server.
 - Use a consistent success representation and the canonical error envelope.
 - Use appropriate HTTP status codes without leaking stack traces, SQL details, secrets, existence of inaccessible tenant resources, or provider internals.
 - Paginate list endpoints and define stable sorting.
-- Require idempotency keys where `docs/API.md` specifies retry-safe creation.
+- Require idempotency keys where `docs/contracts/API.md` specifies retry-safe creation.
 - Do not publish an endpoint whose behavior depends on an unresolved product rule. Mark the contract blocked instead.
-- Update `docs/API.md`, use cases, and tests in the same change as a contract change.
+- Update `docs/contracts/API.md`, use cases, and tests in the same change as a contract change.
 
 ## 11. Security rules
 
@@ -400,7 +400,7 @@ The Phase 1 foundation tasks collectively must establish exact root commands, st
 
 `P1-M3-T03 — Database test harness` added API-owned, server-only test configuration and helpers without a model, business table, or migration. `TEST_DATABASE_URL` must be a loopback PostgreSQL URL whose database name ends in `_test`; it must differ from runtime `DATABASE_URL`. The harness validates that target before provisioning or cleanup, creates the disposable test database through local `postgres` when absent, truncates only its public-schema data while retaining Prisma migration metadata, removes only its own scratch schema, and runs teardown cleanup. Vitest serializes files because they share that resettable target; the helper also supports intentional rollback transactions. Focused tests verified the connection, invalid/non-loopback/equal URL rejection, direct reset guard, cleanup, rollback, and repeated execution against a separate local Compose project on `127.0.0.1:5433`; the full suite and CI use the same test-only contract. No domain migration was applied.
 
-`P2-M1-T02 — Identity and tenancy schema` added UUID/snake-case Prisma models for users, organizations, branches, organization memberships, role-less branch assignments, hash-only PostgreSQL sessions and one-time tokens, email-bound invitations, and invitation branch scopes. Composite foreign keys enforce same-organization membership/branch and invitation/branch references; accepted invitations also bind the accepted user ID to the normalized invited email. All identity/tenancy foreign keys use restrictive update/delete actions. SQL checks and partial indexes enforce canonical emails, lifecycle/time ordering, hash/relationship uniqueness, and replacement-safe open verification/invitation records. The harness now applies committed migrations before resetting data. The last-active-OWNER, role/assignment compatibility, onboarding, and acceptance invariants remain assigned to later application transactions/policy as documented in `docs/DATABASE.md`. The 2026-08-24 forward correction makes only `User.displayName` nullable until profile/onboarding and preserves the nonblank check for present values; it does not modify initial migration history. Incremental existing-row and clean zero-to-latest PostgreSQL 16.11 migration paths, Prisma format/validate/generate, 13 schema tests, the 174-test suite, 4 focused harness tests, format-check, lint, strict typecheck, API/web builds, production audit, and diff review passed. It adds no authentication service, endpoint, Argon2 dependency, registration behavior, UI, authorization policy implementation, or later-domain model.
+`P2-M1-T02 — Identity and tenancy schema` added UUID/snake-case Prisma models for users, organizations, branches, organization memberships, role-less branch assignments, hash-only PostgreSQL sessions and one-time tokens, email-bound invitations, and invitation branch scopes. Composite foreign keys enforce same-organization membership/branch and invitation/branch references; accepted invitations also bind the accepted user ID to the normalized invited email. All identity/tenancy foreign keys use restrictive update/delete actions. SQL checks and partial indexes enforce canonical emails, lifecycle/time ordering, hash/relationship uniqueness, and replacement-safe open verification/invitation records. The harness now applies committed migrations before resetting data. The last-active-OWNER, role/assignment compatibility, onboarding, and acceptance invariants remain assigned to later application transactions/policy as documented in `docs/architecture/DATABASE.md`. The 2026-08-24 forward correction makes only `User.displayName` nullable until profile/onboarding and preserves the nonblank check for present values; it does not modify initial migration history. Incremental existing-row and clean zero-to-latest PostgreSQL 16.11 migration paths, Prisma format/validate/generate, 13 schema tests, the 174-test suite, 4 focused harness tests, format-check, lint, strict typecheck, API/web builds, production audit, and diff review passed. It adds no authentication service, endpoint, Argon2 dependency, registration behavior, UI, authorization policy implementation, or later-domain model.
 
 `P2-M1-T03 — Authorization policy foundation` added `apps/api/src/modules/identity/authorization-policy.ts`, the pure centralized permission evaluator and its 132-test unit matrix. It defines fixed typed capability names, private-branded context/scope values derived from server-resolved actor, membership, assignment, and resource ownership state, and deny-by-default organization/branch evaluation without a database query. `OWNER`/`ADMIN` have organization-wide scope; branch-only roles require active explicit assignments. OWNER-only governance remains distinct from ADMIN non-owner membership administration, and refund/void is deliberately absent pending `OQ-009`. It does not add an auth service, session middleware, endpoint, UI, Prisma model, or migration. Frozen install, format-check, lint, strict typecheck, 173 full tests, 4 harness tests, API/web builds, production audit, and diff review passed on 2026-08-24 using a removed-after-verification disposable loopback PostgreSQL Compose project.
 
@@ -431,11 +431,11 @@ Across the later foundation/application-shell tasks:
 `P1-M1-T04 — Environment example and validation contract` established the root `.env.example` ownership and handling contract. Exact names and values are added only when an owning process or infrastructure task exists and its blockers are resolved.
 
 - `apps/web` owns browser/build-time configuration. Its current Zod schema requires `STOCKWISE_API_ORIGIN`, which `next.config.ts` reads from the root `.env` only to configure the local same-origin health rewrite. It is not public client configuration. Tenant scope, trusted prices/totals, credentials, database settings, provider keys, and cloud secrets are never client configuration.
-- `apps/api` owns server-only runtime configuration, including `STOCKWISE_API_PORT` and future PostgreSQL, authentication, OpenRouter, and cloud settings. Server-only values must not be exposed through web configuration, logs, errors, health endpoints, screenshots, analytics snapshots, or AI prompts.
-- Each process validates only its own environment with a process-owned Zod schema at startup. Separate strict empty Next.js and Express schemas and tests exist; there is no speculative shared root schema.
+- `apps/api` owns server-only runtime configuration, including `STOCKWISE_API_PORT`, PostgreSQL, authentication, and OpenRouter settings. Cloud configuration remains future Phase 8 work. Server-only values must not be exposed through web configuration, logs, errors, health endpoints, screenshots, analytics snapshots, or AI prompts.
+- Each process validates only its own environment with a process-owned Zod schema at startup. Separate strict Next.js and Express schemas validate their implemented configuration and have process-owned tests; there is no speculative shared root schema.
 - Local development values must be non-production and documented by the task that introduces the corresponding process or resource. Test values must identify isolated, disposable resources and must never target shared, staging, or production data.
 - Populated `.env` and `.env.*` files remain ignored. Only redacted example files may be committed. Never place real secrets, tokens, credentials, or production values in an example.
-- `P1-M2-T04` owns the verified local port/origin contract: `STOCKWISE_API_PORT=3001`, `STOCKWISE_API_ORIGIN=http://127.0.0.1:3001`, and fixed web port `3000`. `P1-M3-T01` owns the Docker-only local PostgreSQL inputs `STOCKWISE_POSTGRES_USER`, `STOCKWISE_POSTGRES_PASSWORD`, `STOCKWISE_POSTGRES_DATABASE`, and `STOCKWISE_POSTGRES_PORT`; they are non-production values, are never browser configuration, and require a unique replacement in a populated local `.env`. `P1-M3-T02` owns the API-only `DATABASE_URL`, which connects to that loopback database, is PostgreSQL-scheme validated by the API Zod boundary, and must never be web or `NEXT_PUBLIC_` configuration. P1-M3-T03 owns the server-only `TEST_DATABASE_URL`; the test harness accepts only an isolated loopback `*_test` target that differs from `DATABASE_URL`, and this value is never web configuration. P2-M2-T03 owns API-only `STOCKWISE_PUBLIC_WEB_ORIGIN`, `STOCKWISE_EMAIL_PROVIDER`, `STOCKWISE_EMAIL_FROM`, and `RESEND_API_KEY`; email delivery follows the runtime/provider policy above. None is browser or `NEXT_PUBLIC_` configuration. Reporting timezone is Organization data under `ADR-029`, not an environment value; `ADR-033` fixes scheduled AI V1 policy, P7-M2-T01 implements its provider adapter, P7-M2-T02 implements prompt preparation, and P7-M2-T03 owns the insight job. P7-M3-T01 implements callable due-period orchestration, P7-M3-T02 implements persisted reads, and P7-M3-T03 implements the dashboard UI; the runtime trigger is not implemented. P7-M4-T01 and P7-M4-T02 are complete; P7-M4-T03 execution concluded with all 260 cases classified; acceptance remains unmet, P7-M4 incomplete and PRE-CLOUD READY NO. AWS topology/secret management remains `OQ-015`/`OQ-020`/Phase 8.
+- `P1-M2-T04` owns the verified local port/origin contract: `STOCKWISE_API_PORT=3001`, `STOCKWISE_API_ORIGIN=http://127.0.0.1:3001`, and fixed web port `3000`. `P1-M3-T01` owns the Docker-only local PostgreSQL inputs `STOCKWISE_POSTGRES_USER`, `STOCKWISE_POSTGRES_PASSWORD`, `STOCKWISE_POSTGRES_DATABASE`, and `STOCKWISE_POSTGRES_PORT`; they are non-production values, are never browser configuration, and require a unique replacement in a populated local `.env`. `P1-M3-T02` owns the API-only `DATABASE_URL`, which connects to that loopback database, is PostgreSQL-scheme validated by the API Zod boundary, and must never be web or `NEXT_PUBLIC_` configuration. P1-M3-T03 owns the server-only `TEST_DATABASE_URL`; the test harness accepts only an isolated loopback `*_test` target that differs from `DATABASE_URL`, and this value is never web configuration. P2-M2-T03 owns API-only `STOCKWISE_PUBLIC_WEB_ORIGIN`, `STOCKWISE_EMAIL_PROVIDER`, `STOCKWISE_EMAIL_FROM`, and `RESEND_API_KEY`; email delivery follows the runtime/provider policy above. None is browser or `NEXT_PUBLIC_` configuration. Reporting timezone is Organization data under `ADR-029`, not an environment value; `ADR-033` fixes scheduled AI V1 policy, P7-M2-T01 implements its provider adapter, P7-M2-T02 implements prompt preparation, and P7-M2-T03 owns the insight job. P7-M3-T01 implements callable due-period orchestration, P7-M3-T02 implements persisted reads, and P7-M3-T03 implements the dashboard UI; the runtime trigger is not implemented. P7-M4-T01 and P7-M4-T02 are complete; historical P7-M4-T03 execution concluded with all 260 cases classified and acceptance unmet at its original checkpoint. Final post-remediation acceptance is satisfied with the explicit user-accepted MT-L04 verification limitation: Phase 7 and P7-M4 COMPLETE, PRE-CLOUD READY YES; Phase 8 NOT STARTED. MT-L04 remains historically BLOCKED; native layout/clipping/scaling/pagination/blank-page behavior remains unverified. Post-Phase-7 maintenance/UI tasks do not reopen Phase 7. AWS topology/secret management remains `OQ-015`/`OQ-020`/Phase 8.
 
 P1-M1-T04 added no runtime validation before a process existed. P1-M2-T04 updates the web and API schemas with the only concrete local integration values; both schemas select only their owned input and reject missing, invalid, and unowned values. P1-M3-T03 adds a distinct test-only environment boundary for the database harness. All remaining configuration stays assigned to later tasks or decisions.
 

@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1 contract; implementation verified through P5-M4 |
+| Status | Architecture Freeze v1 contract; application API functionality implemented through Phase 7; Phase 8 NOT STARTED |
 | Base path | `/api/v1` |
 | Style | JSON REST |
 | Baseline | Architecture Freeze v1 |
@@ -56,7 +56,7 @@ Collection:
 }
 ```
 
-Analytics responses add definition/period/scope metadata required by `docs/ANALYTICS.md`.
+Analytics responses add definition/period/scope metadata required by `docs/contracts/ANALYTICS.md`.
 
 ### 3.3 Error envelope
 
@@ -1143,7 +1143,7 @@ printable refund document.
 `ADR-029` accepts Analytics V1 metric and reporting-time semantics. The Sales,
 Category, and Branch endpoints are implemented by P6-M2-T03; Inventory by
 P6-M3-T03; Forecast and Reorder by P6-M4-T04. Phase 6 API work is complete. Every
-response returns the metadata required by `docs/ANALYTICS.md` and only metrics
+response returns the metadata required by `docs/contracts/ANALYTICS.md` and only metrics
 marked Accepted.
 
 Common query concepts:

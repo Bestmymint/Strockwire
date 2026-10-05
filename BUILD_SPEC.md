@@ -6,7 +6,7 @@
 | Full name | StockWise: Smart Inventory and Sales Analytics Platform for SMEs |
 | Repository | `stockwise` pnpm workspace monorepo |
 | Baseline | Architecture Freeze v1 |
-| Status | Implemented and verified through P5-M3; refund contract accepted for P5-M4 implementation |
+| Status | Application functionality implemented through Phase 7; P7-M4 COMPLETE with accepted MT-L04 verification limitation; PRE-CLOUD READY YES; Phase 8 NOT STARTED |
 | Last updated | 2026-09-24 |
 
 ## 1. Purpose and source-of-truth map
@@ -19,13 +19,13 @@ Each topic has one authoritative owner. Other documents link to that owner inste
 | --- | --- |
 | Product scope, goals, roles, requirements, non-goals, master open questions | `BUILD_SPEC.md` |
 | Developer execution rules and Definition of Done | `AGENTS.md` |
-| System boundaries and component responsibilities | `docs/ARCHITECTURE.md` |
-| Logical data model, constraints, lifecycle, and transaction invariants | `docs/DATABASE.md` |
-| Metric and formula definitions, forecasting, report periods, AI snapshot contract | `docs/ANALYTICS.md` |
+| System boundaries and component responsibilities | `docs/architecture/ARCHITECTURE.md` |
+| Logical data model, constraints, lifecycle, and transaction invariants | `docs/architecture/DATABASE.md` |
+| Metric and formula definitions, forecasting, report periods, AI snapshot contract | `docs/contracts/ANALYTICS.md` |
 | User-visible behavior and edge cases | `USE_CASE_SPECS.md` |
-| REST resource and HTTP contracts | `docs/API.md` |
+| REST resource and HTTP contracts | `docs/contracts/API.md` |
 | Delivery order and status | `PROJECT_PLAN.md` |
-| Architecture decision history and rationale | `docs/DECISIONS.md` |
+| Architecture decision history and rationale | `docs/architecture/DECISIONS.md` |
 
 An accepted change must update every affected authoritative document in the same change. Do not resolve uncertainty in code. Add or update an Open Question first.
 
@@ -205,7 +205,7 @@ Google login is a future feature. No JWT browser authentication, browser token s
 ### 10.2 Product catalog
 
 - Manage organization-level categories and products.
-- Store SKU, optional barcode, name, description, one immutable base unit, product status, and one organization-level base selling price. Product has no organization-wide cost, valuation, or COGS field; future Branch/Product cost state follows `ADR-026`.
+- Store SKU, optional barcode, name, description, one immutable base unit, product status, and one organization-level base selling price. Product has no organization-wide cost, valuation, or COGS field; implemented Branch/Product cost state follows `ADR-026`.
 - Enforce organization-scoped SKU and barcode uniqueness rules.
 - Search and filter products for management and POS use.
 - Preserve past sale snapshots when current product details change.
@@ -216,7 +216,7 @@ Category ownership, lifecycle enums, base price, and base unit. Catalog REST
 management/search remains P3-M1-T03; no inventory, cost/valuation, branch-price,
 or operational quantity persistence is part of the catalog model.
 
-Branch-level price overrides are out of MVP scope. Every branch uses the Product's organization-level base selling price; a catalog-price change affects future operations only, and future sale items must snapshot the actual unit price used at sale time.
+Branch-level price overrides are out of MVP scope. Every branch uses the Product's organization-level base selling price; a catalog-price change affects future operations only, and SaleItems snapshot the actual unit price used at sale time.
 
 ### 10.3 Branch inventory
 
@@ -228,9 +228,9 @@ Branch-level price overrides are out of MVP scope. Every branch uses the Product
 - Prevent lost updates and overselling: MVP never permits a resulting negative
   balance, and no role has an override.
 
-The stock-transfer MVP scope is deferred by `ADR-025`. The implemented inventory
-foundation remains quantity-only; `ADR-026` defines future Branch/Product costing
-without asserting that cost or valuation persistence already exists.
+The stock-transfer MVP scope is deferred by `ADR-025`. Inventory balances retain
+the quantity projection, while P4-M3-T01 implements separate tenant-safe
+Branch/Product cost and valuation persistence under `ADR-026`.
 
 ### 10.4 Suppliers and purchasing
 
@@ -265,7 +265,7 @@ Partial/over/short receipt, multiple receipt events, receiving without a PO, sup
 
 ### 10.6 Analytics and forecasting
 
-- Calculate sales and inventory metrics using the definitions in `docs/ANALYTICS.md`.
+- Calculate sales and inventory metrics using the definitions in `docs/contracts/ANALYTICS.md`.
 - Support branch-level results and authorized organization-level aggregation.
 - Use one configurable Organization IANA reporting timezone, defaulting explicitly to
   `Asia/Bangkok`; store event timestamps in UTC and derive half-open daily,
@@ -280,7 +280,7 @@ Partial/over/short receipt, multiple receipt events, receiving without a PO, sup
 - Retain reproducible metric inputs or snapshots needed for reports and experiments.
 - Compare forecast results with actual values using accepted evaluation metrics.
 
-`OQ-011`/`OQ-016` are resolved by `ADR-029`. `docs/ANALYTICS.md` is the only place
+`OQ-011`/`OQ-016` are resolved by `ADR-029`. `docs/contracts/ANALYTICS.md` is the only place
 where accepted formulas, null semantics, period boundaries, or explicit deferrals may
 be changed. `ADR-030` accepts only the fixed coverage classification; `ADR-031`
 resolves `OQ-012` for Forecasting V1. `ADR-032` accepts Reorder V1's zero
@@ -384,7 +384,7 @@ multi-instance, production DoS, and long-term telemetry controls remain open in
 ### Catalog and inventory
 
 - **FR-CAT-001:** Products and categories shall be scoped to one organization.
-- **FR-CAT-002:** SKU and barcode constraints shall be enforced within the owning organization according to `docs/DATABASE.md`.
+- **FR-CAT-002:** SKU and barcode constraints shall be enforced within the owning organization according to `docs/architecture/DATABASE.md`.
 - **FR-CAT-003:** A Product shall use exactly one immutable MVP base unit from the accepted vocabulary; quantity input is a decimal string with accepted precision and is rejected rather than rounded when invalid.
 - **FR-CAT-004:** A Product shall have one organization-level non-negative base price represented by a decimal string with at most four fractional digits; it is not a branch-price override or final sales-transaction rounding rule.
 - **FR-CAT-005:** Product and Category mutations shall use exact `updatedAt` optimistic concurrency and preserve historical references through lifecycle status rather than hard deletion.
@@ -431,7 +431,7 @@ multi-instance, production DoS, and long-term telemetry controls remain open in
 
 ### Analytics and AI
 
-- **FR-AN-001:** Metric outputs shall be derived only from definitions in `docs/ANALYTICS.md`.
+- **FR-AN-001:** Metric outputs shall be derived only from definitions in `docs/contracts/ANALYTICS.md`.
 - **FR-AN-002:** Organization results shall aggregate authorized branch results without cross-tenant leakage.
 - **FR-AN-003:** Each event shall be attributed by its accepted persisted event time in the Organization reporting timezone; later refunds shall not rewrite original Sale periods.
 - **FR-AN-004:** UNKNOWN cost shall never be treated as zero; affected COGS, Gross Profit, Gross Margin, and inventory value shall be null with explicit coverage metadata.
@@ -525,7 +525,7 @@ Python, FastAPI, microservices, and Kubernetes are not part of the current basel
 
 ## 14. Important constraints
 
-1. This repository contains the approved repository/tooling foundation, Next.js web and Express API shells, completed identity/access lifecycle, and the organization-scoped Category/Product persistence model. Catalog APIs/UI and later retail-domain, analytics, AI, and cloud implementation remain planned.
+1. This repository implements the Next.js web application, Express modular monolith, identity/access lifecycle, Catalog/Suppliers, inventory, purchasing/receiving, POS/Sales/refunds, and Analytics/Forecast/Reorder/AI application functionality through Phase 7. Phase 7 and P7-M4 are COMPLETE with the accepted MT-L04 verification limitation; PRE-CLOUD READY YES; Phase 8 NOT STARTED. The runtime timer, cloud scheduling, AWS resources, and production deployment remain unimplemented.
 2. Product requirements and architecture decisions are made in planning and recorded here before Codex implements them.
 3. Codex may choose local implementation details only inside accepted boundaries; it must surface product or architecture ambiguity.
 4. Significant domain implementation must not start until the Critical Domain Decision Gate and every additional task-specific Open Question affecting that domain are resolved.
@@ -546,14 +546,15 @@ These decisions are mandatory gates before the affected domain implementation:
 | Email verification, password reset, and invitations | `ADR-014`, `ADR-021` (`OQ-004`, `OQ-006` resolved) |
 | Profile and organization/first-branch onboarding | `ADR-015` (`OQ-005` resolved) |
 | Authorization policies for accepted MVP roles | `ADR-016` (`OQ-022` resolved) |
-| Catalog schema and management API | `ADR-022` (`OQ-014`, `OQ-023`, `OQ-024` resolved); Product retains no organization-wide cost/valuation field; later Branch/Product cost state follows `ADR-026` |
+| Catalog schema and management API | `ADR-022` (`OQ-014`, `OQ-023`, `OQ-024` resolved); Product retains no organization-wide cost/valuation field; implemented Branch/Product cost state follows `ADR-026` |
 | Inventory mutations and stock availability | `ADR-024` plus the accepted quantity contract in `ADR-022` |
 | POS checkout and sales monetary truth | `ADR-027` plus `ADR-016`, `ADR-022`, `ADR-024`, and `ADR-026` (`OQ-008` resolved) |
 | Sales refund | `ADR-028` plus `ADR-016`, `ADR-022`, `ADR-024`, `ADR-026`, and `ADR-027` (`OQ-009` resolved; VOID excluded) |
 | Purchasing/receiving behavior | `ADR-024`, `ADR-026` plus the accepted quantity contract in `ADR-022` |
 | Analytics definitions and reporting periods | `ADR-029` (`OQ-011`, `OQ-016` resolved) |
 | Forecasting V1 | `ADR-031` (`OQ-012` resolved) plus `ADR-029` reporting time and `ADR-022` quantity units |
-| Stockout risk and reorder recommendation | Separate future policy decision plus `ADR-031` forecast and accepted inventory/purchasing inputs where used |
+| Stockout risk | Separate future policy decision plus `ADR-031` forecast and accepted inventory/purchasing inputs where used |
+| Reorder recommendation | Accepted `ADR-032` policy plus `ADR-031` forecast, `ADR-029` reporting time, and `ADR-022` quantity units |
 
 Other questions remain task-specific. Exact AWS topology, audit-log hardening,
 and performance/recovery targets remain open for their relevant phases;

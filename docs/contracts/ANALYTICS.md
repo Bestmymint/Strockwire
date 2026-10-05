@@ -716,7 +716,7 @@ available data with missing lead time, the result stays unavailable. V1 status
 is `AVAILABLE` or `UNAVAILABLE`; other reasons are `LEAD_TIME_REQUIRED`,
 `UNSUPPORTED_LEAD_TIME`, `INVENTORY_INTEGRITY_ERROR`, and
 `QUANTITY_OUT_OF_RANGE`. Invalid caller input still receives boundary
-validation at any future HTTP route owned by T04.
+validation at the HTTP routes implemented by P6-M4-T04.
 
 The minimal internal result carries Branch/Product IDs, unit,
 `forecastVersion`, `reorderVersion: "reorder-v1"`, forecast `sourceCutoff`,
@@ -1211,7 +1211,7 @@ dataStatus: complete | partial | insufficient | stale
 metric values with explicit null reason where applicable
 ```
 
-The exact API serialization belongs to `docs/API.md`; these semantic fields are mandatory.
+The exact API serialization belongs to `docs/contracts/API.md`; these semantic fields are mandatory.
 
 ## 14. Analytics snapshot contract for AI
 
@@ -1372,7 +1372,7 @@ Analytics V1 metric or timezone semantics.
 
 `stockwise-demo-v1` is the single P6-M5 demo fixture specification. P6-M5-T01
 freezes it; P6-M5-T02 implements and validates it as documented in
-[`DEMO_DATA.md`](DEMO_DATA.md). It is application history
+[`DEMO_DATA.md`](../development/DEMO_DATA.md). It is application history
 for demonstrations and later time-ordered experiments, not a claim about real
 retail demand. `analytics-v1`, `stock-risk-v1`, `forecast-sale-mean-28d-v1`,
 and `reorder-v1` retain their definitions above.

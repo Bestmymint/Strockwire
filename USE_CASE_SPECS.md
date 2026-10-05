@@ -8,7 +8,7 @@
 
 ## 1. How to use this document
 
-This document owns user- and system-visible behavior, including alternative flows and failures. Product scope is in `BUILD_SPEC.md`; exact HTTP shapes are in `docs/API.md`; data invariants are in `docs/DATABASE.md`; formulas are in `docs/ANALYTICS.md`.
+This document owns user- and system-visible behavior, including alternative flows and failures. Product scope is in `BUILD_SPEC.md`; exact HTTP shapes are in `docs/contracts/API.md`; data invariants are in `docs/architecture/DATABASE.md`; formulas are in `docs/contracts/ANALYTICS.md`.
 
 Statuses:
 
@@ -195,7 +195,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-CAT-001 — Create or update a product
 
-- **Status:** Implemented by P3-M1-T03; cost/valuation remains excluded from Product and belongs to future Branch/Product state under `ADR-026`
+- **Status:** Implemented by P3-M1-T03; cost/valuation remains excluded from Product and belongs to implemented Branch/Product state under `ADR-026`
 - **Actor:** Authorized owner/admin/inventory staff
 - **Preconditions:** Actor has catalog permission in the organization; referenced category is accessible and active as required.
 - **Trigger:** Actor submits product details.
@@ -208,7 +208,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   6. Return a safe product representation.
 - **Alternative flows:** Deactivate/reactivate a product; omit optional barcode/category; explicitly reassign to an active category or null. Unit is immutable after creation. Direct detail and authorized `includeInactive=true` lists retain inactive visibility. An unrelated edit may preserve the Product's current inactive Category.
 - **Error cases:** Invalid or excess-scale base price/quantity; fractional integer-only quantity; unsupported unit; duplicate SKU/barcode; inactive/cross-tenant category; stale update (`PRODUCT_STALE`); product referenced by history; database failure.
-- **Business rules:** Product is organization-level with one base price shared by every branch; no branch-price override exists in MVP. Base price accepts at most four decimal places and is rejected rather than rounded. Product has no authoritative cost, average-cost, COGS, or valuation field; future cost state is Branch/Product-owned under `ADR-026`. Updating catalog data never rewrites historical sale/receipt snapshots.
+- **Business rules:** Product is organization-level with one base price shared by every branch; no branch-price override exists in MVP. Base price accepts at most four decimal places and is rejected rather than rounded. Product has no authoritative cost, average-cost, COGS, or valuation field; implemented cost state is Branch/Product-owned under `ADR-026`. Updating catalog data never rewrites historical sale/receipt snapshots.
 - **Authorization:** Product create/edit is allowed to `OWNER`, `ADMIN`, `BRANCH_MANAGER`, and `INVENTORY_STAFF` in their allowed scope; product lifecycle excludes `INVENTORY_STAFF`. Branch-scoped roles supply an active assigned `branchId` candidate that the API re-resolves; `OWNER`/`ADMIN` may use organization scope.
 - **Expected result:** One valid organization product is stored without cross-tenant references.
 - **Acceptance criteria:** Validation, uniqueness, tenant, immutable-history, and unauthorized-role tests pass.
@@ -423,7 +423,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   2. It derives authorized Branches and converts Organization-local calendar boundaries
      to half-open UTC instants under IANA/DST rules.
   3. At one source cutoff/consistent read snapshot, it calculates only Accepted metric
-     definitions from normalized authoritative records in `docs/ANALYTICS.md`.
+     definitions from normalized authoritative records in `docs/contracts/ANALYTICS.md`.
   4. It returns `analytics-v1`, local/UTC period bounds, reporting timezone, included
      Branch scope, source cutoff, completeness/cost coverage, values, and null reasons.
   5. UI presents numbers/charts plus accessible textual/empty/partial/stale states.
@@ -492,7 +492,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-AI-002 — View a persisted AI insight
 
-- **Status:** Policy accepted by `ADR-033`; persisted read-only delivery (API and dashboard UI) is complete through Milestone 7.3. P7-M4-T01 is next; runtime scheduler triggering and replay remain unimplemented.
+- **Status:** Policy accepted by `ADR-033`; persisted read-only delivery (API and dashboard UI) is complete through Milestone 7.3. Phase 7 and P7-M4 are COMPLETE with the explicit accepted MT-L04 verification limitation; PRE-CLOUD READY YES; Phase 8 NOT STARTED; runtime scheduler triggering and replay remain unimplemented.
 - **Actor:** Authorized analytics viewer
 - **Preconditions:** Actor may access the insight's organization/branch scope.
 - **Trigger:** Actor opens an insight/dashboard panel.
@@ -516,4 +516,4 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 ### UC-CAT-002 — Override product price by branch
 
 - **Status:** Out of MVP scope by `ADR-022`.
-- **Business rules:** Every branch uses the Product's organization-level base price. No branch override table, API, UI, effective-date rule, or pricing permission exists in MVP. A future sale item must snapshot the actual unit price used at sale time.
+- **Business rules:** Every branch uses the Product's organization-level base price. No branch override table, API, UI, effective-date rule, or pricing permission exists in MVP. SaleItems snapshot the actual unit price used at sale time.

@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1; implementation verified through P5-M3; refund architecture accepted |
+| Status | Architecture Freeze v1; application functionality implemented through Phase 7; final acceptance with explicit MT-L04 verification limitation; PRE-CLOUD READY YES; Phase 8 NOT STARTED |
 | Baseline | Architecture Freeze v1 |
 | Last updated | 2026-09-24 |
 
 ## 1. Scope and authority
 
-This document is the Source of Truth for system boundaries, component responsibilities, data flows, module dependency rules, tenancy, and conceptual deployment. Product requirements are owned by `BUILD_SPEC.md`; physical tables by `docs/DATABASE.md`; formulas by `docs/ANALYTICS.md`; and HTTP contracts by `docs/API.md`.
+This document is the Source of Truth for system boundaries, component responsibilities, data flows, module dependency rules, tenancy, and conceptual deployment. Product requirements are owned by `BUILD_SPEC.md`; physical tables by `docs/architecture/DATABASE.md`; formulas by `docs/contracts/ANALYTICS.md`; and HTTP contracts by `docs/contracts/API.md`.
 
 The repository layout is accepted by `ADR-011`. The exact production hosting topology (`OQ-015`) remains unresolved. Diagrams below are logical, not a claim that infrastructure exists.
 
@@ -56,7 +56,9 @@ flowchart TD
     CW -. job telemetry .- JOB
 ```
 
-The Next.js/Express shells, operational probes, local PostgreSQL/Prisma foundation, identity/access lifecycle, catalog persistence/API/UI, tenant-safe inventory balance/ledger persistence foundation, read-only branch inventory balance/history API, atomic manual inventory adjustment API, and responsive role-aware branch inventory balance/history/adjustment UI are implemented. Later retail workflows, analytics/AI integration, AWS resources, and production deployment do not exist yet.
+The Next.js/Express applications, operational probes, local PostgreSQL/Prisma foundation, identity/access lifecycle, Catalog and Supplier persistence/API/UI, branch inventory balance/history/manual adjustment, Purchase Orders and Receiving, POS/checkout, Sales History/detail/browser receipt, and linked refunds with optional same-branch restock are implemented. Phase 6 includes deterministic Sales/Category/Branch/Inventory Analytics, Forecasting and Reorder API/UI, and the synthetic demo dataset. Phase 7 includes immutable aggregate snapshots, the OpenRouter provider and minimized prompt layer, idempotent insight generation/persistence, callable cadence orchestration, and persisted insight API/dashboard delivery.
+
+Phase 7 is COMPLETE and PRE-CLOUD READY YES under final acceptance with the explicit MT-L04 verification limitation. Historical MT-L04 remains BLOCKED; native layout/clipping/scaling/pagination/blank-page behavior remains unverified. Post-Phase-7 maintenance/UI tasks do not reopen Phase 7. Phase 8 is NOT STARTED: the runtime timer, AWS resources, cloud scheduling, and production deployment remain unimplemented.
 
 ### Repository boundaries
 
@@ -65,13 +67,13 @@ The native pnpm workspace uses these physical boundaries:
 ```text
 stockwise/
   apps/
-    web/                 # Next.js App Router shell under src/app
-    api/                 # Express transport shell and future modular monolith
+    web/                 # Next.js App Router application under src/app
+    api/                 # Express modular monolith
       src/modules/       # Business modules remain inside the API application
       prisma/            # API-owned Prisma schema and migrations
   packages/              # Deliberately shared internal packages only when justified
   docs/                  # Architecture and technical Source of Truth documents
-  tests/e2e/             # Future cross-application end-to-end tests
+  tests/e2e/             # Cross-application end-to-end tests
   infra/                 # Future deployment/infrastructure configuration
 ```
 
@@ -483,14 +485,15 @@ against the persisted Sale. There is no time cutoff, approval chain, gateway, ge
    source cutoff, included authorized Branch scope, completeness, cost coverage, and
    values/null reasons.
 
-`ADR-029` resolves `OQ-011`/`OQ-016`, and `docs/ANALYTICS.md` exclusively owns formulas
+`ADR-029` resolves `OQ-011`/`OQ-016`, and `docs/contracts/ANALYTICS.md` exclusively owns formulas
 and period semantics. Analytics V1 reads normalized operational tables directly; no
 warehouse, OLAP service, stream, materialized view, scheduled rollup, or summary table
 is introduced before measured need. P6-M3-T01 uses set-based ledger/balance/cost
 queries and reconciles the current projection against all ledger deltas visible in
 that same read snapshot; it does not compare current balance to an earlier
 event-cutoff subset. P7-M1-T02 persists completed-period Sales aggregates as
-immutable, versioned AI input snapshots; insight generation remains later work.
+immutable, versioned AI input snapshots; P7-M2-T03 implements idempotent insight
+generation and persistence over those snapshots.
 
 ### 6.7 Scheduled AI insight
 
@@ -544,7 +547,8 @@ success stores T02-validated plain text. A duplicate observes the existing job.
 An expired claim with no reserved call can be reclaimed, while any reserved or
 completed provider activity fails closed as `INTERRUPTED` after a crash because
 external delivery cannot be proven exactly once. Network I/O never holds a
-database transaction open. Public reads remain P7-M3-T02.
+database transaction open. P7-M3-T02 provides the persisted read-only API, and
+P7-M3-T03 provides the dashboard UI.
 An internal Branch status-history lookup supplies due-instant eligibility from
 immutable events. Pre-migration history is unknown, so Branch generation skips
 due instants before its first trustworthy event; Organization aggregation keeps

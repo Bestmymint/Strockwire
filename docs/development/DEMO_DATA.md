@@ -1,7 +1,7 @@
 # StockWise fixed demo dataset
 
 `stockwise-demo-v1` is the fixed-reference fixture specified in
-[`ANALYTICS.md`](ANALYTICS.md). It ends at 2026-09-26 00:00 in `Asia/Bangkok`.
+[`ANALYTICS.md`](../contracts/ANALYTICS.md). It ends at 2026-09-26 00:00 in `Asia/Bangkok`.
 Forecast and reorder goldens use the injected 2026-09-25T17:00:00.000Z clock;
 live HTTP continues to use the real clock. This command is for disposable local
 demo databases, not production.

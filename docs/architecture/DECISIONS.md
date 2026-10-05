@@ -213,7 +213,7 @@ Analytics values must be reproducible, testable, tenant-scoped, and explainable.
 
 ### Decision
 
-Use PostgreSQL SQL and TypeScript for metrics, period comparisons, classifications, forecasting, evaluation, and reorder recommendations. `docs/ANALYTICS.md` is the sole formula contract.
+Use PostgreSQL SQL and TypeScript for metrics, period comparisons, classifications, forecasting, evaluation, and reorder recommendations. `docs/contracts/ANALYTICS.md` is the sole formula contract.
 
 ### Why selected
 
@@ -1963,7 +1963,7 @@ UNKNOWN cost into zero, and must not let browser/server locale define business d
   paginate stably; indexes are added only by later implementation after query-plan
   evidence.
 
-`docs/ANALYTICS.md` contains the complete formulas, null states, bucket labels, and
+`docs/contracts/ANALYTICS.md` contains the complete formulas, null states, bucket labels, and
 hand-calculated boundary examples and is authoritative if this summary is abbreviated.
 
 ### Why selected
@@ -1998,7 +1998,7 @@ honest without delaying non-cost analytics.
 
 `ADR-029` accepted factual inventory coverage but deferred threshold-based labels.
 P6-M3-T02 needs a bounded classification contract without waiting for Forecasting
-V1 or adding configurable stock policy. `docs/ANALYTICS.md` owns the exact rule
+V1 or adding configurable stock policy. `docs/contracts/ANALYTICS.md` owns the exact rule
 and null-state definitions.
 
 ### Decision
@@ -2041,7 +2041,7 @@ and null-state definitions.
 `Sale`/`SaleItem` facts, Branch/Product scope, immutable Product units, and the
 Organization reporting calendar can support a small quantity forecast. Current
 stock coverage velocity is factual inventory analytics, not an accepted model.
-`docs/ANALYTICS.md` owns the exact formula, output, and backtest protocol.
+`docs/contracts/ANALYTICS.md` owns the exact formula, output, and backtest protocol.
 
 ### Alternatives considered
 
@@ -2117,7 +2117,7 @@ new identifiers and measured comparisons. T01 adds documentation only.
 P6-M4-T03 requires a separate policy before runtime. `ADR-031` supplies an
 observed-sale forecast, not lead time or a purchasing quantity. Supplier has no
 lead-time field. PO `expectedDate` is optional and estimated, and receiving is
-all-at-once rather than partial. `docs/ANALYTICS.md` M-107 owns the exact formula,
+all-at-once rather than partial. `docs/contracts/ANALYTICS.md` M-107 owns the exact formula,
 unavailable semantics, and output.
 
 - Produce one advisory Branch/Product result in the Product base unit. The

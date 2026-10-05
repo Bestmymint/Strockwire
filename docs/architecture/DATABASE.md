@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Architecture Freeze v1 logical data contract through P5-M4-T01; persistence implemented through P5-M3 |
+| Status | Architecture Freeze v1 data contract; application persistence implemented through Phase 7; Phase 8 NOT STARTED |
 | Database | PostgreSQL |
 | ORM/migrations | Prisma |
 | Baseline | Architecture Freeze v1 |
@@ -12,7 +12,7 @@
 
 This document is the Source of Truth for StockWise's logical entities, ownership, relationships, constraints, indexes, lifecycle rules, and transaction invariants. It does not choose physical identifier types, quantity precision, or unresolved business states.
 
-Metric formulas belong to `docs/ANALYTICS.md`. HTTP payloads belong to `docs/API.md`. Product questions are tracked only in the master Open Questions register in `BUILD_SPEC.md`.
+Metric formulas belong to `docs/contracts/ANALYTICS.md`. HTTP payloads belong to `docs/contracts/API.md`. Product questions are tracked only in the master Open Questions register in `BUILD_SPEC.md`.
 
 ### Prisma foundation
 
@@ -625,7 +625,7 @@ Constraints and indexes:
 - Unique `(branch, product)`.
 - Inventory records carry `organizationId` and use composite foreign keys to
   `Branch(id, organizationId)` and `Product(id, organizationId)`; the Product
-  composite relational key is added with the future inventory schema if absent.
+  composite relational key is implemented by P3-M2-T02.
 - A database constraint enforces non-negative quantity. A missing balance row
   represents zero and balance rows are created lazily only by a successful first
   movement.
@@ -671,7 +671,7 @@ Required logical attributes:
 - Adjustment reason/note where applicable
 - Occurred/created timestamp
 - Idempotency/source uniqueness metadata: deterministic opaque-key hash and canonical
-  request hash scoped to organization and operation, plus later direct source-line linkage where one operation creates multiple movements
+  request hash scoped to organization and operation, plus direct source-line linkage where one operation creates multiple movements
 
 Accepted movement concepts:
 
@@ -724,8 +724,9 @@ timestamps. It has composite tenant-safe Branch/Supplier/creator foreign keys an
 required `(organization, branch, status, orderDate)` index. P4-M2-T02 implements
 the API lifecycle: DRAFT-only edits with exact `updatedAt` optimistic concurrency,
 `DRAFT -> ORDERED`, `DRAFT -> CANCELLED`, and `ORDERED -> CANCELLED`; ORDERED
-snapshots are frozen and RECEIVED/CANCELLED are terminal. Receiving, stock, costing,
-and VAT writes remain later work.
+snapshots are frozen and RECEIVED/CANCELLED are terminal. P4-M3 implements atomic
+receiving, receipt Input VAT snapshots, stock balance/ledger writes, and
+Branch/Product cost-state updates.
 
 Required logical attributes:
 
@@ -754,8 +755,8 @@ Purpose: requested product and commercial snapshot within a purchase order.
 Implemented by P4-M2-T01 as `purchase_order_items`: same-organization PO/Product
 composite foreign keys, non-null SKU/name snapshots, `DECIMAL(18,4)` quantity,
 `DECIMAL(19,4)` expected unit cost, and one Product per PO. Quantity and monetary
-checks are database-enforced; API decimal-string scale validation remains a later
-boundary because PostgreSQL coerces excess scale before a row check can observe it.
+checks are database-enforced; P4-M2-T02 implements API decimal-string scale
+validation because PostgreSQL coerces excess scale before a row check can observe it.
 
 Required logical attributes:
 
@@ -1119,7 +1120,7 @@ Constraints and indexes:
 
 - Branch, if present, belongs to organization.
 - Unique `(organization, branch scope, period type, period start, metric version)` or an equivalent normalized scope key.
-- Snapshot payload must validate against the versioned schema in `docs/ANALYTICS.md`.
+- Snapshot payload must validate against the versioned schema in `docs/contracts/ANALYTICS.md`.
 - Snapshot contains aggregates only; no individual customer/employee personal data or raw transaction lines.
 
 Lifecycle:
@@ -1391,7 +1392,7 @@ The implementation may choose row locking, conditional/versioned updates, atomic
 - PostgreSQL coerces direct writes to the declared inventory scale and can round
   excess fractional digits before a row check can observe the source value.
   Therefore excess-scale rejection and EA/PACK/BOX integrality remain mandatory
-  service-boundary validation for the future adjustment implementation; the T02
+  service-boundary validation in the implemented adjustment path; the T02
   schema does not falsely claim to enforce them.
 - All stored aggregate totals must be reproducible from accepted snapshots and rounding rules. An intermediate calculation may retain precision beyond a persisted/displayed scale; it must use exact Decimal arithmetic and round only at the accepted boundary.
 
@@ -1473,7 +1474,7 @@ The canonical definitions live in `BUILD_SPEC.md`:
   cost. P4 Input VAT snapshots remain governed separately by `ADR-026`.
 - `OQ-009` is resolved by `ADR-028`: linked REFUND records, optional same-branch
   restock, historical allocation/cost authority, and no VOID operation.
-- `ADR-026` fixes future receipt/sale cost data and later valuation on a Branch/Product moving weighted-average basis; Product remains without an organization-wide cost/valuation field.
+- `ADR-026` governs implemented receipt/sale cost data and valuation on a Branch/Product moving weighted-average basis; Product remains without an organization-wide cost/valuation field.
 - `OQ-011` is resolved by `ADR-029`: Sale/refund/receipt/movement event-time
   attribution, direct normalized-table aggregates, exact decimals, UNKNOWN-cost
   coverage, and accepted/deferred metrics affect later query indexes/snapshots.
