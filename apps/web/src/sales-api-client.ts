@@ -329,7 +329,12 @@ export async function updateSalesVatProfile(
 
 export async function searchPosProducts(
   context: SalesRequestContext,
-  options: { barcode?: string; cursor?: string | null; q?: string } = {},
+  options: {
+    barcode?: string;
+    cursor?: string | null;
+    q?: string;
+    signal?: AbortSignal;
+  } = {},
 ) {
   const query = new URLSearchParams({ limit: "25" });
   if (options.barcode?.trim()) query.set("barcode", options.barcode.trim());
@@ -337,7 +342,9 @@ export async function searchPosProducts(
   if (options.q?.trim()) query.set("q", options.q.trim());
   return parse(
     posProductsResponseSchema,
-    await request(`${salesPath(context, "pos/products")}?${query.toString()}`),
+    await request(`${salesPath(context, "pos/products")}?${query.toString()}`, {
+      signal: options.signal ?? null,
+    }),
   );
 }
 

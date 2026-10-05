@@ -4,6 +4,7 @@
     "prettier.config.mts",
     "playwright.config.ts",
     "playwright.labels.config.ts",
+    "playwright.scanner.config.ts",
     "playwright.public.config.ts",
     "test/smoke.test.ts",
     "vitest.config.mts",

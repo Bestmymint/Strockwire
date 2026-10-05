@@ -468,6 +468,34 @@ UNKNOWN cost remains UNKNOWN with null average/value and null SaleItem unit cost
 whether remaining quantity is positive or zero; later receipt initialization never
 backfills history. Any failure rolls back every checkout effect.
 
+The POS barcode input is a product-selection shortcut over the existing authenticated
+`GET /api/v1/organizations/{organizationId}/branches/{branchId}/pos/products`
+barcode query. Manual entry and USB/Bluetooth keyboard-emulation scanners use a
+visible, labelled field with Enter submission; ordinary typing elsewhere is not
+intercepted. Each submission performs a fresh exact lookup without the text-search
+filter. A FIFO queue serializes lookups, retains repeated intentional scans, bounds
+each lookup to 15 seconds, and aborts pending work when the POS scope changes or
+unmounts. Checkout waits for the queue and any open camera dialog. Available results
+use the existing cart-add path: one Product line, increment by one on repeated
+selection, retaining the original cart price precondition. Missing/unavailable
+results and lookup failures leave the cart unchanged and expose safe recent-scan
+feedback. Organization/Branch scope and final stock, price, quantity, VAT, payment,
+and idempotency rules remain backend authority.
+
+Camera scanning starts only after the operator opens the native modal dialog and
+requests video only, preferring the rear-facing camera. It requires HTTPS or
+localhost and browser camera access. Native `BarcodeDetector` is used only when it
+supports Code 128, EAN-13, EAN-8, UPC-A, and UPC-E; a lazily loaded ZXing browser
+one-dimensional reader supplies local decoding when native support is absent,
+partial, or fails. Frames stay on the device and are neither recorded nor uploaded.
+Camera mode accepts one detected value per opening, stops decoding and all media
+tracks before submitting the value to the same queue, then returns focus to the
+barcode field. Reopening permits another intentional scan of the same Product.
+Close/Escape, navigation/unmount, errors, and backgrounding also release resources,
+including streams granted after cancellation. Permission, missing-device, busy
+camera, unsupported-browser, and insecure-context feedback preserve USB/manual
+entry. Camera symbologies do not restrict or transform stored Product barcodes.
+
 ### 6.5 Sale refund
 
 ```mermaid

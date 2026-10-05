@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -242,14 +243,114 @@ describe("POS management UI", () => {
   it("auto-adds one exact available barcode match without pointer-only interaction", async () => {
     renderPos();
     await screen.findByRole("button", { name: "Add Coffee" });
-    fireEvent.change(screen.getByLabelText("Barcode"), {
+    fireEvent.change(screen.getByLabelText("Scan or enter barcode"), {
       target: { value: "8850000000000" },
     });
-    fireEvent.submit(screen.getByRole("form", { name: "Search POS products" }));
+    fireEvent.submit(screen.getByRole("form", { name: "Scan POS barcode" }));
     expect(
       await screen.findByRole("list", { name: "Cart items" }),
     ).toBeTruthy();
     expect(screen.getByDisplayValue("1")).toBeTruthy();
+  });
+
+  it("serializes rapid repeated barcode scans into the existing cart and exact price", async () => {
+    renderPos();
+    await screen.findByRole("button", { name: "Add Coffee" });
+    const input = screen.getByLabelText("Scan or enter barcode");
+    for (let index = 0; index < 3; index += 1) {
+      fireEvent.change(input, { target: { value: coffee.barcode } });
+      fireEvent.submit(screen.getByRole("form", { name: "Scan POS barcode" }));
+    }
+    await waitFor(() => expect(screen.getByDisplayValue("3")).toBeTruthy());
+    expect(
+      screen.getAllByRole("button", { name: "Remove Coffee from cart" }),
+    ).toHaveLength(1);
+    await checkoutCash();
+    expect(checkoutSale).toHaveBeenLastCalledWith(
+      expect.anything(),
+      "checkout-key-one",
+      expect.objectContaining({
+        items: [
+          { productId: PRODUCT_ID, quantity: "3", expectedUnitPrice: "0.1000" },
+        ],
+      }),
+    );
+  });
+
+  it("waits for in-flight scans before checkout instead of losing an item", async () => {
+    renderPos();
+    await addCoffee();
+    let finish!: (value: Awaited<ReturnType<typeof searchPosProducts>>) => void;
+    vi.mocked(searchPosProducts).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    fireEvent.change(screen.getByLabelText("Scan or enter barcode"), {
+      target: { value: coffee.barcode },
+    });
+    fireEvent.submit(screen.getByRole("form", { name: "Scan POS barcode" }));
+    expect(
+      screen.getByRole("button", { name: "Complete sale" }),
+    ).toHaveProperty("disabled", true);
+    fireEvent.submit(
+      screen.getByRole("form", { name: "Checkout current sale" }),
+    );
+    expect(checkoutSale).not.toHaveBeenCalled();
+    await act(async () =>
+      finish({ data: { products: [coffee] }, meta: { nextCursor: null } }),
+    );
+    await waitFor(() => expect(screen.getByDisplayValue("2")).toBeTruthy());
+    await checkoutCash();
+    expect(checkoutSale).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        items: [expect.objectContaining({ quantity: "2" })],
+      }),
+    );
+  });
+
+  it("clears scanner/cart state and ignores late results when the authorized branch changes", async () => {
+    const client = renderPos();
+    await addCoffee();
+    let finish!: (value: Awaited<ReturnType<typeof searchPosProducts>>) => void;
+    vi.mocked(searchPosProducts).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    fireEvent.change(screen.getByLabelText("Scan or enter barcode"), {
+      target: { value: coffee.barcode },
+    });
+    fireEvent.submit(screen.getByRole("form", { name: "Scan POS barcode" }));
+    const access = await fetchAccessContext();
+    currentSearchParams.set("branchId", "20000000-0000-4000-8000-000000000002");
+    act(() =>
+      client.setQueryData(["access-context"], {
+        ...access,
+        organizations: [
+          {
+            ...access.organizations[0],
+            branches: [
+              {
+                code: "SECOND",
+                id: currentSearchParams.get("branchId"),
+                name: "Second",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    await screen.findByText(/SECOND — Second/);
+    await act(async () =>
+      finish({ data: { products: [coffee] }, meta: { nextCursor: null } }),
+    );
+    expect(screen.queryByRole("list", { name: "Cart items" })).toBeNull();
+    expect(screen.getByText("Ready to scan.")).toBeTruthy();
   });
 
   it("adds an item again, decrements/removes it, and clears the cart", async () => {

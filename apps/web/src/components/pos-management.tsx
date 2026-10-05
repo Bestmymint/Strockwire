@@ -11,6 +11,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { PosBarcodeScanner } from "./pos-barcode-scanner";
+
 import { formatThb } from "@/money-display";
 import {
   applicationContextUrl,
@@ -251,7 +253,11 @@ export function PosManagement() {
     );
   }
   return (
-    <PosContent branch={resolved.branch} organization={resolved.organization} />
+    <PosContent
+      key={`${resolved.organization.id}:${resolved.branch.id}`}
+      branch={resolved.branch}
+      organization={resolved.organization}
+    />
   );
 }
 
@@ -289,7 +295,7 @@ function PosContent({
   const canDiscount = DISCOUNT_ROLES.has(organization.role);
   const canConfigureVat =
     organization.role === "OWNER" || organization.role === "ADMIN";
-  const [search, setSearch] = useState({ barcode: "", q: "" });
+  const [search, setSearch] = useState({ q: "" });
   const [cart, setCart] = useState<CartLine[]>([]);
   const [discountType, setDiscountType] = useState<DiscountType>("NONE");
   const [discountValue, setDiscountValue] = useState("");
@@ -302,8 +308,9 @@ function PosContent({
     null,
   );
   const keyRef = useRef<string | null>(null);
-  const autoAddedBarcode = useRef<string | null>(null);
   const checkoutPendingRef = useRef(false);
+  const scansPendingRef = useRef(0);
+  const [scansPending, setScansPending] = useState(0);
 
   const vatProfileQuery = useQuery({
     enabled: canConfigureVat,
@@ -346,20 +353,6 @@ function PosContent({
       );
     });
   };
-
-  useEffect(() => {
-    if (
-      search.barcode === "" ||
-      products.length !== 1 ||
-      autoAddedBarcode.current === search.barcode
-    )
-      return;
-    const product = products[0];
-    if (product?.available) {
-      autoAddedBarcode.current = search.barcode;
-      addProduct(product);
-    }
-  }, [products, search.barcode]); // Scanner submissions intentionally add one exact available match.
 
   const checkoutMutation = useMutation({
     mutationFn: async () => {
@@ -490,15 +483,22 @@ function PosContent({
           <h2 className="text-xl font-semibold" id="pos-product-heading">
             Products
           </h2>
+          <PosBarcodeScanner
+            context={context}
+            disabled={checkoutMutation.isPending}
+            onAdd={addProduct}
+            onPendingChange={(count) => {
+              scansPendingRef.current = count;
+              setScansPending(count);
+            }}
+          />
           <form
             aria-label="Search POS products"
-            className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+            className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]"
             onSubmit={(event) => {
               event.preventDefault();
-              autoAddedBarcode.current = null;
               const data = new FormData(event.currentTarget);
               setSearch({
-                barcode: String(data.get("barcode") ?? ""),
                 q: String(data.get("q") ?? ""),
               });
             }}
@@ -510,15 +510,6 @@ function PosContent({
                 defaultValue={search.q}
                 name="q"
                 placeholder="Name or SKU"
-              />
-            </label>
-            <label className="form-field">
-              Barcode
-              <input
-                className="form-control"
-                defaultValue={search.barcode}
-                name="barcode"
-                placeholder="Scan or enter barcode"
               />
             </label>
             <PrimaryButton className="self-end" type="submit">
@@ -640,7 +631,8 @@ function PosContent({
               aria-label="Checkout current sale"
               onSubmit={(event) => {
                 event.preventDefault();
-                if (checkoutPendingRef.current) return;
+                if (checkoutPendingRef.current || scansPendingRef.current > 0)
+                  return;
                 checkoutPendingRef.current = true;
                 void checkoutMutation
                   .mutateAsync()
@@ -655,6 +647,7 @@ function PosContent({
                 disabled={
                   cart.length === 0 ||
                   checkoutMutation.isPending ||
+                  scansPending > 0 ||
                   (canConfigureVat &&
                     vatProfileQuery.data?.salesVatStatus === "UNCONFIGURED")
                 }
