@@ -93,12 +93,11 @@ afterEach(() => {
 });
 
 describe("web application shell", () => {
-  it("renders public landmarks and Sign in only after a signed-out response", async () => {
+  it("renders public landmarks without waiting for or requesting a session", () => {
     pathname = "/";
     renderShell(undefined, <HomePage />);
-    expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();
     expect(
-      await screen.findByRole("heading", { name: "StockWise web shell" }),
+      screen.getByRole("heading", { name: /Know your stock/ }),
     ).toBeTruthy();
     expect(
       screen
@@ -107,12 +106,13 @@ describe("web application shell", () => {
     ).toBe("#main-content");
     expect(screen.getByRole("main").id).toBe("main-content");
     expect(
-      within(screen.getByRole("navigation"))
+      within(screen.getByRole("navigation", { name: "Public navigation" }))
         .getByRole("link", { name: "Sign in" })
         .getAttribute("href"),
     ).toBe("/login");
     expect(screen.queryByRole("complementary")).toBeNull();
     expect(screen.queryByRole("link", { name: "Home" })).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("does not offer Sign in after access context confirms authentication", () => {
@@ -143,7 +143,7 @@ describe("web application shell", () => {
     }
   });
 
-  it.each(["/", "/login"])(
+  it.each(["/login"])(
     "opens authenticated Home from %s without showing public auth content",
     async (path) => {
       pathname = path;
@@ -154,6 +154,22 @@ describe("web application shell", () => {
         ),
       );
       expect(screen.queryByText("Sign in")).toBeNull();
+    },
+  );
+
+  it.each(["/", "/pricing"])(
+    "keeps %s public when access context is already authenticated",
+    (path) => {
+      pathname = path;
+      renderShell(accessContext());
+      expect(screen.getByText("Module content")).toBeTruthy();
+      expect(
+        screen.getByRole("navigation", { name: "Public navigation" }),
+      ).toBeTruthy();
+      expect(screen.queryByRole("complementary")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Log out" })).toBeNull();
+      expect(replace).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
     },
   );
 

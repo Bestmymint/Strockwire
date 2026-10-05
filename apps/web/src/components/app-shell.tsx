@@ -11,6 +11,7 @@ import {
   resolveApplicationContext,
 } from "@/application-context";
 import { LogoutButton } from "@/components/auth/logout-button";
+import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { cn } from "@/lib/utils";
 
 interface AppShellProps {
@@ -23,6 +24,14 @@ const logoClassName =
   "w-fit rounded-sm text-lg font-semibold tracking-tight outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
 
 export function AppShell({ children }: AppShellProps) {
+  const pathname = usePathname();
+  if (pathname === "/" || pathname === "/pricing") {
+    return <MarketingShell key={pathname}>{children}</MarketingShell>;
+  }
+  return <WorkspaceShell>{children}</WorkspaceShell>;
+}
+
+function WorkspaceShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -45,10 +54,8 @@ export function AppShell({ children }: AppShellProps) {
   const homeUrl = organization
     ? applicationContextUrl(organization.id, branch?.id ?? null)
     : "/app";
-  const openingWorkspace =
-    context !== undefined && (pathname === "/" || pathname === "/login");
-  const checkingSession =
-    contextQuery.isPending && (pathname === "/" || pathname === "/login");
+  const openingWorkspace = context !== undefined && pathname === "/login";
+  const checkingSession = contextQuery.isPending && pathname === "/login";
   const signedOut =
     contextQuery.error instanceof BranchApiError &&
     contextQuery.error.kind === "authentication_required";

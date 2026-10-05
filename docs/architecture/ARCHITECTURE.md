@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | Architecture Freeze v1; application functionality implemented through Phase 7; final acceptance with explicit MT-L04 verification limitation; PRE-CLOUD READY YES; Phase 8 NOT STARTED |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-09-24 |
+| Last updated | 2026-10-05 |
 
 ## 1. Scope and authority
 
@@ -59,6 +59,23 @@ flowchart TD
 The Next.js/Express applications, operational probes, local PostgreSQL/Prisma foundation, identity/access lifecycle, Catalog and Supplier persistence/API/UI, branch inventory balance/history/manual adjustment, Purchase Orders and Receiving, POS/checkout, Sales History/detail/browser receipt, and linked refunds with optional same-branch restock are implemented. Phase 6 includes deterministic Sales/Category/Branch/Inventory Analytics, Forecasting and Reorder API/UI, and the synthetic demo dataset. Phase 7 includes immutable aggregate snapshots, the OpenRouter provider and minimized prompt layer, idempotent insight generation/persistence, callable cadence orchestration, and persisted insight API/dashboard delivery.
 
 Phase 7 is COMPLETE and PRE-CLOUD READY YES under final acceptance with the explicit MT-L04 verification limitation. Historical MT-L04 remains BLOCKED; native layout/clipping/scaling/pagination/blank-page behavior remains unverified. Post-Phase-7 maintenance/UI tasks do not reopen Phase 7. Phase 8 is NOT STARTED: the runtime timer, AWS resources, cloud scheduling, and production deployment remain unimplemented.
+
+### Public and application navigation
+
+The Next.js public routes `/` (marketing) and `/pricing` (pre-launch plan
+presentation) use a public header/footer without loading access context or
+rendering the application sidebar. They remain public when a user is signed in.
+Features are a homepage section, not a separate route. Calls to action use the
+existing `/register` and `/login` routes; verification, invitation, recovery,
+and `/onboarding` behavior is unchanged.
+
+The existing application shell continues to resolve authenticated organization
+and branch navigation for `/app` and its module routes. Authenticated `/login`
+still opens the resolved workspace. Pricing is informational only: plan prices
+and inclusions are not finalized, and no subscription, billing, quota, or
+entitlement state is implemented. Public-route browser tests can run with
+`pnpm exec playwright test --config playwright.public.config.ts` after a web
+production build, without API/database setup.
 
 ### Repository boundaries
 

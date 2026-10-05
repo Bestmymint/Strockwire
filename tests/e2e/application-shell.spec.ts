@@ -193,10 +193,12 @@ test("signed-out public and app surfaces do not expose authenticated navigation"
 }, testInfo) => {
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "StockWise web shell" }),
+    page.getByRole("heading", { name: /Know your stock/ }),
   ).toBeVisible();
   await expect(
-    page.getByRole("navigation").getByRole("link", { name: "Sign in" }),
+    page
+      .getByRole("navigation", { name: "Public navigation" })
+      .getByRole("link", { name: "Sign in" }),
   ).toBeVisible();
   await expect(page.getByRole("complementary")).toHaveCount(0);
   await page.screenshot({
@@ -212,17 +214,23 @@ test("signed-out public and app surfaces do not expose authenticated navigation"
   await expect(page.getByRole("button", { name: "Log out" })).toHaveCount(0);
 });
 
-test("authenticated public and login entry points return to Home", async ({
+test("authenticated marketing stays public and login returns to Home", async ({
   page,
 }) => {
   await signIn(page);
-  for (const path of ["/", "/login"]) {
+  for (const path of ["/", "/pricing"]) {
     await page.goto(path);
     await expect(
-      page.getByRole("heading", { name: "Choose an organization" }),
+      page.getByRole("navigation", { name: "Public navigation" }),
     ).toBeVisible();
-    await expect(page).toHaveURL("/app");
-    await expect(page.getByRole("link", { name: "Sign in" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
+    await expect(page).toHaveURL(path);
+    await expect(page.getByRole("complementary")).toHaveCount(0);
   }
+  await page.goto("/login");
+  await expect(
+    page.getByRole("heading", { name: "Choose an organization" }),
+  ).toBeVisible();
+  await expect(page).toHaveURL("/app");
+  await expect(page.getByRole("link", { name: "Sign in" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
 });
