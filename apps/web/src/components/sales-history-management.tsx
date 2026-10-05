@@ -296,6 +296,7 @@ function SalesHistoryContent({
         <SalesDetail
           canCreateRefund={REFUND_CREATE_ROLES.has(organization.role)}
           context={context}
+          key={selectedSaleId}
           saleId={selectedSaleId}
           scopeKey={scopeKey}
         />
@@ -409,14 +410,30 @@ function SalesDetail({
   saleId: string;
   scopeKey: readonly unknown[];
 }) {
+  const detailRef = useRef<HTMLElement>(null);
+  const hasScrolled = useRef(false);
   const detailQuery = useQuery({
     queryFn: () => getSalesHistoryDetail(context, saleId),
     queryKey: [...scopeKey, "detail", saleId],
   });
+
+  useEffect(() => {
+    if (!detailQuery.isSuccess || hasScrolled.current || !detailRef.current)
+      return;
+    hasScrolled.current = true;
+    detailRef.current.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "start",
+    });
+  }, [detailQuery.isSuccess]);
+
   return (
     <section
       aria-live="polite"
-      className="space-y-6 rounded-lg border bg-card p-5 sm:p-7"
+      className="scroll-mt-6 space-y-6 rounded-lg border bg-card p-5 sm:p-7"
+      ref={detailRef}
     >
       {detailQuery.isPending ? <p>Loading sale detail…</p> : null}
       {detailQuery.isError ? (

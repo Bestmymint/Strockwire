@@ -58,7 +58,11 @@ function receiptSale(count = 3, longNames = false): SalesHistoryDetail {
   };
 }
 
-async function stubSale(page: Page, sale: SalesHistoryDetail) {
+async function stubSale(
+  page: Page,
+  sale: SalesHistoryDetail,
+  historyCount = 1,
+) {
   let detailReads = 0;
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
@@ -122,7 +126,19 @@ async function stubSale(page: Page, sale: SalesHistoryDetail) {
         },
       };
     } else if (path.endsWith("/sales")) {
-      json = { data: { sales: [sale] }, meta: { nextCursor: null } };
+      json = {
+        data: {
+          sales: Array.from({ length: historyCount }, (_, index) => ({
+            ...sale,
+            id:
+              index === 0
+                ? sale.id
+                : `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+            reference: index === 0 ? sale.reference : `SALE-LIST-${index + 1}`,
+          })),
+        },
+        meta: { nextCursor: null },
+      };
     } else if (path.endsWith(`/sales/${sale.id}`)) {
       detailReads += 1;
       json = { data: { sale } };
@@ -174,6 +190,26 @@ async function checkPrintLayout(page: Page) {
       ),
   ).toBe(true);
 }
+
+test("opening detail below a long Sales History list scrolls its heading into view", async ({
+  page,
+}) => {
+  const sale = receiptSale();
+  await stubSale(page, sale, 25);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto(`/app/sales?${scope}`);
+  const viewDetail = page.getByRole("button", { name: "View detail" }).first();
+  const scrollBefore = await page.evaluate(() => window.scrollY);
+  await viewDetail.click();
+  await expect(
+    page.getByRole("heading", { name: sale.reference, exact: true }),
+  ).toBeInViewport({ ratio: 1 });
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(
+    scrollBefore,
+  );
+  await expect(viewDetail).toBeFocused();
+  await expect(page.getByLabel("Printable receipt")).toBeAttached();
+});
 
 for (const width of [375, 430, 768, 1024, 1280, 1440]) {
   test(`receipt preview and reprint fit at ${width}px (stub API)`, async ({

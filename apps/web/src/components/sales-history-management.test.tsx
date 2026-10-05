@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -26,6 +27,11 @@ const ORGANIZATION_ID = "10000000-0000-4000-8000-000000000001";
 const BRANCH_ID = "20000000-0000-4000-8000-000000000001";
 const SALE_ID = "30000000-0000-4000-8000-000000000001";
 const CASHIER_ID = "40000000-0000-4000-8000-000000000001";
+const scrollIntoView = vi.fn();
+const originalScrollIntoView = Object.getOwnPropertyDescriptor(
+  Element.prototype,
+  "scrollIntoView",
+);
 let role: "OWNER" | "ADMIN" | "BRANCH_MANAGER" | "INVENTORY_STAFF" | "CASHIER" =
   "OWNER";
 let currentSearchParams = new URLSearchParams({
@@ -130,6 +136,11 @@ function mockAccess(roleValue: typeof role) {
 }
 
 beforeEach(() => {
+  Object.defineProperty(Element.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoView,
+  });
+  vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: false }));
   role = "OWNER";
   currentSearchParams = new URLSearchParams({
     branchId: BRANCH_ID,
@@ -179,11 +190,141 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  if (originalScrollIntoView)
+    Object.defineProperty(
+      Element.prototype,
+      "scrollIntoView",
+      originalScrollIntoView,
+    );
+  else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
 
 describe("sales history UI", () => {
+  it("scrolls to rendered detail only after loading succeeds without moving focus", async () => {
+    let resolveDetail!: (sale: SalesHistoryDetail) => void;
+    vi.mocked(getSalesHistoryDetail).mockReturnValue(
+      new Promise((resolve) => {
+        resolveDetail = resolve;
+      }),
+    );
+    renderSales();
+    const button = await screen.findByRole("button", { name: "View detail" });
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    button.focus();
+    fireEvent.click(button);
+    expect(await screen.findByText("Loading sale detail…")).toBeTruthy();
+    expect(screen.queryByLabelText("Printable receipt")).toBeNull();
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    await act(async () => resolveDetail(detail));
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+    const section = scrollIntoView.mock.instances[0] as HTMLElement;
+    expect(section.contains(screen.getByLabelText("Printable receipt"))).toBe(
+      true,
+    );
+    expect(
+      section.contains(screen.getByRole("heading", { name: detail.reference })),
+    ).toBe(true);
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: "smooth",
+      block: "start",
+    });
+    expect(document.activeElement).toBe(button);
+  });
+
+  it("does not scroll again for input changes, repeated selection, reprint, or detail refetch", async () => {
+    const client = renderSales();
+    const button = await screen.findByRole("button", { name: "View detail" });
+    fireEvent.click(button);
+    await screen.findByLabelText("Printable receipt");
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText("Cashier user ID (optional)"), {
+      target: { value: "unfinished filter" },
+    });
+    fireEvent.click(button);
+    fireEvent.click(screen.getByRole("button", { name: "Print receipt" }));
+    vi.mocked(getSalesHistoryDetail).mockResolvedValue({
+      ...detail,
+      items: [{ ...detail.items[0]!, productName: "Refetched coffee" }],
+    });
+    await act(async () => {
+      await client.invalidateQueries({
+        queryKey: [
+          "branch-scoped",
+          ORGANIZATION_ID,
+          BRANCH_ID,
+          "sales",
+          "detail",
+          SALE_ID,
+        ],
+      });
+    });
+    await screen.findAllByText("Refetched coffee");
+    expect(getSalesHistoryDetail).toHaveBeenCalledTimes(2);
+    expect(window.print).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  it("scrolls for each different sale opened, including returning to cached detail", async () => {
+    const second = {
+      ...detail,
+      id: "30000000-0000-4000-8000-000000000002",
+      reference: "SALE-SECOND",
+    };
+    vi.mocked(listSalesHistory).mockResolvedValue({
+      data: { sales: [summary, second] },
+      meta: { nextCursor: null },
+    });
+    vi.mocked(getSalesHistoryDetail).mockImplementation(async (_, id) =>
+      id === SALE_ID ? detail : second,
+    );
+    renderSales();
+    await screen.findByText(second.reference);
+    const buttons = screen.getAllByRole("button", { name: "View detail" });
+    for (const [button, sale] of [
+      [buttons[0]!, detail],
+      [buttons[1]!, second],
+      [buttons[0]!, detail],
+    ] as const) {
+      fireEvent.click(button);
+      await screen.findByRole("heading", { name: sale.reference });
+      expect(scrollIntoView.mock.lastCall).toEqual([
+        { behavior: "smooth", block: "start" },
+      ]);
+    }
+    expect(scrollIntoView).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not scroll when the requested sale detail fails", async () => {
+    vi.mocked(getSalesHistoryDetail).mockRejectedValue(
+      new SalesApiError("sale_not_found"),
+    );
+    renderSales();
+    fireEvent.click(await screen.findByRole("button", { name: "View detail" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "This sale is no longer available",
+    );
+    expect(screen.queryByLabelText("Printable receipt")).toBeNull();
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it("scrolls without smooth motion when reduced motion is preferred", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    renderSales();
+    fireEvent.click(await screen.findByRole("button", { name: "View detail" }));
+    await screen.findByLabelText("Printable receipt");
+    expect(window.matchMedia).toHaveBeenCalledWith(
+      "(prefers-reduced-motion: reduce)",
+    );
+    expect(scrollIntoView).toHaveBeenCalledExactlyOnceWith({
+      behavior: "auto",
+      block: "start",
+    });
+  });
+
   it("renders the receipt identity and frozen totals including registered VAT and discount", () => {
     render(
       <SaleReceipt
