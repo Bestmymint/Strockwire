@@ -92,6 +92,9 @@ importers:
       clsx:
         specifier: 2.1.1
         version: 2.1.1
+      jsbarcode:
+        specifier: 3.12.3
+        version: 3.12.3
       next:
         specifier: 16.3.8
         version: 16.3.8(@playwright/test@1.62.1)(@types/node@24.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -1782,6 +1785,9 @@ packages:
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
+
+  jsbarcode@3.12.3:
+    resolution: {integrity: sha512-CuHU9hC6dPsHF5oVFMo8NW76uQVjH4L22CsP4hW+dNnGywJHC/B0ThA1CTDVLnxKLrrpYdicBLnd2xsgTfRnvg==}
 
   jsbi@4.3.2:
     resolution: {integrity: sha512-9fqMSQbhJykSeii05nxKl4m6Eqn2P6rOlYiS+C5Dr/HPIU/7yZxu5qzbs40tgaFORiw2Amd0mirjxatXYMkIew==}
@@ -4330,6 +4336,8 @@ snapshots:
   jiti@2.7.0: {}
 
   js-tokens@4.0.0: {}
+
+  jsbarcode@3.12.3: {}
 
   jsbi@4.3.2: {}
 

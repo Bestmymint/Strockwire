@@ -77,6 +77,39 @@ entitlement state is implemented. Public-route browser tests can run with
 `pnpm exec playwright test --config playwright.public.config.ts` after a web
 production build, without API/database setup.
 
+### Catalog barcode labels
+
+Catalog labels reuse the existing optional Product barcode under `ADR-022`,
+distinct from canonical SKU. No additional attribute, migration, API endpoint,
+or scan-identifier fallback exists. The existing organization/barcode unique
+index and authorized exact-barcode POS query remain the lookup foundation.
+
+Each catalog product exposes a saved-data label preview with quantity 1–100,
+native dialog keyboard/focus behavior, and browser-native printing. JsBarcode
+encodes Code 128; React renders its binary output as black SVG bars on white,
+with ten-module quiet zones. Labels contain product name, the exact barcode
+value, and SKU only when distinct; they omit price and stock information.
+
+The generic A4 sheet preset uses 10 mm page margins, at least 100 × 50 mm
+labels, 4 mm label padding, and 0.33 mm modules. Long symbols expand the label
+up to 190 mm rather than compressing bars. Names/values wrap, labels avoid page
+splits, and the print portal removes application chrome from layout. Print at
+100% scale with browser headers/footers disabled. This is a sheet-label workflow,
+not a printer-specific roll template.
+
+Storage continues to permit the accepted Unicode identifiers up to 128
+characters. The Code 128 presentation supports printable ASCII and refuses
+symbols wider than the preset, with an explicit error and disabled print;
+it never rewrites, substitutes, or restricts the persisted identifier. No GS1
+ownership, manufacturer UPC/EAN validity, scanner/device, or physical print
+verification is implied. Native print-preview behavior requires direct review;
+automated printable DOM/CSS and headless PDF checks are supporting evidence.
+
+Browser checks with stubbed API responses can run without a database via
+`pnpm exec playwright test --config playwright.labels.config.ts` after a web
+production build. The real catalog E2E also covers the label workflow and
+requires an explicitly supplied guarded `TEST_DATABASE_URL`.
+
 ### Repository boundaries
 
 The native pnpm workspace uses these physical boundaries:

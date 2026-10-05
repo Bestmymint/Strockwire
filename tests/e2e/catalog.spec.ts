@@ -35,6 +35,7 @@ test("owner manages the catalog through the same-origin application path", async
   await page.getByLabel("Product name").first().fill("Green tea");
   await page.getByLabel("SKU").first().fill("TEA-E2E-01");
   await page.getByLabel("Base price").first().fill("12.3400");
+  await page.getByLabel("Barcode (optional)").first().fill("0012345678905");
   await page
     .getByLabel("Category (optional)")
     .first()
@@ -50,6 +51,38 @@ test("owner manages the catalog through the same-origin application path", async
   const productForm = page.getByRole("form", {
     name: "Edit product Green tea",
   });
+  await expect(productForm.getByLabel("Barcode (optional)")).toHaveValue(
+    "0012345678905",
+  );
+  await productForm
+    .getByRole("button", { name: "Preview barcode labels" })
+    .click();
+  const labelPreview = page.getByRole("dialog", {
+    name: "Barcode label preview",
+  });
+  await expect(
+    labelPreview.getByRole("img", { name: "Code 128 barcode 0012345678905" }),
+  ).toBeVisible();
+  await labelPreview.getByLabel("Label quantity").fill("3");
+  await expect(labelPreview.getByRole("article")).toHaveCount(3);
+  await page.evaluate(() => {
+    window.print = () => {
+      document.body.dataset.labelPrintCalled = "true";
+    };
+  });
+  await labelPreview.getByRole("button", { name: "Print labels" }).click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-label-print-called",
+    "true",
+  );
+  await page.emulateMedia({ media: "print" });
+  await expect(page.getByRole("complementary")).toBeHidden();
+  await expect(
+    labelPreview.getByRole("button", { name: "Print labels" }),
+  ).toBeHidden();
+  await page.emulateMedia({ media: "screen" });
+  await labelPreview.getByRole("button", { name: "Back to catalog" }).click();
+  await expect(labelPreview).toHaveCount(0);
   await productForm.getByLabel("Product name").fill("Green tea updated");
   await productForm.getByRole("button", { name: "Save changes" }).click();
   await expect(

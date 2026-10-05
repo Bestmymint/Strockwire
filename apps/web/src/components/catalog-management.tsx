@@ -11,6 +11,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 
+import { ProductBarcodeLabels } from "./product-barcode-labels";
+
 import { formatMoney } from "@/money-display";
 import {
   applicationContextUrl,
@@ -1040,6 +1042,7 @@ function ProductEditor({
           </div>
         </dl>
       )}
+      <ProductBarcodeLabels product={product} />
       {validation ? (
         <p className="mt-3 text-sm form-message" role="alert">
           {validation}

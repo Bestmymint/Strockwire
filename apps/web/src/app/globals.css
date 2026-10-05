@@ -106,3 +106,128 @@ body {
     width: 100%;
   }
 }
+
+.barcode-label-dialog {
+  width: min(54rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+  max-height: calc(100dvh - 2rem);
+  margin: auto;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--background);
+  color: var(--foreground);
+  overflow: auto;
+}
+
+.barcode-label-dialog::backdrop {
+  background: rgb(0 0 0 / 50%);
+}
+
+.barcode-label-sheet {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  gap: 4mm;
+  margin-top: 1.25rem;
+}
+
+.product-barcode-label {
+  box-sizing: border-box;
+  min-height: 50mm;
+  max-width: 100%;
+  padding: 4mm;
+  border: 1px solid #ccc;
+  background: white;
+  color: black;
+  text-align: center;
+  overflow-wrap: anywhere;
+  break-inside: avoid;
+}
+
+.product-barcode-label p {
+  margin: 0 0 2mm;
+}
+
+.barcode-label-name {
+  font-size: 12pt;
+  font-weight: 600;
+}
+
+.product-barcode-symbol {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto 2mm;
+  shape-rendering: crispEdges;
+}
+
+.barcode-label-value {
+  font: 11pt monospace;
+  white-space: pre-wrap;
+}
+
+.barcode-label-sku {
+  font-size: 9pt;
+}
+
+@page barcode-labels {
+  size: A4;
+  margin: 10mm;
+}
+
+@media print {
+  /* The body portal removes hidden application layout from pagination entirely. */
+  body:has(.barcode-label-workflow) {
+    margin: 0;
+    background: white;
+  }
+
+  body:has(.barcode-label-workflow) > :not(.barcode-label-workflow) {
+    display: none !important;
+  }
+
+  .barcode-label-workflow,
+  .barcode-label-workflow * {
+    visibility: visible;
+  }
+
+  .barcode-label-workflow {
+    page: barcode-labels;
+  }
+
+  .barcode-label-dialog {
+    position: static;
+    display: block;
+    width: 190mm;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    overflow: visible;
+  }
+
+  .barcode-label-dialog::backdrop,
+  .barcode-label-controls {
+    display: none;
+  }
+
+  .barcode-label-sheet {
+    display: block;
+    margin: 0;
+  }
+
+  .product-barcode-label {
+    max-width: none;
+    margin: 0 auto 4mm;
+    border: 0;
+  }
+
+  .product-barcode-label:last-child {
+    margin-bottom: 0;
+  }
+
+  .product-barcode-symbol {
+    max-width: none;
+  }
+}

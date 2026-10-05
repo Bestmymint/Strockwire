@@ -96,6 +96,18 @@ function renderCatalog() {
 }
 
 beforeEach(() => {
+  Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
+    configurable: true,
+    value: function (this: HTMLDialogElement) {
+      this.setAttribute("open", "");
+    },
+  });
+  Object.defineProperty(HTMLDialogElement.prototype, "close", {
+    configurable: true,
+    value: function (this: HTMLDialogElement) {
+      this.removeAttribute("open");
+    },
+  });
   vi.mocked(fetchAccessContext).mockImplementation(async () => ({
     firstOrganizationOnboarding: { eligible: false },
     organizations: [
@@ -133,6 +145,7 @@ afterEach(() => {
   cleanup();
   role = "OWNER";
   vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe("catalog management UI", () => {
@@ -207,6 +220,9 @@ describe("catalog management UI", () => {
     fireEvent.change(within(createForm).getByLabelText("Base price"), {
       target: { value: "10.2500" },
     });
+    fireEvent.change(within(createForm).getByLabelText("Barcode (optional)"), {
+      target: { value: "0012345678905" },
+    });
     fireEvent.change(within(createForm).getByLabelText("Category (optional)"), {
       target: { value: CATEGORY_ID },
     });
@@ -217,6 +233,7 @@ describe("catalog management UI", () => {
         { branchId: BRANCH_ID, organizationId: ORGANIZATION_ID },
         expect.objectContaining({
           basePrice: "10.2500",
+          barcode: "0012345678905",
           categoryId: CATEGORY_ID,
           unit: "EA",
         }),
@@ -243,6 +260,64 @@ describe("catalog management UI", () => {
       PRODUCT_ID,
       expect.objectContaining({ expectedUpdatedAt: product.updatedAt }),
     );
+  });
+
+  it.each(["00001234", ""])(
+    "updates/removes barcode %s while preserving SKU and version",
+    async (barcode) => {
+      renderCatalog();
+      const editor = await screen.findByRole("form", {
+        name: "Edit product Tea",
+      });
+      fireEvent.change(within(editor).getByLabelText("Barcode (optional)"), {
+        target: { value: barcode },
+      });
+      fireEvent.submit(editor);
+      await waitFor(() =>
+        expect(updateProduct).toHaveBeenCalledWith(
+          expect.anything(),
+          PRODUCT_ID,
+          expect.objectContaining({
+            barcode,
+            sku: product.sku,
+            expectedUpdatedAt: product.updatedAt,
+          }),
+        ),
+      );
+    },
+  );
+
+  it("shows a clear tenant barcode conflict returned by the API", async () => {
+    vi.mocked(updateProduct).mockRejectedValue(
+      new CatalogApiError("barcode_conflict"),
+    );
+    renderCatalog();
+    const editor = await screen.findByRole("form", {
+      name: "Edit product Tea",
+    });
+    fireEvent.submit(editor);
+    expect(
+      await screen.findAllByText(
+        "That barcode already exists in this organization.",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("opens labels from saved product details without submitting unsaved edits", async () => {
+    renderCatalog();
+    const editor = await screen.findByRole("form", {
+      name: "Edit product Tea",
+    });
+    fireEvent.change(within(editor).getByLabelText("Barcode (optional)"), {
+      target: { value: "UNSAVED" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Preview barcode labels" }),
+    );
+    expect(
+      screen.getByRole("img", { name: `Code 128 barcode ${product.barcode}` }),
+    ).toBeTruthy();
+    expect(updateProduct).not.toHaveBeenCalled();
   });
 
   it("gates lifecycle controls in UX while keeping the server API authoritative", async () => {
