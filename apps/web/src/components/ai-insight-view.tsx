@@ -1,4 +1,9 @@
 "use client";
+import { Label } from "@/components/ui/label";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
@@ -97,43 +102,45 @@ export function AiInsightView({
           for numerical results.
         </p>
         <div className="mt-4 grid max-w-4xl gap-4 sm:grid-cols-2">
-          <label className="form-field">
+          <Label className="form-field">
             Insight scope
-            <select
-              className="form-control"
+            <NativeSelect
+              className="w-full "
               onChange={(event) => setScopeValue(event.target.value)}
               value={
                 scope.scope === "organization" ? "organization" : scope.branchId
               }
             >
               {wide ? (
-                <option value="organization">All organization branches</option>
+                <NativeSelectOption value="organization">
+                  All organization branches
+                </NativeSelectOption>
               ) : null}
               {branches.map((item) => (
-                <option key={item.id} value={item.id}>
+                <NativeSelectOption key={item.id} value={item.id}>
                   {item.code} — {item.name}
                   {"status" in item && item.status === "INACTIVE"
                     ? " (inactive)"
                     : ""}
-                </option>
+                </NativeSelectOption>
               ))}
-            </select>
-          </label>
-          <label className="form-field">
+            </NativeSelect>
+          </Label>
+          <Label className="form-field">
             Insight cadence
-            <select
-              className="form-control"
+            <NativeSelect
+              className="w-full "
               onChange={(event) =>
                 setCadence(event.target.value as InsightCadence)
               }
               value={cadence}
             >
-              <option value="DAILY">Daily</option>
-              <option value="WEEKLY">Weekly</option>
-              <option value="MONTHLY">Monthly</option>
-              <option value="YEARLY">Yearly</option>
-            </select>
-          </label>
+              <NativeSelectOption value="DAILY">Daily</NativeSelectOption>
+              <NativeSelectOption value="WEEKLY">Weekly</NativeSelectOption>
+              <NativeSelectOption value="MONTHLY">Monthly</NativeSelectOption>
+              <NativeSelectOption value="YEARLY">Yearly</NativeSelectOption>
+            </NativeSelect>
+          </Label>
         </div>
         {wide && branchesQuery.isPending ? (
           <p className="mt-2 text-sm" aria-live="polite">

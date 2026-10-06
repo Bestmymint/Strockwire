@@ -1,4 +1,7 @@
 "use client";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 import Link from "next/link";
 import { type FormEvent, useState } from "react";
@@ -85,12 +88,12 @@ export function ResetPasswordForm() {
   return (
     <form className="space-y-5" noValidate onSubmit={handleSubmit}>
       <div>
-        <label className="form-field" htmlFor="reset-password">
+        <Label className="form-field" htmlFor="reset-password">
           New password
-        </label>
-        <input
+        </Label>
+        <Input
           autoComplete="new-password"
-          className="form-control mt-1"
+          className="mt-1"
           disabled={isSubmitting}
           id="reset-password"
           name="new-password"
@@ -107,19 +110,15 @@ export function ResetPasswordForm() {
       {error === null ? null : (
         <p
           aria-live="assertive"
-          className="text-sm text-red-700 form-message"
+          className="text-sm text-destructive form-message"
           role="alert"
         >
           {error}
         </p>
       )}
-      <button
-        className="min-h-11 w-full rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 form-action"
-        disabled={isSubmitting}
-        type="submit"
-      >
+      <Button className="w-full" disabled={isSubmitting} type="submit">
         {isSubmitting ? "Resetting password…" : "Reset password"}
-      </button>
+      </Button>
     </form>
   );
 }

@@ -1,4 +1,12 @@
 "use client";
+import { useLanguage } from "@/providers/language-provider";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 
 import {
   type InfiniteData,
@@ -169,30 +177,6 @@ function errorMessage(error: unknown): string {
   return messages[error.kind];
 }
 
-function PrimaryButton({
-  className = "",
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      className={`form-action rounded-md bg-foreground text-background hover:opacity-90 disabled:opacity-60 ${className}`}
-      {...props}
-    />
-  );
-}
-
-function SecondaryButton({
-  className = "",
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      className={`form-action rounded-md border hover:bg-muted disabled:opacity-60 ${className}`}
-      {...props}
-    />
-  );
-}
-
 export function PosManagement() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -287,6 +271,8 @@ function PosContent({
   branch: AccessibleOrganization["branches"][number];
   organization: AccessibleOrganization;
 }) {
+  const { t } = useLanguage();
+
   const queryClient = useQueryClient();
   const context = {
     branchId: branch.id,
@@ -445,7 +431,7 @@ function PosContent({
           className="text-sm underline"
           href={applicationContextUrl(organization.id, branch.id)}
         >
-          Back to workspace
+          {t("backToWorkspace")}
         </Link>
         <h1 className="text-2xl font-semibold">Point of sale</h1>
         <p className="text-muted-foreground">
@@ -504,18 +490,18 @@ function PosContent({
               });
             }}
           >
-            <label className="form-field">
+            <Label className="form-field">
               Search products
-              <input
-                className="form-control"
+              <Input
+                className=""
                 defaultValue={search.q}
                 name="q"
                 placeholder="Name or SKU"
               />
-            </label>
-            <PrimaryButton className="self-end" type="submit">
+            </Label>
+            <Button className="self-end" type="submit">
               Search
-            </PrimaryButton>
+            </Button>
           </form>
           <ProductResults
             error={productsQuery.error}
@@ -541,7 +527,8 @@ function PosContent({
                 Transient cart only; stock is confirmed at checkout.
               </p>
             </div>
-            <SecondaryButton
+            <Button
+              variant="outline"
               disabled={cart.length === 0 || checkoutMutation.isPending}
               onClick={() => {
                 changeIntent();
@@ -550,7 +537,7 @@ function PosContent({
               type="button"
             >
               Clear cart
-            </SecondaryButton>
+            </Button>
           </div>
           <fieldset
             className="m-0 min-w-0 space-y-5 border-0 p-0"
@@ -643,7 +630,7 @@ function PosContent({
                   });
               }}
             >
-              <PrimaryButton
+              <Button
                 aria-busy={checkoutMutation.isPending}
                 disabled={
                   cart.length === 0 ||
@@ -657,7 +644,7 @@ function PosContent({
                 {checkoutMutation.isPending
                   ? "Completing sale…"
                   : "Complete sale"}
-              </PrimaryButton>
+              </Button>
             </form>
           </fieldset>
         </aside>
@@ -713,25 +700,26 @@ function ProductResults({
               </span>
             </div>
             <p className="mt-4 font-medium">{formatThb(product.basePrice)}</p>
-            <PrimaryButton
+            <Button
               className="mt-4 w-full"
               disabled={!product.available}
               onClick={() => onAdd(product)}
               type="button"
             >
               {product.available ? `Add ${product.name}` : "Unavailable"}
-            </PrimaryButton>
+            </Button>
           </article>
         ))}
       </div>
       {hasNextPage ? (
-        <SecondaryButton
+        <Button
+          variant="outline"
           disabled={isLoadingNext}
           onClick={onLoadMore}
           type="button"
         >
           {isLoadingNext ? "Loading more…" : "Load more products"}
-        </SecondaryButton>
+        </Button>
       ) : null}
     </div>
   );
@@ -775,39 +763,42 @@ function CartLines({
               </strong>
             </div>
             <div className="flex flex-wrap items-end gap-2">
-              <SecondaryButton
+              <Button
+                variant="outline"
                 aria-label={`Decrease ${line.name} quantity`}
                 onClick={() => onDecrement(line.id)}
                 type="button"
               >
                 −
-              </SecondaryButton>
-              <label className="form-field max-w-48 basis-32 flex-1">
+              </Button>
+              <Label className="form-field max-w-48 basis-32 flex-1">
                 Quantity for {line.name} ({line.unit})
-                <input
+                <Input
                   aria-invalid={!valid}
-                  className="form-control form-control--numeric"
+                  className="form-control--numeric"
                   inputMode="decimal"
                   onChange={(event) =>
                     onChangeQuantity(line.id, event.target.value)
                   }
                   value={line.quantity}
                 />
-              </label>
-              <SecondaryButton
+              </Label>
+              <Button
+                variant="outline"
                 aria-label={`Increase ${line.name} quantity`}
                 onClick={() => onIncrement(line.id)}
                 type="button"
               >
                 +
-              </SecondaryButton>
-              <SecondaryButton
+              </Button>
+              <Button
+                variant="outline"
                 aria-label={`Remove ${line.name} from cart`}
                 onClick={() => onRemove(line.id)}
                 type="button"
               >
                 Remove
-              </SecondaryButton>
+              </Button>
             </div>
             {!valid ? (
               <p className="text-sm text-destructive form-message" role="alert">
@@ -835,39 +826,39 @@ function DiscountControls({
   return (
     <fieldset className="space-y-3 border-t pt-4">
       <legend className="font-medium">Whole-sale discount</legend>
-      <label className="form-field">
+      <Label className="form-field">
         Discount type
-        <select
-          className="form-control"
+        <NativeSelect
+          className="w-full "
           onChange={(event) =>
             onChange(event.target.value as DiscountType, value, reason)
           }
           value={type}
         >
-          <option value="NONE">No discount</option>
-          <option value="AMOUNT">Amount (THB)</option>
-          <option value="PERCENT">Percent</option>
-        </select>
-      </label>
+          <NativeSelectOption value="NONE">No discount</NativeSelectOption>
+          <NativeSelectOption value="AMOUNT">Amount (THB)</NativeSelectOption>
+          <NativeSelectOption value="PERCENT">Percent</NativeSelectOption>
+        </NativeSelect>
+      </Label>
       {type !== "NONE" ? (
         <>
-          <label className="form-field">
+          <Label className="form-field">
             {type === "AMOUNT" ? "Discount amount (THB)" : "Discount percent"}
-            <input
-              className="form-control form-control--numeric"
+            <Input
+              className="form-control--numeric"
               inputMode="decimal"
               onChange={(event) => onChange(type, event.target.value, reason)}
               value={value}
             />
-          </label>
-          <label className="form-field">
+          </Label>
+          <Label className="form-field">
             Discount reason
-            <input
-              className="form-control"
+            <Input
+              className=""
               onChange={(event) => onChange(type, value, event.target.value)}
               value={reason}
             />
-          </label>
+          </Label>
         </>
       ) : null}
     </fieldset>
@@ -901,9 +892,9 @@ function PaymentControls({
     <fieldset className="space-y-3 border-t pt-4">
       <legend className="font-medium">Payment</legend>
       <div className="flex flex-wrap gap-4">
-        <label className="flex min-h-11 items-center gap-2 text-sm font-medium">
-          <input
-            className="form-choice"
+        <Label className="flex min-h-11 items-center gap-2 text-sm font-medium">
+          <Input
+            className=""
             checked={method === "CASH"}
             name="payment-method"
             onChange={() => onChange("CASH", amountTendered, reference)}
@@ -911,10 +902,10 @@ function PaymentControls({
             value="CASH"
           />
           Cash
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            className="form-choice"
+        </Label>
+        <Label className="flex items-center gap-2">
+          <Input
+            className=""
             checked={method === "TRANSFER"}
             name="payment-method"
             onChange={() => onChange("TRANSFER", amountTendered, reference)}
@@ -922,14 +913,14 @@ function PaymentControls({
             value="TRANSFER"
           />
           Transfer
-        </label>
+        </Label>
       </div>
       {method === "CASH" ? (
         <>
-          <label className="form-field">
+          <Label className="form-field">
             Amount tendered (THB)
-            <input
-              className="form-control form-control--numeric"
+            <Input
+              className="form-control--numeric"
               inputMode="decimal"
               onChange={(event) =>
                 onChange("CASH", event.target.value, reference)
@@ -937,7 +928,7 @@ function PaymentControls({
               required
               value={amountTendered}
             />
-          </label>
+          </Label>
           <p className="text-sm text-muted-foreground">
             {change === null
               ? "Enter tendered cash at or above the current-price subtotal."
@@ -945,16 +936,16 @@ function PaymentControls({
           </p>
         </>
       ) : (
-        <label className="form-field">
+        <Label className="form-field">
           Transfer reference (optional)
-          <input
-            className="form-control"
+          <Input
+            className=""
             onChange={(event) =>
               onChange("TRANSFER", amountTendered, event.target.value)
             }
             value={reference}
           />
-        </label>
+        </Label>
       )}
     </fieldset>
   );
@@ -1055,29 +1046,31 @@ function VatProfilePanel({
           .catch(() => undefined);
       }}
     >
-      <label className="form-field">
+      <Label className="form-field">
         Sales VAT status
-        <select
-          className="form-control"
+        <NativeSelect
+          className="w-full "
           onChange={(event) =>
             setStatus(event.target.value as SalesVatProfile["salesVatStatus"])
           }
           value={status}
         >
-          <option value="NOT_REGISTERED">Not registered</option>
-          <option value="REGISTERED">Registered</option>
-        </select>
-      </label>
+          <NativeSelectOption value="NOT_REGISTERED">
+            Not registered
+          </NativeSelectOption>
+          <NativeSelectOption value="REGISTERED">Registered</NativeSelectOption>
+        </NativeSelect>
+      </Label>
       {status === "REGISTERED" ? (
-        <label className="form-field">
+        <Label className="form-field">
           VAT rate (%)
-          <input
-            className="form-control form-control--numeric"
+          <Input
+            className="form-control--numeric"
             inputMode="decimal"
             onChange={(event) => setRate(event.target.value)}
             value={rate}
           />
-        </label>
+        </Label>
       ) : (
         <div />
       )}
@@ -1086,14 +1079,14 @@ function VatProfilePanel({
           {notice}
         </p>
       ) : null}
-      <PrimaryButton
+      <Button
         aria-busy={mutation.isPending}
         className="self-end"
         disabled={mutation.isPending}
         type="submit"
       >
         {mutation.isPending ? "Saving VAT…" : "Save VAT profile"}
-      </PrimaryButton>
+      </Button>
     </form>
   );
 }
@@ -1143,12 +1136,12 @@ function SaleComplete({
           </li>
         ))}
       </ul>
-      <PrimaryButton onClick={onNewSale} type="button">
+      <Button onClick={onNewSale} type="button">
         New sale
-      </PrimaryButton>
-      <PrimaryButton onClick={() => window.print()} type="button">
+      </Button>
+      <Button onClick={() => window.print()} type="button">
         Print receipt
-      </PrimaryButton>
+      </Button>
       <SaleReceipt sale={sale} />
     </section>
   );

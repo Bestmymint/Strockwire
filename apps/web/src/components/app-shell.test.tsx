@@ -71,6 +71,14 @@ function renderShell(
 }
 
 beforeEach(() => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }),
+  );
   pathname = "/app";
   searchParams = new URLSearchParams();
   replace.mockReset();
@@ -97,7 +105,7 @@ describe("web application shell", () => {
     pathname = "/";
     renderShell(undefined, <HomePage />);
     expect(
-      screen.getByRole("heading", { name: /Know your stock/ }),
+      screen.getByRole("heading", { name: /Run your inventory with clarity/ }),
     ).toBeTruthy();
     expect(
       screen
@@ -266,25 +274,38 @@ describe("web application shell", () => {
     expect(screen.queryByRole("link", { name: "Catalog" })).toBeNull();
   });
 
-  it("exposes menu state and closes compact navigation after choosing a destination", () => {
+  it("toggles the official desktop sidebar while preserving scoped links", () => {
     renderShell(accessContext());
     const menu = screen.getByRole("button", { name: "Menu" });
-    expect(menu.getAttribute("aria-expanded")).toBe("false");
-    expect(menu.getAttribute("aria-controls")).toBe(
-      screen.getByRole("navigation").id,
-    );
+    expect(menu.getAttribute("aria-expanded")).toBe("true");
     fireEvent.click(menu);
+    expect(menu.getAttribute("aria-expanded")).toBe("false");
     expect(
-      screen
-        .getByRole("button", { name: "Close menu" })
-        .getAttribute("aria-expanded"),
-    ).toBe("true");
-    fireEvent.click(screen.getByRole("link", { name: "Catalog" }));
-    expect(
-      screen
-        .getByRole("button", { name: "Menu" })
-        .getAttribute("aria-expanded"),
-    ).toBe("false");
+      screen.getByRole("link", { name: "Catalog" }).getAttribute("href"),
+    ).toBe(`/app/catalog?organizationId=${ORG}&branchId=${BRANCH}`);
+    fireEvent.click(menu);
+    expect(menu.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("keeps keyboard focus on the trigger when the desktop sidebar collapses", () => {
+    renderShell(accessContext());
+    const menu = screen.getByRole("button", { name: "Menu" });
+    const sidebar = document.querySelector(
+      '[data-slot="sidebar"]',
+    ) as HTMLElement;
+    const catalog = screen.getByRole("link", { name: "Catalog" });
+    expect(sidebar.hasAttribute("inert")).toBe(false);
+    catalog.focus();
+    expect(document.activeElement).toBe(catalog);
+    fireEvent.click(menu);
+    expect(menu.getAttribute("aria-expanded")).toBe("false");
+    expect(sidebar.hasAttribute("inert")).toBe(true);
+    expect(document.activeElement).toBe(menu);
+    fireEvent.click(menu);
+    expect(menu.getAttribute("aria-expanded")).toBe("true");
+    expect(sidebar.hasAttribute("inert")).toBe(false);
+    catalog.focus();
+    expect(document.activeElement).toBe(catalog);
   });
 
   it("removes authenticated destinations after access-context revalidation rejects the session", async () => {

@@ -1,4 +1,15 @@
 "use client";
+import { Badge } from "@/components/ui/badge";
+import { useLanguage } from "@/providers/language-provider";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 
 import {
   type InfiniteData,
@@ -113,12 +124,9 @@ function safeBasePrice(value: string): boolean {
 
 function StatusBadge({ status }: { status: "ACTIVE" | "INACTIVE" }) {
   return (
-    <span
-      className="rounded-full border px-2 py-1 text-xs font-medium"
-      data-status={status.toLowerCase()}
-    >
+    <Badge variant="outline" data-status={status.toLowerCase()}>
       {status === "ACTIVE" ? "Active" : "Inactive"}
-    </span>
+    </Badge>
   );
 }
 
@@ -132,24 +140,20 @@ function Field({
 }) {
   const id = useId();
   return (
-    <label className="form-field" htmlFor={id}>
+    <Label className="form-field" htmlFor={id}>
       {label}
-      <input
-        className={
-          name === "basePrice"
-            ? "form-control form-control--numeric"
-            : "form-control"
-        }
+      <Input
+        className={name === "basePrice" ? "form-control--numeric" : ""}
         id={id}
         name={name}
         type="text"
         {...props}
       />
-    </label>
+    </Label>
   );
 }
 
-function Textarea({
+function TextareaField({
   label,
   name,
   ...props
@@ -159,38 +163,10 @@ function Textarea({
 }) {
   const id = useId();
   return (
-    <label className="form-field sm:col-span-full" htmlFor={id}>
+    <Label className="form-field sm:col-span-full" htmlFor={id}>
       {label}
-      <textarea className="form-control" id={id} name={name} {...props} />
-    </label>
-  );
-}
-
-function PrimaryButton({
-  children,
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
-      {...props}
-    >
-      {children}
-    </button>
-  );
-}
-
-function SecondaryButton({
-  children,
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
-      {...props}
-    >
-      {children}
-    </button>
+      <Textarea className="" id={id} name={name} {...props} />
+    </Label>
   );
 }
 
@@ -293,6 +269,8 @@ function CatalogContentLoaded({
   branch: AccessibleOrganization["branches"][number] | null;
   organization: AccessibleOrganization;
 }) {
+  const { t } = useLanguage();
+
   const queryClient = useQueryClient();
   const [view, setView] = useState<CatalogView>("products");
   const [includeInactive, setIncludeInactive] = useState(false);
@@ -385,7 +363,7 @@ function CatalogContentLoaded({
           className="text-sm underline"
           href={applicationContextUrl(organization.id, branch?.id ?? null)}
         >
-          Back to workspace
+          {t("backToWorkspace")}
         </Link>
         <h1 className="text-2xl font-semibold">Catalog</h1>
         <p className="text-muted-foreground">
@@ -401,12 +379,13 @@ function CatalogContentLoaded({
           <p>{notice}</p>
           {isStaleError(categoryQuery.error) ||
           isStaleError(productQuery.error) ? null : (
-            <SecondaryButton
+            <Button
+              variant="outline"
               onClick={() => void refreshCatalog()}
               type="button"
             >
               Refresh latest
-            </SecondaryButton>
+            </Button>
           )}
         </div>
       ) : null}
@@ -416,38 +395,39 @@ function CatalogContentLoaded({
         className="flex gap-2 border-b"
         role="tablist"
       >
-        <button
+        <Button
+          variant={view === "products" ? "secondary" : "outline"}
           aria-controls="products-panel"
           aria-selected={view === "products"}
-          className="min-h-11 border-b-2 px-4 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring form-action"
+          className=""
           onClick={() => setView("products")}
           role="tab"
           type="button"
         >
           Products
-        </button>
-        <button
+        </Button>
+        <Button
+          variant={view === "categories" ? "secondary" : "outline"}
           aria-controls="categories-panel"
           aria-selected={view === "categories"}
-          className="min-h-11 border-b-2 px-4 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring form-action"
+          className=""
           onClick={() => setView("categories")}
           role="tab"
           type="button"
         >
           Categories
-        </button>
+        </Button>
       </div>
 
       {canIncludeInactive ? (
-        <label className="flex min-h-11 items-center gap-3 text-sm font-medium">
-          <input
-            className="form-choice"
+        <Label className="flex min-h-11 items-center gap-3 text-sm font-medium">
+          <Checkbox
+            className=""
             checked={includeInactive}
-            onChange={(event) => setIncludeInactive(event.target.checked)}
-            type="checkbox"
+            onCheckedChange={(checked) => setIncludeInactive(checked)}
           />
           Include inactive catalog records
-        </label>
+        </Label>
       ) : null}
 
       {view === "products" ? (
@@ -578,9 +558,13 @@ function CatalogListState({
     return (
       <div className="space-y-3" role="alert">
         <p>{errorMessage(error)}</p>
-        <SecondaryButton onClick={() => void onRefresh()} type="button">
+        <Button
+          variant="outline"
+          onClick={() => void onRefresh()}
+          type="button"
+        >
           Refresh latest
-        </SecondaryButton>
+        </Button>
       </div>
     );
   if (isEmpty) return <p>{emptyMessage}</p>;
@@ -599,9 +583,14 @@ function LoadMore({
   if (!hasNextPage) return null;
   return (
     <div className="mt-4">
-      <SecondaryButton disabled={isPending} onClick={onLoadMore} type="button">
+      <Button
+        variant="outline"
+        disabled={isPending}
+        onClick={onLoadMore}
+        type="button"
+      >
         {isPending ? "Loading…" : "Load more"}
-      </SecondaryButton>
+      </Button>
     </div>
   );
 }
@@ -622,7 +611,7 @@ function SearchControl({
       }}
     >
       <Field defaultValue={search} label="Search catalog" name="q" />
-      <PrimaryButton type="submit">Search</PrimaryButton>
+      <Button type="submit">Search</Button>
     </form>
   );
 }
@@ -644,23 +633,25 @@ function ProductListControls({
   return (
     <div className="my-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_16rem] md:items-end">
       <SearchControl onSearch={onSearch} search={search} />
-      <label className="form-field" htmlFor={categorySelectId}>
+      <Label className="form-field" htmlFor={categorySelectId}>
         Category filter
-        <select
-          className="form-control"
+        <NativeSelect
+          className="w-full "
           id={categorySelectId}
           onChange={(event) => onCategoryFilterChange(event.target.value)}
           value={categoryFilter}
         >
-          <option value="">All categories</option>
-          <option value="uncategorized">Uncategorized</option>
+          <NativeSelectOption value="">All categories</NativeSelectOption>
+          <NativeSelectOption value="uncategorized">
+            Uncategorized
+          </NativeSelectOption>
           {categories.map((category) => (
-            <option key={category.id} value={category.id}>
+            <NativeSelectOption key={category.id} value={category.id}>
               {category.name}
-            </option>
+            </NativeSelectOption>
           ))}
-        </select>
-      </label>
+        </NativeSelect>
+      </Label>
     </div>
   );
 }
@@ -699,15 +690,15 @@ function CategoryCreateForm({
       <h2 className="font-semibold">Create category</h2>
       <div className="mt-4 mb-4 grid max-w-4xl items-start gap-4 sm:grid-cols-2">
         <Field label="Category name" name="name" required />
-        <Textarea label="Description (optional)" name="description" />
+        <TextareaField label="Description (optional)" name="description" />
       </div>
-      <PrimaryButton
+      <Button
         aria-busy={mutation.isPending}
         disabled={mutation.isPending}
         type="submit"
       >
         {mutation.isPending ? "Creating…" : "Create category"}
-      </PrimaryButton>
+      </Button>
     </form>
   );
 }
@@ -727,6 +718,8 @@ function CategoryEditor({
   onError: (error: unknown) => void;
   onSaved: () => Promise<void>;
 }) {
+  const { t } = useLanguage();
+
   const updateMutation = useMutation({
     mutationFn: (form: HTMLFormElement) => {
       const data = new FormData(form);
@@ -763,7 +756,7 @@ function CategoryEditor({
             name="name"
             required
           />
-          <Textarea
+          <TextareaField
             defaultValue={category.description ?? ""}
             label="Description (optional)"
             name="description"
@@ -777,16 +770,18 @@ function CategoryEditor({
       {canManage || canLifecycle ? (
         <div className="mt-4 flex flex-wrap gap-3">
           {canManage ? (
-            <SecondaryButton
+            <Button
+              variant="outline"
               aria-busy={updateMutation.isPending}
               disabled={pending}
               type="submit"
             >
-              Save changes
-            </SecondaryButton>
+              {t("saveChanges")}
+            </Button>
           ) : null}
           {canLifecycle ? (
-            <SecondaryButton
+            <Button
+              variant="outline"
               aria-busy={lifecycleMutation.isPending}
               disabled={pending}
               onClick={() =>
@@ -795,7 +790,7 @@ function CategoryEditor({
               type="button"
             >
               {category.status === "ACTIVE" ? "Deactivate" : "Reactivate"}
-            </SecondaryButton>
+            </Button>
           ) : null}
         </div>
       ) : null}
@@ -865,44 +860,44 @@ function ProductCreateForm({
           name="basePrice"
           required
         />
-        <label className="form-field" htmlFor={unitId}>
+        <Label className="form-field" htmlFor={unitId}>
           Unit
-          <select
-            className="form-control form-control--compact"
+          <NativeSelect
+            className="w-full form-control--compact"
             defaultValue="EA"
             id={unitId}
             name="unit"
           >
             {PRODUCT_UNITS.map((unit) => (
-              <option key={unit}>{unit}</option>
+              <NativeSelectOption key={unit}>{unit}</NativeSelectOption>
             ))}
-          </select>
-        </label>
-        <label className="form-field" htmlFor={categoryId}>
+          </NativeSelect>
+        </Label>
+        <Label className="form-field" htmlFor={categoryId}>
           Category (optional)
-          <select className="form-control" id={categoryId} name="categoryId">
-            <option value="">Uncategorized</option>
+          <NativeSelect className="w-full " id={categoryId} name="categoryId">
+            <NativeSelectOption value="">Uncategorized</NativeSelectOption>
             {categories.map((category) => (
-              <option key={category.id} value={category.id}>
+              <NativeSelectOption key={category.id} value={category.id}>
                 {category.name}
-              </option>
+              </NativeSelectOption>
             ))}
-          </select>
-        </label>
-        <Textarea label="Description (optional)" name="description" />
+          </NativeSelect>
+        </Label>
+        <TextareaField label="Description (optional)" name="description" />
       </div>
       {validation ? (
         <p className="mt-3 text-sm form-message" role="alert">
           {validation}
         </p>
       ) : null}
-      <PrimaryButton
+      <Button
         aria-busy={mutation.isPending}
         disabled={mutation.isPending}
         type="submit"
       >
         {mutation.isPending ? "Creating…" : "Create product"}
-      </PrimaryButton>
+      </Button>
     </form>
   );
 }
@@ -926,6 +921,8 @@ function ProductEditor({
   onSaved: () => Promise<void>;
   product: CatalogProduct;
 }) {
+  const { t } = useLanguage();
+
   const [validation, setValidation] = useState<string | null>(null);
   const updateMutation = useMutation({
     mutationFn: (form: HTMLFormElement) => {
@@ -998,29 +995,31 @@ function ProductEditor({
             name="basePrice"
             required
           />
-          <label className="form-field" htmlFor={categorySelectId}>
+          <Label className="form-field" htmlFor={categorySelectId}>
             Category (optional)
-            <select
-              className="form-control"
+            <NativeSelect
+              className="w-full "
               defaultValue={product.categoryId ?? ""}
               id={categorySelectId}
               name="categoryId"
             >
-              <option value="">Uncategorized</option>
+              <NativeSelectOption value="">Uncategorized</NativeSelectOption>
               {needsCurrentCategoryOption ? (
-                <option value={product.categoryId ?? ""}>{categoryName}</option>
+                <NativeSelectOption value={product.categoryId ?? ""}>
+                  {categoryName}
+                </NativeSelectOption>
               ) : null}
               {categories.map((category) => (
-                <option key={category.id} value={category.id}>
+                <NativeSelectOption key={category.id} value={category.id}>
                   {category.name}
-                </option>
+                </NativeSelectOption>
               ))}
-            </select>
-          </label>
+            </NativeSelect>
+          </Label>
           <p className="self-end text-sm text-muted-foreground">
             Unit: {product.unit} (immutable)
           </p>
-          <Textarea
+          <TextareaField
             defaultValue={product.description ?? ""}
             label="Description (optional)"
             name="description"
@@ -1051,16 +1050,18 @@ function ProductEditor({
       {canManage || canLifecycle ? (
         <div className="mt-4 flex flex-wrap gap-3">
           {canManage ? (
-            <SecondaryButton
+            <Button
+              variant="outline"
               aria-busy={updateMutation.isPending}
               disabled={pending}
               type="submit"
             >
-              Save changes
-            </SecondaryButton>
+              {t("saveChanges")}
+            </Button>
           ) : null}
           {canLifecycle ? (
-            <SecondaryButton
+            <Button
+              variant="outline"
               aria-busy={lifecycleMutation.isPending}
               disabled={pending}
               onClick={() =>
@@ -1069,7 +1070,7 @@ function ProductEditor({
               type="button"
             >
               {product.status === "ACTIVE" ? "Deactivate" : "Reactivate"}
-            </SecondaryButton>
+            </Button>
           ) : null}
         </div>
       ) : null}

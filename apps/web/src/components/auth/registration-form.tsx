@@ -1,4 +1,8 @@
 "use client";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 import Link from "next/link";
 import { type FormEvent, useState } from "react";
@@ -55,12 +59,14 @@ export function RegistrationForm() {
           Check your email for the next step. You can request a verification
           email when you are ready.
         </p>
-        <Link
-          className="mt-5 inline-flex min-h-11 items-center rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          href="/verification-resend"
+        <Button
+          className="mt-5"
+          nativeButton={false}
+          role="link"
+          render={<Link href="/verification-resend" />}
         >
           Request verification email
-        </Link>
+        </Button>
       </div>
     );
   }
@@ -68,12 +74,12 @@ export function RegistrationForm() {
   return (
     <form className="space-y-5" noValidate onSubmit={handleSubmit}>
       <div>
-        <label className="form-field" htmlFor="registration-email">
+        <Label className="form-field" htmlFor="registration-email">
           Email address
-        </label>
-        <input
+        </Label>
+        <Input
           autoComplete="email"
-          className="form-control mt-1"
+          className="mt-1"
           disabled={isSubmitting}
           id="registration-email"
           name="email"
@@ -84,12 +90,12 @@ export function RegistrationForm() {
         />
       </div>
       <div>
-        <label className="form-field" htmlFor="registration-password">
+        <Label className="form-field" htmlFor="registration-password">
           Password
-        </label>
-        <input
+        </Label>
+        <Input
           autoComplete="new-password"
-          className="form-control mt-1"
+          className="mt-1"
           disabled={isSubmitting}
           id="registration-password"
           name="password"
@@ -104,21 +110,13 @@ export function RegistrationForm() {
         </p>
       </div>
       {error === null ? null : (
-        <p
-          aria-live="assertive"
-          className="text-sm text-red-700 form-message"
-          role="alert"
-        >
-          {error}
-        </p>
+        <Alert variant="destructive" aria-live="assertive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
-      <button
-        className="min-h-11 w-full rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 form-action"
-        disabled={isSubmitting}
-        type="submit"
-      >
+      <Button className="w-full" disabled={isSubmitting} type="submit">
         {isSubmitting ? "Creating account…" : "Create account"}
-      </button>
+      </Button>
       <p className="text-center text-sm text-muted-foreground">
         Already have an account?{" "}
         <Link className="font-medium text-foreground underline" href="/login">

@@ -338,3 +338,22 @@ for (const [sample, count, longNames] of [
       .screenshot({ path: testInfo.outputPath(`print-${sample}.png`) });
   });
 }
+for (const theme of ["light", "dark"] as const) {
+  test(`receipt retains white paper and exact snapshot values in ${theme}`, async ({
+    page,
+  }) => {
+    await page.addInitScript(
+      (value) => localStorage.setItem("stockwise.theme", value),
+      theme,
+    );
+    await stubSale(page, receiptSale());
+    await openHistoryReceipt(page);
+    const receipt = page.getByLabel("Printable receipt");
+    await expect(receipt).toHaveCSS("background-color", "rgb(255, 255, 255)");
+    await expect(receipt).toHaveCSS("color", "rgb(0, 0, 0)");
+    await checkPrintLayout(page);
+    await expect(receipt).toHaveCSS("background-color", "rgb(255, 255, 255)");
+    await expect(receipt).toHaveCSS("color", "rgb(0, 0, 0)");
+    await expect(receipt).toContainText("THB 12.3456");
+  });
+}

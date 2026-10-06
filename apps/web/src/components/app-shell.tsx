@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect } from "react";
 
 import { BranchApiError, fetchAccessContext } from "@/branch-api-client";
 import {
@@ -12,16 +12,47 @@ import {
 } from "@/application-context";
 import { LogoutButton } from "@/components/auth/logout-button";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
-import { cn } from "@/lib/utils";
+import {
+  BarChart3,
+  Boxes,
+  ClipboardList,
+  Home,
+  Package,
+  Receipt,
+  ShoppingCart,
+  Store,
+  Users,
+  Truck,
+  type LucideIcon,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar";
+import { Separator } from "@/components/ui/separator";
+import { PreferenceControls } from "@/components/preference-controls";
+import { useLanguage } from "@/providers/language-provider";
+import type {
+  AccessContext,
+  AccessibleOrganization,
+} from "@/branch-api-client";
 
 interface AppShellProps {
   children: ReactNode;
 }
-
-const linkClassName =
-  "inline-flex min-h-11 items-center rounded-md px-3 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
-const logoClassName =
-  "w-fit rounded-sm text-lg font-semibold tracking-tight outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
 
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
@@ -35,7 +66,7 @@ function WorkspaceShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const { t } = useLanguage();
   const contextQuery = useQuery({
     queryFn: fetchAccessContext,
     queryKey: ["access-context"],
@@ -66,151 +97,247 @@ function WorkspaceShell({ children }: AppShellProps) {
 
   const canManage =
     organization?.role === "OWNER" || organization?.role === "ADMIN";
-  const destinations = [{ label: "Home", path: "/app", visible: true }];
+  const destinations = [{ label: t("home"), path: "/app", visible: true }];
   if (organization) {
     destinations.push(
-      { label: "Catalog", path: "/app/catalog", visible: true },
-      { label: "Inventory", path: "/app/inventory", visible: !!branch },
+      { label: t("catalog"), path: "/app/catalog", visible: true },
+      { label: t("inventory"), path: "/app/inventory", visible: !!branch },
       {
-        label: "Point of sale",
+        label: t("pos"),
         path: "/app/pos",
         visible: !!branch && organization.role !== "INVENTORY_STAFF",
       },
       {
-        label: "Analytics",
+        label: t("analytics"),
         path: "/app/analytics",
         visible: organization.role !== "CASHIER" && (canManage || !!branch),
       },
       {
-        label: "Sales history",
+        label: t("sales"),
         path: "/app/sales",
         visible: !!branch && organization.role !== "INVENTORY_STAFF",
       },
       {
-        label: "Suppliers",
+        label: t("suppliers"),
         path: "/app/suppliers",
         visible: organization.role !== "CASHIER",
       },
       {
-        label: "Purchase orders",
+        label: t("purchaseOrders"),
         path: "/app/purchase-orders",
         visible: !!branch && organization.role !== "CASHIER",
       },
-      { label: "Manage branches", path: "/app/branches", visible: canManage },
-      { label: "Manage members", path: "/app/members", visible: canManage },
+      { label: t("branches"), path: "/app/branches", visible: canManage },
+      { label: t("members"), path: "/app/members", visible: canManage },
     );
   }
 
-  return (
+  const content = (
     <div
-      className={cn(
-        "flex min-h-screen flex-col bg-background text-foreground",
-        context && "lg:flex-row",
-      )}
+      className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 px-4 py-6 sm:px-6"
+      id="main-content"
     >
-      <a
-        className="fixed left-4 top-4 z-50 -translate-y-24 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background focus:translate-y-0 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-        href="#main-content"
-      >
-        Skip to main content
-      </a>
-
-      {context ? (
-        <>
-          <header className="flex min-h-16 items-center justify-between gap-3 border-b bg-card px-4 lg:hidden">
-            <Link className={logoClassName} href={homeUrl}>
-              StockWise
-            </Link>
-            <button
-              aria-controls="application-navigation"
-              aria-expanded={menuOpen}
-              className={cn(linkClassName, "border border-border")}
-              onClick={() => setMenuOpen(!menuOpen)}
-              type="button"
-            >
-              {menuOpen ? "Close menu" : "Menu"}
-            </button>
-          </header>
-          <aside
-            aria-label="Application sidebar"
-            className={cn(
-              "flex-col gap-6 border-b bg-card p-4 lg:sticky lg:top-0 lg:flex lg:h-dvh lg:w-60 lg:shrink-0 lg:overflow-y-auto lg:border-b-0 lg:border-r lg:p-5",
-              menuOpen ? "flex" : "hidden",
-            )}
-          >
+      {checkingSession ? (
+        <p aria-live="polite">{t("loadingAccess")}</p>
+      ) : openingWorkspace ? (
+        <p aria-live="polite">{t("openingWorkspace")}</p>
+      ) : (
+        children
+      )}
+    </div>
+  );
+  const skip = (
+    <a
+      className="fixed left-4 top-2 z-[100] -translate-y-24 rounded-md bg-primary px-3 py-2 text-primary-foreground focus:translate-y-0"
+      href="#main-content"
+    >
+      {t("skip")}
+    </a>
+  );
+  if (!context)
+    return (
+      <div className="flex min-h-screen flex-col">
+        {skip}
+        <header className="border-b">
+          <div className="mx-auto flex min-h-16 max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2">
             <Link
-              className={cn(logoClassName, "hidden lg:block")}
-              href={homeUrl}
+              className="flex items-center gap-2 text-lg font-semibold"
+              href="/"
             >
+              <Package className="size-5" aria-hidden="true" />
               StockWise
             </Link>
             <nav
-              aria-label="Primary navigation"
-              className="flex flex-col gap-1"
-              id="application-navigation"
+              aria-label={t("primaryNavigation")}
+              className="flex items-center gap-1"
             >
-              {destinations
-                .filter(({ visible }) => visible)
-                .map(({ label, path }) => (
-                  <Link
-                    aria-current={pathname === path ? "page" : undefined}
-                    className={cn(
-                      linkClassName,
-                      pathname === path
-                        ? "bg-muted text-foreground"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                    )}
-                    href={path === "/app" ? homeUrl : path + homeUrl.slice(4)}
-                    key={path}
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    {label}
-                  </Link>
-                ))}
-            </nav>
-            <div className="mt-auto space-y-3 border-t pt-4">
-              <p className="break-words text-sm text-muted-foreground">
-                {context.user.displayName ?? context.user.email}
-              </p>
-              <LogoutButton />
-            </div>
-          </aside>
-        </>
-      ) : (
-        <header className="border-b border-border bg-card">
-          <div className="mx-auto flex min-h-16 w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-            <Link className={logoClassName} href="/">
-              StockWise
-            </Link>
-            <nav aria-label="Primary navigation">
-              {signedOut ? (
-                <Link
-                  className={cn(
-                    linkClassName,
-                    "text-muted-foreground hover:bg-muted hover:text-foreground",
-                  )}
-                  href="/login"
+              <PreferenceControls />
+              {signedOut && (
+                <Button
+                  variant="ghost"
+                  nativeButton={false}
+                  role="link"
+                  render={<Link href="/login" />}
                 >
-                  Sign in
-                </Link>
-              ) : null}
+                  {t("signIn")}
+                </Button>
+              )}
             </nav>
           </div>
         </header>
-      )}
+        <main className="flex min-w-0 flex-1">{content}</main>
+      </div>
+    );
+  return (
+    <SidebarProvider>
+      {skip}
+      <WorkspaceNavigation
+        context={context}
+        organization={organization}
+        branch={branch}
+        homeUrl={homeUrl}
+        destinations={destinations.filter(({ visible }) => visible)}
+        pathname={pathname}
+      />
+      <SidebarInset className="min-w-0">
+        <WorkspaceHeader
+          title={
+            destinations.find((d) => d.path === pathname)?.label ??
+            t("workspace")
+          }
+        />
+        {content}
+      </SidebarInset>
+    </SidebarProvider>
+  );
+}
 
-      <main
-        className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-12"
-        id="main-content"
-      >
-        {checkingSession ? (
-          <p aria-live="polite">Loading access…</p>
-        ) : openingWorkspace ? (
-          <p aria-live="polite">Opening workspace…</p>
-        ) : (
-          children
-        )}
-      </main>
-    </div>
+const destinationIcons: Record<string, LucideIcon> = {
+  "/app": Home,
+  "/app/catalog": Package,
+  "/app/inventory": Boxes,
+  "/app/pos": ShoppingCart,
+  "/app/analytics": BarChart3,
+  "/app/sales": Receipt,
+  "/app/suppliers": Truck,
+  "/app/purchase-orders": ClipboardList,
+  "/app/branches": Store,
+  "/app/members": Users,
+};
+
+function WorkspaceHeader({ title }: { title: string }) {
+  const { t } = useLanguage();
+  const { open, openMobile, isMobile } = useSidebar();
+  return (
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
+      <SidebarTrigger
+        aria-label={t("menu")}
+        aria-expanded={isMobile ? openMobile : open}
+      />
+      <Separator orientation="vertical" className="h-4" />
+      <span className="text-sm font-medium">{title}</span>
+    </header>
+  );
+}
+
+function WorkspaceNavigation({
+  context,
+  organization,
+  branch,
+  homeUrl,
+  destinations,
+  pathname,
+}: {
+  context: AccessContext;
+  organization: AccessibleOrganization | null | undefined;
+  branch: { code: string; name: string } | null | undefined;
+  homeUrl: string;
+  destinations: { label: string; path: string; visible: boolean }[];
+  pathname: string;
+}) {
+  const { t } = useLanguage();
+  const { setOpenMobile } = useSidebar();
+  return (
+    <Sidebar collapsible="offcanvas" closeLabel={t("closeMenu")}>
+      <aside aria-label={t("sidebar")} className="flex h-full min-h-0 flex-col">
+        <SidebarHeader>
+          <Link
+            className="flex h-9 items-center gap-2 px-2 text-base font-semibold"
+            href={homeUrl}
+            onClick={() => setOpenMobile(false)}
+          >
+            <Package className="size-5" aria-hidden="true" />
+            StockWise
+          </Link>
+          {organization && (
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">{t("workspace")}</p>
+              <p
+                className="mt-1 truncate text-sm font-medium"
+                title={organization.name}
+              >
+                {organization.name}
+              </p>
+              {branch && (
+                <p className="mt-1 truncate text-xs text-muted-foreground">
+                  {branch.code} · {branch.name}
+                </p>
+              )}
+              <p className="mt-2 text-xs text-muted-foreground">
+                {t(organization.role)}
+              </p>
+            </div>
+          )}
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>{t("operations")}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <nav
+                aria-label={t("primaryNavigation")}
+                id="application-navigation"
+              >
+                <SidebarMenu>
+                  {destinations.map(({ label, path }) => {
+                    const Icon = destinationIcons[path] ?? Home;
+                    return (
+                      <SidebarMenuItem key={path}>
+                        <SidebarMenuButton
+                          isActive={pathname === path}
+                          render={
+                            <Link
+                              href={
+                                path === "/app"
+                                  ? homeUrl
+                                  : path + homeUrl.slice(4)
+                              }
+                              aria-current={
+                                pathname === path ? "page" : undefined
+                              }
+                              onClick={() => setOpenMobile(false)}
+                            />
+                          }
+                        >
+                          <Icon aria-hidden="true" />
+                          <span>{label}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </nav>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+        <SidebarFooter>
+          <Separator />
+          <PreferenceControls />
+          <p className="break-words px-2 text-xs text-muted-foreground">
+            {context.user.displayName ?? context.user.email}
+          </p>
+          <LogoutButton />
+        </SidebarFooter>
+      </aside>
+    </Sidebar>
   );
 }

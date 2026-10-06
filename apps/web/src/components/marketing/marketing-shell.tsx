@@ -1,89 +1,157 @@
 "use client";
-
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type ReactNode, useRef, useState } from "react";
-
-import styles from "./marketing.module.css";
+import { Menu, Package, X } from "lucide-react";
+import { type ReactNode, useState } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetClose,
+  SheetDescription,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { PreferenceControls } from "@/components/preference-controls";
+import { useLanguage } from "@/providers/language-provider";
 
 export function MarketingShell({ children }: { children: ReactNode }) {
+  const { t } = useLanguage();
   const pathname = usePathname();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuButton = useRef<HTMLButtonElement>(null);
-
+  const [open, setOpen] = useState(false);
+  const links = (
+    <>
+      <Button
+        variant="ghost"
+        nativeButton={false}
+        role="link"
+        render={<Link href="/#features" onClick={() => setOpen(false)} />}
+      >
+        {t("features")}
+      </Button>
+      <Button
+        variant="ghost"
+        nativeButton={false}
+        role="link"
+        render={
+          <Link
+            href="/pricing"
+            aria-current={pathname === "/pricing" ? "page" : undefined}
+            onClick={() => setOpen(false)}
+          />
+        }
+      >
+        {t("pricing")}
+      </Button>
+      <PreferenceControls />
+      <Button
+        variant="ghost"
+        nativeButton={false}
+        role="link"
+        render={<Link href="/login" onClick={() => setOpen(false)} />}
+      >
+        {t("signIn")}
+      </Button>
+      <Button
+        nativeButton={false}
+        role="link"
+        render={<Link href="/register" onClick={() => setOpen(false)} />}
+      >
+        {t("getStarted")}
+      </Button>
+    </>
+  );
   return (
-    <div className={styles.site}>
-      <a className={styles.skipLink} href="#main-content">
-        Skip to main content
+    <div className="min-h-screen bg-background text-foreground">
+      <a
+        className="fixed left-4 top-2 z-[100] -translate-y-24 rounded-md bg-primary px-3 py-2 text-primary-foreground focus:translate-y-0"
+        href="#main-content"
+      >
+        {t("skip")}
       </a>
-      <header className={styles.header}>
-        <div className={styles.navbar}>
-          <Link aria-label="StockWise home" className={styles.brand} href="/">
-            <span aria-hidden="true" className={styles.brandMark}>
-              S
-            </span>
-            StockWise<span className={styles.brandDot}>.</span>
+      <header className="border-b">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-5 sm:px-8">
+          <Link
+            aria-label={t("brandHome")}
+            className="flex items-center gap-2 rounded-md text-lg font-semibold tracking-tight focus-visible:outline-2 focus-visible:outline-ring"
+            href="/"
+          >
+            <Package className="size-5" aria-hidden="true" />
+            StockWise
           </Link>
-          <button
-            aria-controls="public-navigation"
-            aria-expanded={menuOpen}
-            className={styles.menuButton}
-            onClick={() => setMenuOpen(!menuOpen)}
-            ref={menuButton}
-            type="button"
-          >
-            {menuOpen ? "Close menu" : "Menu"}
-          </button>
           <nav
-            aria-label="Public navigation"
-            className={`${styles.navigation} ${menuOpen ? styles.navOpen : ""}`}
-            id="public-navigation"
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                setMenuOpen(false);
-                menuButton.current?.focus();
-              }
-            }}
+            aria-label={t("publicNavigation")}
+            className="hidden items-center gap-1 md:flex"
           >
-            <Link href="/#features" onClick={() => setMenuOpen(false)}>
-              Features
-            </Link>
-            <Link
-              aria-current={pathname === "/pricing" ? "page" : undefined}
-              href="/pricing"
-              onClick={() => setMenuOpen(false)}
-            >
-              Pricing
-            </Link>
-            <Link href="/login" onClick={() => setMenuOpen(false)}>
-              Sign in
-            </Link>
-            <Link
-              className={styles.button}
-              href="/register"
-              onClick={() => setMenuOpen(false)}
-            >
-              Get started <span aria-hidden="true">↗</span>
-            </Link>
+            {links}
           </nav>
+          <div className="md:hidden">
+            <Sheet open={open} onOpenChange={setOpen}>
+              <SheetTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    aria-label={t("menu")}
+                  />
+                }
+              >
+                <Menu />
+              </SheetTrigger>
+              <SheetContent className="max-w-80" showCloseButton={false}>
+                <SheetHeader>
+                  <SheetTitle>{t("menu")}</SheetTitle>
+                  <SheetDescription className="sr-only">
+                    {t("publicNavigation")}
+                  </SheetDescription>
+                </SheetHeader>
+                <SheetClose
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-3 top-3"
+                      aria-label={t("closeMenu")}
+                    />
+                  }
+                >
+                  <X />
+                </SheetClose>
+                <nav
+                  aria-label={t("publicNavigation")}
+                  className="flex flex-col items-stretch gap-3 px-4"
+                >
+                  {links}
+                </nav>
+              </SheetContent>
+            </Sheet>
+          </div>
         </div>
       </header>
       <main id="main-content">{children}</main>
-      <footer className={styles.footer}>
-        <div>
-          <Link className={styles.brand} href="/">
-            StockWise<span className={styles.brandDot}>.</span>
-          </Link>
-          <p>Inventory, sales, and a clearer view of your business.</p>
+      <footer className="border-t">
+        <div className="mx-auto grid max-w-6xl gap-6 px-5 py-10 sm:px-8 md:grid-cols-2">
+          <div>
+            <Link className="font-semibold" href="/">
+              StockWise
+            </Link>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {t("footerDescription")}
+            </p>
+          </div>
+          <nav
+            aria-label={t("footerNavigation")}
+            className="flex flex-wrap gap-5 text-sm md:justify-end"
+          >
+            <Link href="/#features">{t("features")}</Link>
+            <Link href="/pricing">{t("pricing")}</Link>
+            <Link href="/login">{t("signIn")}</Link>
+          </nav>
+          <p className="text-xs text-muted-foreground md:col-span-2">
+            {t("footerNote")}
+          </p>
         </div>
-        <nav aria-label="Footer navigation">
-          <Link href="/#features">Features</Link>
-          <Link href="/pricing">Pricing</Link>
-          <Link href="/login">Sign in</Link>
-        </nav>
-        <p className={styles.footerNote}>
-          Built for small and medium-sized retailers.
-        </p>
       </footer>
     </div>
   );

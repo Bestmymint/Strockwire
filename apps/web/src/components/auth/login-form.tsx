@@ -1,4 +1,8 @@
 "use client";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
@@ -59,12 +63,12 @@ export function LoginForm() {
   return (
     <form className="space-y-5" noValidate onSubmit={handleSubmit}>
       <div>
-        <label className="form-field" htmlFor="login-email">
+        <Label className="form-field" htmlFor="login-email">
           Email address
-        </label>
-        <input
+        </Label>
+        <Input
           autoComplete="email"
-          className="form-control mt-1"
+          className="mt-1"
           disabled={isSubmitting}
           id="login-email"
           name="email"
@@ -76,16 +80,16 @@ export function LoginForm() {
       </div>
       <div>
         <div className="flex items-baseline justify-between gap-3">
-          <label className="form-field" htmlFor="login-password">
+          <Label className="form-field" htmlFor="login-password">
             Password
-          </label>
+          </Label>
           <Link className="text-sm underline" href="/forgot-password">
             Forgot password?
           </Link>
         </div>
-        <input
+        <Input
           autoComplete="current-password"
-          className="form-control mt-1"
+          className="mt-1"
           disabled={isSubmitting}
           id="login-password"
           name="password"
@@ -96,21 +100,13 @@ export function LoginForm() {
         />
       </div>
       {error === null ? null : (
-        <p
-          aria-live="assertive"
-          className="text-sm text-red-700 form-message"
-          role="alert"
-        >
-          {error}
-        </p>
+        <Alert variant="destructive" aria-live="assertive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
-      <button
-        className="min-h-11 w-full rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 form-action"
-        disabled={isSubmitting}
-        type="submit"
-      >
+      <Button className="w-full" disabled={isSubmitting} type="submit">
         {isSubmitting ? "Signing in…" : "Sign in"}
-      </button>
+      </Button>
       <p className="text-center text-sm text-muted-foreground">
         Need an account?{" "}
         <Link

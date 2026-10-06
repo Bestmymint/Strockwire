@@ -1,4 +1,13 @@
 "use client";
+import { useLanguage } from "@/providers/language-provider";
+import { Label } from "@/components/ui/label";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 
 import {
   type InfiniteData,
@@ -45,7 +54,6 @@ import {
   ReceivingApiError,
   type Receipt,
 } from "@/receiving-api-client";
-import { cn } from "@/lib/utils";
 
 type PurchaseOrderRole = AccessibleOrganization["role"];
 type DraftLine = PurchaseOrderInput["items"][number];
@@ -176,37 +184,9 @@ function StatusBadge({ status }: { status: PurchaseOrderStatus }) {
   );
 }
 
-function PrimaryButton({
-  className,
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      className={cn(
-        "form-action rounded-md bg-foreground text-background hover:opacity-90 disabled:opacity-60",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
-
-function SecondaryButton({
-  className,
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      className={cn(
-        "form-action rounded-md border hover:bg-muted disabled:opacity-60",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
-
 export function PurchaseOrderManagement() {
+  const { t } = useLanguage();
+
   const router = useRouter();
   const params = useSearchParams();
   const requestedOrganizationId = params.get("organizationId");
@@ -284,7 +264,7 @@ export function PurchaseOrderManagement() {
             resolved.branch.id,
           )}
         >
-          Back to workspace
+          {t("backToWorkspace")}
         </Link>
         <h1 className="text-2xl font-semibold">Purchase orders</h1>
         <p className="form-message" role="alert">
@@ -308,6 +288,8 @@ function PurchaseOrderContent({
   branch: AccessibleOrganization["branches"][number];
   organization: AccessibleOrganization;
 }) {
+  const { t } = useLanguage();
+
   const queryClient = useQueryClient();
   const context: PurchaseOrderRequestContext = {
     branchId: branch.id,
@@ -416,7 +398,7 @@ function PurchaseOrderContent({
           className="text-sm underline"
           href={applicationContextUrl(organization.id, branch.id)}
         >
-          Back to workspace
+          {t("backToWorkspace")}
         </Link>
         <h1 className="text-2xl font-semibold">Purchase orders</h1>
         <p className="text-muted-foreground">
@@ -442,63 +424,64 @@ function PurchaseOrderContent({
       />
 
       <div className="grid items-end gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_12rem_12rem_auto]">
-        <label className="form-field">
+        <Label className="form-field">
           Status filter
-          <select
-            className="form-control"
+          <NativeSelect
+            className="w-full "
             onChange={(event) =>
               setStatus(event.target.value as PurchaseOrderStatus | "all")
             }
             value={status}
           >
             {STATUS_OPTIONS.map((value) => (
-              <option key={value} value={value}>
+              <NativeSelectOption key={value} value={value}>
                 {value === "all" ? "All statuses" : statusLabel(value)}
-              </option>
+              </NativeSelectOption>
             ))}
-          </select>
-        </label>
-        <label className="form-field">
+          </NativeSelect>
+        </Label>
+        <Label className="form-field">
           Supplier filter
-          <select
-            className="form-control"
+          <NativeSelect
+            className="w-full "
             onChange={(event) => setSupplierId(event.target.value)}
             value={supplierId}
           >
-            <option value="">All suppliers</option>
+            <NativeSelectOption value="">All suppliers</NativeSelectOption>
             {suppliers.map((supplier) => (
-              <option key={supplier.id} value={supplier.id}>
+              <NativeSelectOption key={supplier.id} value={supplier.id}>
                 {supplier.name}
                 {supplier.status === "INACTIVE" ? " (inactive)" : ""}
-              </option>
+              </NativeSelectOption>
             ))}
-          </select>
-        </label>
-        <label className="form-field">
+          </NativeSelect>
+        </Label>
+        <Label className="form-field">
           Order date from
-          <input
-            className="form-control form-control--date"
+          <Input
+            className="form-control--date"
             onChange={(event) => setOrderDateFrom(event.target.value)}
             type="date"
             value={orderDateFrom}
           />
-        </label>
-        <label className="form-field">
+        </Label>
+        <Label className="form-field">
           Order date to
-          <input
-            className="form-control form-control--date"
+          <Input
+            className="form-control--date"
             onChange={(event) => setOrderDateTo(event.target.value)}
             type="date"
             value={orderDateTo}
           />
-        </label>
-        <SecondaryButton
+        </Label>
+        <Button
+          variant="outline"
           className="self-end"
           onClick={() => void refresh()}
           type="button"
         >
           Refresh orders
-        </SecondaryButton>
+        </Button>
       </div>
 
       {orders.isPending ? (
@@ -515,8 +498,9 @@ function PurchaseOrderContent({
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]">
         <div className="grid min-w-0 grid-cols-1 content-start gap-3">
           {records.map((order) => (
-            <button
-              className="rounded-lg border bg-card p-4 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            <Button
+              variant="outline"
+              className="bg-card p-4 text-left"
               key={order.id}
               onClick={() => setSelectedId(order.id)}
               type="button"
@@ -534,16 +518,17 @@ function PurchaseOrderContent({
               <p className="mt-1 text-sm">
                 Expected total: {formatMoney(order.expectedTotal)} THB
               </p>
-            </button>
+            </Button>
           ))}
           {orders.hasNextPage ? (
-            <SecondaryButton
+            <Button
+              variant="outline"
               disabled={orders.isFetchingNextPage}
               onClick={() => void orders.fetchNextPage()}
               type="button"
             >
               {orders.isFetchingNextPage ? "Loading…" : "Load more orders"}
-            </SecondaryButton>
+            </Button>
           ) : null}
         </div>
         <div className="min-w-0">
@@ -681,12 +666,12 @@ function PurchaseOrderForm({
         </p>
       ) : null}
       <div className="mt-4 grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_12rem_12rem]">
-        <label className="form-field" htmlFor={supplierId}>
+        <Label className="form-field" htmlFor={supplierId}>
           Supplier
-          <select
+          <NativeSelect
             aria-describedby={describedBy}
             aria-invalid={validation !== null}
-            className="form-control"
+            className="w-full "
             id={supplierId}
             onChange={(event) =>
               setInput((current) => ({
@@ -696,29 +681,31 @@ function PurchaseOrderForm({
             }
             value={input.supplierId}
           >
-            <option value="">Choose an active supplier</option>
+            <NativeSelectOption value="">
+              Choose an active supplier
+            </NativeSelectOption>
             {initialOrder !== null &&
             input.supplierId !== "" &&
             !activeSuppliers.some(
               (supplier) => supplier.id === input.supplierId,
             ) ? (
-              <option value={input.supplierId}>
+              <NativeSelectOption value={input.supplierId}>
                 Historical inactive supplier
-              </option>
+              </NativeSelectOption>
             ) : null}
             {activeSuppliers.map((supplier) => (
-              <option key={supplier.id} value={supplier.id}>
+              <NativeSelectOption key={supplier.id} value={supplier.id}>
                 {supplier.name}
-              </option>
+              </NativeSelectOption>
             ))}
-          </select>
-        </label>
-        <label className="form-field" htmlFor={orderDateId}>
+          </NativeSelect>
+        </Label>
+        <Label className="form-field" htmlFor={orderDateId}>
           Order date
-          <input
+          <Input
             aria-describedby={describedBy}
             aria-invalid={validation !== null}
-            className="form-control form-control--date"
+            className="form-control--date"
             id={orderDateId}
             onChange={(event) =>
               setInput((current) => ({
@@ -729,13 +716,13 @@ function PurchaseOrderForm({
             type="date"
             value={input.orderDate}
           />
-        </label>
-        <label className="form-field" htmlFor={expectedDateId}>
+        </Label>
+        <Label className="form-field" htmlFor={expectedDateId}>
           Expected date (optional)
-          <input
+          <Input
             aria-describedby={describedBy}
             aria-invalid={validation !== null}
-            className="form-control form-control--date"
+            className="form-control--date"
             id={expectedDateId}
             onChange={(event) =>
               setInput((current) => ({
@@ -746,7 +733,7 @@ function PurchaseOrderForm({
             type="date"
             value={input.expectedDate ?? ""}
           />
-        </label>
+        </Label>
       </div>
       <div className="mt-5 space-y-3">
         <h3 className="font-medium">Product lines</h3>
@@ -766,58 +753,63 @@ function PurchaseOrderForm({
               key={`${line.productId}-${index}`}
             >
               <legend className="sr-only">Product line {index + 1}</legend>
-              <label className="form-field">
+              <Label className="form-field">
                 Product
-                <select
+                <NativeSelect
                   aria-describedby={describedBy}
                   aria-invalid={validation !== null}
                   aria-label={`Product line ${index + 1} product`}
-                  className="form-control"
+                  className="w-full "
                   onChange={(event) =>
                     updateLine(index, { productId: event.target.value })
                   }
                   value={line.productId}
                 >
-                  <option value="">Choose a product</option>
+                  <NativeSelectOption value="">
+                    Choose a product
+                  </NativeSelectOption>
                   {line.productId !== "" && selected === undefined ? (
-                    <option value={line.productId}>Historical product</option>
+                    <NativeSelectOption value={line.productId}>
+                      Historical product
+                    </NativeSelectOption>
                   ) : null}
                   {availableProducts.map((product) => (
-                    <option key={product.id} value={product.id}>
+                    <NativeSelectOption key={product.id} value={product.id}>
                       {product.name} · {product.sku} ({product.unit})
-                    </option>
+                    </NativeSelectOption>
                   ))}
-                </select>
-              </label>
-              <label className="form-field">
+                </NativeSelect>
+              </Label>
+              <Label className="form-field">
                 Quantity{selected ? ` (${selected.unit})` : ""}
-                <input
+                <Input
                   aria-describedby={describedBy}
                   aria-invalid={validation !== null}
                   aria-label={`Product line ${index + 1} quantity${selected ? ` (${selected.unit})` : ""}`}
-                  className="form-control form-control--numeric"
+                  className="form-control--numeric"
                   inputMode="decimal"
                   onChange={(event) =>
                     updateLine(index, { quantity: event.target.value })
                   }
                   value={line.quantity}
                 />
-              </label>
-              <label className="form-field">
+              </Label>
+              <Label className="form-field">
                 Expected unit cost (THB)
-                <input
+                <Input
                   aria-describedby={describedBy}
                   aria-invalid={validation !== null}
                   aria-label={`Product line ${index + 1} expected unit cost (THB)`}
-                  className="form-control form-control--numeric"
+                  className="form-control--numeric"
                   inputMode="decimal"
                   onChange={(event) =>
                     updateLine(index, { expectedUnitCost: event.target.value })
                   }
                   value={line.expectedUnitCost}
                 />
-              </label>
-              <SecondaryButton
+              </Label>
+              <Button
+                variant="outline"
                 aria-label={`Remove product line ${index + 1}`}
                 className="self-end"
                 disabled={input.items.length === 1}
@@ -825,17 +817,18 @@ function PurchaseOrderForm({
                 type="button"
               >
                 Remove
-              </SecondaryButton>
+              </Button>
             </fieldset>
           );
         })}
-        <SecondaryButton
+        <Button
+          variant="outline"
           disabled={input.items.length >= products.length}
           onClick={addLine}
           type="button"
         >
           Add product line
-        </SecondaryButton>
+        </Button>
       </div>
       {initialOrder ? (
         <p className="mt-4 text-sm text-muted-foreground">
@@ -843,14 +836,14 @@ function PurchaseOrderForm({
           {formatMoney(initialOrder.expectedTotal)} THB
         </p>
       ) : null}
-      <PrimaryButton
+      <Button
         aria-busy={mutation.isPending}
         className="mt-5"
         disabled={mutation.isPending}
         type="submit"
       >
         {mutation.isPending ? "Saving…" : label}
-      </PrimaryButton>
+      </Button>
     </form>
   );
 }
@@ -917,20 +910,21 @@ function PurchaseOrderEditor({
             quantities, and expected costs.
           </p>
           <div className="flex flex-wrap gap-3">
-            <PrimaryButton
+            <Button
               disabled={pending}
               onClick={() => setIntent("ORDERED")}
               type="button"
             >
               Order purchase order
-            </PrimaryButton>
-            <SecondaryButton
+            </Button>
+            <Button
+              variant="outline"
               disabled={pending}
               onClick={() => setIntent("CANCELLED")}
               type="button"
             >
               Cancel purchase order
-            </SecondaryButton>
+            </Button>
           </div>
         </>
       ) : (
@@ -943,13 +937,14 @@ function PurchaseOrderEditor({
         onReceived={onSaved}
       />
       {order.status === "ORDERED" ? (
-        <SecondaryButton
+        <Button
+          variant="outline"
           disabled={pending}
           onClick={() => setIntent("CANCELLED")}
           type="button"
         >
           Cancel purchase order
-        </SecondaryButton>
+        </Button>
       ) : null}
       <ConfirmationDialog
         action={intent}
@@ -977,6 +972,8 @@ function ReceivingPanel({
   requestContext: PurchaseOrderRequestContext;
   onReceived: (order: PurchaseOrder) => Promise<void>;
 }) {
+  const { t } = useLanguage();
+
   const queryClient = useQueryClient();
   const [costs, setCosts] = useState<Record<string, string>>(() =>
     Object.fromEntries(order.items.map((item) => [item.id, ""])),
@@ -1100,7 +1097,10 @@ function ReceivingPanel({
   };
   if (receipt)
     return (
-      <div className="rounded-md border border-green-600 p-4" role="status">
+      <div
+        className="rounded-md border border-border bg-muted p-4"
+        role="status"
+      >
         <h3 className="font-semibold">Receipt {receipt.reference} completed</h3>
         <p className="text-sm">
           Received at {receipt.receivedAt}. The purchase order is now RECEIVED.
@@ -1138,15 +1138,15 @@ function ReceivingPanel({
           <p className="text-sm">
             Expected: {formatMoney(item.expectedUnitCost)} THB
           </p>
-          <label className="form-field">
+          <Label className="form-field">
             Actual unit cost (THB)
-            <input
+            <Input
               aria-label={`${item.productNameSnapshot} actual unit cost`}
               aria-describedby={
                 validationMessage === null ? undefined : validationId
               }
               aria-invalid={costs[item.id] !== "" && !valid(costs[item.id]!)}
-              className="form-control form-control--numeric"
+              className="form-control--numeric"
               inputMode="decimal"
               value={costs[item.id]}
               onChange={(e) => {
@@ -1154,67 +1154,66 @@ function ReceivingPanel({
                 setKey(null);
               }}
             />
-          </label>
+          </Label>
         </fieldset>
       ))}
-      <label className="flex min-h-11 items-center gap-2 text-sm">
-        <input
-          className="form-choice"
+      <Label className="flex min-h-11 items-center gap-2 text-sm">
+        <Checkbox
+          className=""
           aria-describedby={
             validationMessage === null ? undefined : validationId
           }
-          aria-label="Organization VAT registration asserted for this receipt"
-          type="checkbox"
+
           checked={vat.organizationVatRegistered}
-          onChange={(e) => {
+          onCheckedChange={(checked) => {
             setVat((v) => ({
               ...v,
-              organizationVatRegistered: e.target.checked,
+              organizationVatRegistered: checked,
             }));
             setKey(null);
           }}
         />
         Organization VAT registration asserted for this receipt
-      </label>
+      </Label>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="form-field">
+        <Label className="form-field">
           Input VAT rate
-          <input
+          <Input
             aria-describedby={
               validationMessage === null ? undefined : validationId
             }
             aria-invalid={!vatValid}
-            className="form-control form-control--numeric"
+            className="form-control--numeric"
             value={vat.inputVatRate}
             onChange={(e) => {
               setVat((v) => ({ ...v, inputVatRate: e.target.value }));
               setKey(null);
             }}
           />
-        </label>
-        <label className="form-field">
+        </Label>
+        <Label className="form-field">
           Input VAT amount
-          <input
+          <Input
             aria-describedby={
               validationMessage === null ? undefined : validationId
             }
             aria-invalid={!vatValid}
-            className="form-control form-control--numeric"
+            className="form-control--numeric"
             value={vat.inputVatAmount}
             onChange={(e) => {
               setVat((v) => ({ ...v, inputVatAmount: e.target.value }));
               setKey(null);
             }}
           />
-        </label>
-        <label className="form-field">
+        </Label>
+        <Label className="form-field">
           Supplier tax document number
-          <input
+          <Input
             aria-describedby={
               validationMessage === null ? undefined : validationId
             }
             aria-invalid={!vatValid}
-            className="form-control"
+            className=""
             value={vat.supplierTaxDocumentNumber}
             onChange={(e) => {
               setVat((v) => ({
@@ -1224,16 +1223,16 @@ function ReceivingPanel({
               setKey(null);
             }}
           />
-        </label>
-        <label className="form-field">
+        </Label>
+        <Label className="form-field">
           Supplier tax document date
-          <input
+          <Input
             aria-describedby={
               validationMessage === null ? undefined : validationId
             }
             aria-invalid={!vatValid}
             type="date"
-            className="form-control form-control--date"
+            className="form-control--date"
             value={vat.supplierTaxDocumentDate}
             onChange={(e) => {
               setVat((v) => ({
@@ -1243,7 +1242,7 @@ function ReceivingPanel({
               setKey(null);
             }}
           />
-        </label>
+        </Label>
       </div>
       {validationMessage !== null ? (
         <p className="text-sm form-message" id={validationId} role="alert">
@@ -1255,14 +1254,14 @@ function ReceivingPanel({
           {error}
         </p>
       ) : null}
-      <PrimaryButton
+      <Button
         disabled={!complete || !vatValid || pending}
         aria-busy={pending}
         onClick={() => setConfirm(true)}
         type="button"
       >
         {pending ? "Receiving…" : "Receive full purchase order"}
-      </PrimaryButton>
+      </Button>
       {confirm ? (
         <div
           role="dialog"
@@ -1288,25 +1287,26 @@ function ReceivingPanel({
               be recorded and the PO will become RECEIVED.
             </p>
             <div className="mt-4 flex justify-end gap-2">
-              <button
-                className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
+              <Button
+                variant="outline"
+                className=""
                 disabled={pending}
                 onClick={() => setConfirm(false)}
                 ref={cancel}
                 type="button"
               >
-                Cancel
-              </button>
-              <button
+                {t("cancel")}
+              </Button>
+              <Button
                 aria-busy={pending}
-                className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
+                className=""
                 disabled={pending}
                 onClick={() => void submit()}
                 ref={confirmButton}
                 type="button"
               >
                 {pending ? "Receiving…" : "Confirm receive"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1411,18 +1411,19 @@ function ConfirmationDialog({
             : "Cancellation is terminal and cannot be undone."}
         </p>
         <div className="mt-5 flex flex-wrap justify-end gap-3">
-          <button
-            className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
+          <Button
+            variant="outline"
+            className=""
             disabled={busy}
             onClick={onCancel}
             ref={cancel}
             type="button"
           >
             Keep editing
-          </button>
-          <button
+          </Button>
+          <Button
             aria-busy={busy}
-            className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
+            className=""
             disabled={busy}
             onClick={onConfirm}
             ref={confirm}
@@ -1433,7 +1434,7 @@ function ConfirmationDialog({
               : ordering
                 ? "Confirm order"
                 : "Confirm cancellation"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -1,4 +1,17 @@
 "use client";
+import { useLanguage } from "@/providers/language-provider";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableHeader,
+  TableRow,
+  TableHead,
+  TableBody,
+  TableCell,
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 
 import {
   type InfiniteData,
@@ -91,15 +104,6 @@ function errorMessage(error: unknown): string {
   return messages[error.kind];
 }
 
-function SecondaryButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
-      {...props}
-    />
-  );
-}
-
 export function SalesHistoryManagement() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -190,6 +194,8 @@ function SalesHistoryContent({
   branch: AccessibleOrganization["branches"][number];
   organization: AccessibleOrganization;
 }) {
+  const { t } = useLanguage();
+
   const context = {
     branchId: branch.id,
     organizationId: organization.id,
@@ -229,7 +235,7 @@ function SalesHistoryContent({
           className="text-sm underline"
           href={applicationContextUrl(organization.id, branch.id)}
         >
-          Back to workspace
+          {t("backToWorkspace")}
         </Link>
         <h1 className="text-2xl font-semibold">Sales history</h1>
         <p className="text-muted-foreground">
@@ -253,18 +259,21 @@ function SalesHistoryContent({
           setActorUserId(value === "" ? undefined : value);
         }}
       >
-        <label className="form-field w-full sm:w-96">
+        <Label className="form-field w-full sm:w-96">
           Cashier user ID (optional)
-          <input
+          <Input
             aria-describedby={filterError ? "sales-filter-error" : undefined}
-            className="form-control"
+            className=""
             onChange={(event) => setActorInput(event.target.value)}
             placeholder="Exact UUID only"
             value={actorInput}
           />
-        </label>
-        <SecondaryButton type="submit">Apply filter</SecondaryButton>
-        <SecondaryButton
+        </Label>
+        <Button variant="outline" type="submit">
+          Apply filter
+        </Button>
+        <Button
+          variant="outline"
           disabled={actorInput === "" && actorUserId === undefined}
           onClick={() => {
             setActorInput("");
@@ -274,7 +283,7 @@ function SalesHistoryContent({
           type="button"
         >
           Clear filter
-        </SecondaryButton>
+        </Button>
         {filterError ? (
           <p className="form-message" id="sales-filter-error" role="alert">
             {filterError}
@@ -341,22 +350,24 @@ function SalesList({
   return (
     <section aria-label="Sales history" className="space-y-4">
       <div className="overflow-x-auto rounded-lg border bg-card">
-        <table className="w-full min-w-[45rem] text-left text-sm">
-          <thead className="border-b bg-muted text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="px-4 py-3 font-medium">Sale</th>
-              <th className="px-4 py-3 font-medium">Cashier</th>
-              <th className="px-4 py-3 font-medium">Payment</th>
-              <th className="px-4 py-3 text-right font-medium">Total</th>
-              <th className="relative px-4 py-3 font-medium">
+        <Table className="w-full min-w-[45rem] text-left text-sm">
+          <TableHeader className="border-b bg-muted text-xs uppercase tracking-wide text-muted-foreground">
+            <TableRow>
+              <TableHead className="px-4 py-3 font-medium">Sale</TableHead>
+              <TableHead className="px-4 py-3 font-medium">Cashier</TableHead>
+              <TableHead className="px-4 py-3 font-medium">Payment</TableHead>
+              <TableHead className="px-4 py-3 text-right font-medium">
+                Total
+              </TableHead>
+              <TableHead className="relative px-4 py-3 font-medium">
                 <span className="sr-only">Open detail</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {sales.map((sale) => (
-              <tr className="border-b last:border-0" key={sale.id}>
-                <td className="px-4 py-3">
+              <TableRow className="border-b last:border-0" key={sale.id}>
+                <TableCell className="px-4 py-3">
                   <p className="font-medium">{sale.reference}</p>
                   <p className="text-muted-foreground">
                     {formatAbsoluteTimestamp(sale.createdAt)} · {sale.itemCount}{" "}
@@ -366,34 +377,40 @@ function SalesList({
                     {sale.refundState.replaceAll("_", " ")} · Remaining{" "}
                     {formatThb(sale.remainingAmount)}
                   </p>
-                </td>
-                <td className="px-4 py-3">{sale.actorDisplayName}</td>
-                <td className="px-4 py-3">{sale.payment.method}</td>
-                <td className="px-4 py-3 text-right font-medium">
+                </TableCell>
+                <TableCell className="px-4 py-3">
+                  {sale.actorDisplayName}
+                </TableCell>
+                <TableCell className="px-4 py-3">
+                  {sale.payment.method}
+                </TableCell>
+                <TableCell className="px-4 py-3 text-right font-medium">
                   {formatThb(sale.totalAmount)}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <SecondaryButton
+                </TableCell>
+                <TableCell className="px-4 py-3 text-right">
+                  <Button
+                    variant="outline"
                     aria-pressed={selectedSaleId === sale.id}
                     onClick={() => onSelect(sale.id)}
                     type="button"
                   >
                     View detail
-                  </SecondaryButton>
-                </td>
-              </tr>
+                  </Button>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
       {hasNextPage ? (
-        <SecondaryButton
+        <Button
+          variant="outline"
           disabled={isLoadingNext}
           onClick={onLoadMore}
           type="button"
         >
           {isLoadingNext ? "Loading more…" : "Load more sales"}
-        </SecondaryButton>
+        </Button>
       ) : null}
     </section>
   );
@@ -476,9 +493,9 @@ function SaleDetailContent({
             {formatAbsoluteTimestamp(sale.createdAt)} · {sale.actorDisplayName}
           </p>
         </div>
-        <SecondaryButton onClick={() => window.print()} type="button">
+        <Button variant="outline" onClick={() => window.print()} type="button">
           Print receipt
-        </SecondaryButton>
+        </Button>
       </div>
       <SaleItems sale={sale} />
       <SaleTotals sale={sale} />
@@ -682,10 +699,10 @@ function RefundPanel({
               {item.productName} · {item.remainingRefundableQuantity}{" "}
               {item.unit} remaining
             </legend>
-            <label className="form-field">
+            <Label className="form-field">
               Refund quantity
-              <input
-                className="form-control form-control--numeric"
+              <Input
+                className="form-control--numeric"
                 inputMode="decimal"
                 onChange={(event) =>
                   setLines((current) => ({
@@ -699,11 +716,11 @@ function RefundPanel({
                 placeholder="0"
                 value={lines[item.id]?.quantity ?? ""}
               />
-            </label>
-            <label className="form-field">
+            </Label>
+            <Label className="form-field">
               Restock quantity
-              <input
-                className="form-control form-control--numeric"
+              <Input
+                className="form-control--numeric"
                 inputMode="decimal"
                 onChange={(event) =>
                   setLines((current) => ({
@@ -716,31 +733,31 @@ function RefundPanel({
                 }
                 value={lines[item.id]?.restockQuantity ?? "0"}
               />
-            </label>
+            </Label>
           </fieldset>
         ))}
       </div>
-      <label className="form-field">
+      <Label className="form-field">
         Reason
-        <textarea
-          className="form-control"
+        <Textarea
+          className=""
           maxLength={200}
           onChange={(event) => setReason(event.target.value)}
           required
           value={reason}
         />
-      </label>
+      </Label>
       {sale.payment.method === "TRANSFER" ? (
-        <label className="form-field">
+        <Label className="form-field">
           Confirmed transfer reference
-          <input
-            className="form-control"
+          <Input
+            className=""
             maxLength={100}
             onChange={(event) => setTransferReference(event.target.value)}
             required
             value={transferReference}
           />
-        </label>
+        </Label>
       ) : null}
       {validationError !== null ? (
         <p className="form-message" role="alert">
@@ -755,11 +772,11 @@ function RefundPanel({
       {mutation.data ? (
         <p role="status">Refund {mutation.data.reference} completed.</p>
       ) : null}
-      <SecondaryButton disabled={mutation.isPending} type="submit">
+      <Button variant="outline" disabled={mutation.isPending} type="submit">
         {mutation.isPending
           ? "Recording refund…"
           : "Confirm irreversible refund"}
-      </SecondaryButton>
+      </Button>
     </form>
   );
 }
@@ -776,35 +793,35 @@ function SaleItems({ sale }: { sale: SalesHistoryDetail }) {
         role="region"
         tabIndex={0}
       >
-        <table className="w-full min-w-[40rem] text-left text-sm">
-          <thead className="border-b bg-muted text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2">Product</th>
-              <th className="px-3 py-2">Quantity</th>
-              <th className="px-3 py-2 text-right">Unit price</th>
-              <th className="px-3 py-2 text-right">Line total</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table className="w-full min-w-[40rem] text-left text-sm">
+          <TableHeader className="border-b bg-muted text-xs uppercase tracking-wide text-muted-foreground">
+            <TableRow>
+              <TableHead className="px-3 py-2">Product</TableHead>
+              <TableHead className="px-3 py-2">Quantity</TableHead>
+              <TableHead className="px-3 py-2 text-right">Unit price</TableHead>
+              <TableHead className="px-3 py-2 text-right">Line total</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {sale.items.map((item) => (
-              <tr className="border-b last:border-0" key={item.id}>
-                <td className="px-3 py-2">
+              <TableRow className="border-b last:border-0" key={item.id}>
+                <TableCell className="px-3 py-2">
                   <p className="font-medium">{item.productName}</p>
                   <p className="text-muted-foreground">
                     {item.productSku} · {item.unit}
                   </p>
-                </td>
-                <td className="px-3 py-2">{item.quantity}</td>
-                <td className="px-3 py-2 text-right">
+                </TableCell>
+                <TableCell className="px-3 py-2">{item.quantity}</TableCell>
+                <TableCell className="px-3 py-2 text-right">
                   {formatThb(item.unitPrice)}
-                </td>
-                <td className="px-3 py-2 text-right">
+                </TableCell>
+                <TableCell className="px-3 py-2 text-right">
                   {formatThb(item.lineNet)}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </section>
   );

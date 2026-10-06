@@ -1,4 +1,7 @@
 "use client";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 
 import JsBarcode from "jsbarcode";
 import { useEffect, useId, useRef, useState } from "react";
@@ -58,15 +61,16 @@ export function ProductBarcodeLabels({
   const trigger = useRef<HTMLButtonElement>(null);
   return (
     <div className="mt-4">
-      <button
-        className="form-action rounded-md border disabled:opacity-60"
+      <Button
+        variant="outline"
+        className=""
         disabled={product.barcode === null}
         onClick={() => setOpen(true)}
         ref={trigger}
         type="button"
       >
         Preview barcode labels
-      </button>
+      </Button>
       {product.barcode === null ? (
         <p className="mt-2 text-sm text-muted-foreground">
           No barcode set. Save a barcode to print labels.
@@ -131,12 +135,12 @@ function LabelPreview({
             128, black on white; no price included. Print on A4 at 100% scale,
             with browser headers and footers disabled.
           </p>
-          <label className="form-field" htmlFor={quantityId}>
+          <Label className="form-field" htmlFor={quantityId}>
             Label quantity
-            <input
+            <Input
               aria-describedby={validQuantity ? undefined : quantityErrorId}
               aria-invalid={!validQuantity}
-              className="form-control form-control--numeric"
+              className="form-control--numeric"
               id={quantityId}
               max={MAX_QUANTITY}
               min={1}
@@ -145,7 +149,7 @@ function LabelPreview({
               type="number"
               value={quantity}
             />
-          </label>
+          </Label>
           {!validQuantity ? (
             <p className="form-message" id={quantityErrorId} role="alert">
               Enter a whole number from 1 to {MAX_QUANTITY}.
@@ -157,21 +161,22 @@ function LabelPreview({
             </p>
           ) : null}
           <div className="flex flex-wrap gap-3">
-            <button
-              className="form-action rounded-md bg-foreground text-background disabled:opacity-60"
+            <Button
+              className=""
               disabled={!validQuantity || encoding.data === undefined}
               onClick={() => window.print()}
               type="button"
             >
               Print labels
-            </button>
-            <button
-              className="form-action rounded-md border"
+            </Button>
+            <Button
+              variant="outline"
+              className=""
               onClick={closePreview}
               type="button"
             >
               Back to catalog
-            </button>
+            </Button>
           </div>
           {encoding.labelWidthMm ? (
             <p className="text-sm text-muted-foreground">

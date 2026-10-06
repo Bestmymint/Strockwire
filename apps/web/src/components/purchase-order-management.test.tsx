@@ -146,9 +146,9 @@ function confirmReceive() {
 
 function enterVatSnapshot() {
   fireEvent.click(
-    screen.getByLabelText(
-      "Organization VAT registration asserted for this receipt",
-    ),
+    screen.getByRole("checkbox", {
+      name: "Organization VAT registration asserted for this receipt",
+    }),
   );
   fireEvent.change(screen.getByLabelText("Input VAT rate"), {
     target: { value: "7.000000" },
@@ -573,9 +573,9 @@ describe("purchase order management UI", () => {
       "VAT registration assertion",
       () =>
         fireEvent.click(
-          screen.getByLabelText(
-            "Organization VAT registration asserted for this receipt",
-          ),
+          screen.getByRole("checkbox", {
+            name: "Organization VAT registration asserted for this receipt",
+          }),
         ),
     ],
     [
@@ -816,16 +816,16 @@ describe("purchase order management UI", () => {
   it("labels receiving fields and gives the confirmation dialog keyboard focus", async () => {
     await openOrderedPurchaseOrder();
     fireEvent.click(
-      screen.getByLabelText(
-        "Organization VAT registration asserted for this receipt",
-      ),
+      screen.getByRole("checkbox", {
+        name: "Organization VAT registration asserted for this receipt",
+      }),
     );
     const cost = screen.getByLabelText("Tea actual unit cost");
     expect(cost.getAttribute("aria-describedby")).not.toBeNull();
     expect(
-      screen.getByLabelText(
-        "Organization VAT registration asserted for this receipt",
-      ),
+      screen.getByRole("checkbox", {
+        name: "Organization VAT registration asserted for this receipt",
+      }),
     ).toBeTruthy();
     for (const label of [
       "Input VAT rate",
@@ -838,9 +838,9 @@ describe("purchase order management UI", () => {
       ).not.toBeNull();
 
     fireEvent.click(
-      screen.getByLabelText(
-        "Organization VAT registration asserted for this receipt",
-      ),
+      screen.getByRole("checkbox", {
+        name: "Organization VAT registration asserted for this receipt",
+      }),
     );
 
     fireEvent.click(

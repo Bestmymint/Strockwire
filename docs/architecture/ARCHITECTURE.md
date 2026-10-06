@@ -697,12 +697,27 @@ Owning a table does not mean bypassing another module's invariant. For example, 
 - Use Next.js and TypeScript for the responsive web client.
 - Use TanStack Query for remote server state and cache invalidation.
 - Use Tailwind CSS and shadcn/ui for the component system.
+- The frontend uses the official shadcn `base-nova` preset with neutral CSS
+  variables, Base UI primitives and Lucide icons. Shared forms, actions and
+  tables consume generated components; native date inputs and existing domain
+  dialogs retain their behavior. Public pages use the same neutral foundation.
+- `next-themes` owns class-based Light/Dark/System selection and local
+  `stockwise.theme` persistence. A small typed English/Thai dictionary owns
+  shared shell/navigation/actions and local `stockwise.language` persistence;
+  browser language supplies the initial default, with English fallback and
+  updated HTML `lang`. Page-specific copy is not fully translated. Preferences
+  do not translate stored domain data or alter identifiers, exact money,
+  reporting timezone, API scope or authentication.
+- Receipt and barcode-label screen/print content remains white paper with
+  dark text regardless of theme. Software print checks do not establish native
+  preview or physical printer verification; historical MT-L04 remains BLOCKED.
 - Use Recharts for accessible, labeled chart views; provide textual/tabular alternatives for critical numbers.
 - Keep authorization enforced on the API even if the UI hides inaccessible actions.
 - The shared application shell reads the existing `access-context` query for
   authentication and resolves URL candidates through `resolveApplicationContext`.
   Authenticated desktop navigation uses a persistent left sidebar; smaller
-  screens use an expandable menu. Home and the StockWise logo target the scoped
+  screens use the official Sidebar's mobile Sheet. Desktop navigation can be
+  collapsed off canvas. Home and the StockWise logo target the scoped
   `/app` workspace. Existing role/scope visibility is UX only; Express remains
   authoritative. Log out reuses the current-session logout flow at the sidebar
   bottom. Signed-out navigation retains Sign in without application destinations.

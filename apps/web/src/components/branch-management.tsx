@@ -1,4 +1,8 @@
 "use client";
+import { useLanguage } from "@/providers/language-provider";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
@@ -159,17 +163,13 @@ function CreateBranchForm({
         <Field label="Address (optional)" maxLength={500} name="address" />
       </div>
       {error ? (
-        <p className="mt-3 text-sm text-red-700 form-message" role="alert">
+        <p className="mt-3 text-sm text-destructive form-message" role="alert">
           {error}
         </p>
       ) : null}
-      <button
-        className="mt-4 min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background disabled:opacity-60 form-action"
-        disabled={mutation.isPending}
-        type="submit"
-      >
+      <Button className="mt-4" disabled={mutation.isPending} type="submit">
         {mutation.isPending ? "Creating…" : "Create branch"}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -183,6 +183,8 @@ function BranchEditor({
   onSaved: () => Promise<void>;
   organizationId: string;
 }) {
+  const { t } = useLanguage();
+
   const [error, setError] = useState<string | null>(null);
   const updateMutation = useMutation({
     mutationFn: (form: HTMLFormElement) => {
@@ -244,26 +246,28 @@ function BranchEditor({
         />
       </div>
       {error ? (
-        <p className="mt-3 text-sm text-red-700 form-message" role="alert">
+        <p className="mt-3 text-sm text-destructive form-message" role="alert">
           {error}
         </p>
       ) : null}
       <div className="mt-4 flex flex-wrap gap-3">
-        <button
-          className="min-h-11 rounded-md border px-4 text-sm font-medium disabled:opacity-60 form-action"
+        <Button
+          variant="outline"
+          className=""
           disabled={updateMutation.isPending || lifecycleMutation.isPending}
           type="submit"
         >
-          Save changes
-        </button>
-        <button
-          className="min-h-11 rounded-md border px-4 text-sm font-medium disabled:opacity-60 form-action"
+          {t("saveChanges")}
+        </Button>
+        <Button
+          variant="outline"
+          className=""
           disabled={updateMutation.isPending || lifecycleMutation.isPending}
           onClick={() => void run(() => lifecycleMutation.mutateAsync())}
           type="button"
         >
           {branch.status === "ACTIVE" ? "Deactivate" : "Reactivate"}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -278,22 +282,22 @@ function Field({
   name: string;
 }) {
   return (
-    <label
+    <Label
       className={name === "address" ? "form-field sm:col-span-2" : "form-field"}
     >
       {label}
-      <input
+      <Input
         className={
           name === "code"
-            ? "form-control form-control--compact"
+            ? "form-control--compact"
             : name === "phone"
-              ? "form-control form-control--compact"
-              : "form-control"
+              ? "form-control--compact"
+              : ""
         }
         name={name}
         type="text"
         {...props}
       />
-    </label>
+    </Label>
   );
 }

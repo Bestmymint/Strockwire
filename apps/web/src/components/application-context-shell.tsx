@@ -1,4 +1,11 @@
 "use client";
+import { useLanguage } from "@/providers/language-provider";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -12,6 +19,7 @@ import {
 } from "@/application-context";
 
 export function ApplicationContextShell() {
+  const { t } = useLanguage();
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
@@ -73,36 +81,34 @@ export function ApplicationContextShell() {
     router.replace(applicationContextUrl(organizationId, branchId));
   }
 
-  if (contextQuery.isPending) return <p aria-live="polite">Loading access…</p>;
+  if (contextQuery.isPending)
+    return <p aria-live="polite">{t("loadingAccess")}</p>;
   if (contextQuery.isError)
     return (
       <p className="form-message" role="alert">
-        Your access context could not be loaded.
+        {t("accessError")}
       </p>
     );
   if (resolved?.organization === null) {
     if (contextQuery.data.organizations.length === 0) {
       if (contextQuery.data.firstOrganizationOnboarding.eligible) {
-        return <p aria-live="polite">Opening setup…</p>;
+        return <p aria-live="polite">{t("openingSetup")}</p>;
       }
       return (
         <section className="space-y-5">
-          <h1 className="text-2xl font-semibold">
-            No active organization access
-          </h1>
-          <p className="text-muted-foreground">
-            Ask an organization owner or administrator to restore access.
-          </p>
+          <h1 className="text-2xl font-semibold">{t("noOrganization")}</h1>
+          <p className="text-muted-foreground">{t("restoreAccess")}</p>
         </section>
       );
     }
     return (
       <section className="w-full max-w-xl space-y-5">
-        <h1 className="text-2xl font-semibold">Choose an organization</h1>
+        <h1 className="text-2xl font-semibold">{t("chooseOrganization")}</h1>
         <div className="grid gap-3">
           {contextQuery.data.organizations.map((organization) => (
-            <button
-              className="min-h-11 rounded-md border px-4 text-left hover:bg-muted form-action"
+            <Button
+              variant="outline"
+              className="text-left"
               key={organization.id}
               onClick={() =>
                 void switchTo(
@@ -113,7 +119,7 @@ export function ApplicationContextShell() {
               type="button"
             >
               {organization.name}
-            </button>
+            </Button>
           ))}
         </div>
       </section>
@@ -125,18 +131,18 @@ export function ApplicationContextShell() {
   return (
     <section className="w-full space-y-8">
       <div className="rounded-lg border bg-card p-5 sm:p-7">
-        <p className="text-sm text-muted-foreground">Current workspace</p>
+        <p className="text-sm text-muted-foreground">{t("workspace")}</p>
         <h1 className="mt-1 text-2xl font-semibold">
           {activeOrganization.name}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {activeOrganization.role.replaceAll("_", " ")}
+          {t(activeOrganization.role)}
         </p>
         <div className="mt-5 grid max-w-4xl gap-4 sm:grid-cols-2">
-          <label className="form-field">
-            Organization
-            <select
-              className="form-control"
+          <Label className="form-field">
+            {t("organization")}
+            <NativeSelect
+              className="w-full "
               onChange={(event) => {
                 const organization = contextQuery.data.organizations.find(
                   ({ id }) => id === event.target.value,
@@ -150,16 +156,19 @@ export function ApplicationContextShell() {
               value={activeOrganization.id}
             >
               {contextQuery.data.organizations.map((organization) => (
-                <option key={organization.id} value={organization.id}>
+                <NativeSelectOption
+                  key={organization.id}
+                  value={organization.id}
+                >
                   {organization.name}
-                </option>
+                </NativeSelectOption>
               ))}
-            </select>
-          </label>
-          <label className="form-field">
-            Branch
-            <select
-              className="form-control"
+            </NativeSelect>
+          </Label>
+          <Label className="form-field">
+            {t("branch")}
+            <NativeSelect
+              className="w-full "
               disabled={activeOrganization.branches.length === 0}
               onChange={(event) =>
                 void switchTo(activeOrganization.id, event.target.value)
@@ -167,15 +176,17 @@ export function ApplicationContextShell() {
               value={resolved.branch?.id ?? ""}
             >
               {activeOrganization.branches.length === 0 ? (
-                <option value="">No active branch access</option>
+                <NativeSelectOption value="">
+                  {t("noBranch")}
+                </NativeSelectOption>
               ) : null}
               {activeOrganization.branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>
+                <NativeSelectOption key={branch.id} value={branch.id}>
                   {branch.code} — {branch.name}
-                </option>
+                </NativeSelectOption>
               ))}
-            </select>
-          </label>
+            </NativeSelect>
+          </Label>
         </div>
       </div>
     </section>

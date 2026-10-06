@@ -1,4 +1,13 @@
 "use client";
+import { useLanguage } from "@/providers/language-provider";
+import { Label } from "@/components/ui/label";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 import {
   type InfiniteData,
@@ -118,24 +127,6 @@ function createIdempotencyKey(): string {
   return crypto.randomUUID();
 }
 
-function SecondaryButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      className="min-h-11 rounded-md border px-4 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
-      {...props}
-    />
-  );
-}
-
-function PrimaryButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60 form-action"
-      {...props}
-    />
-  );
-}
-
 export function InventoryManagement() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -219,6 +210,8 @@ function InventoryContent({
   branch: AccessibleOrganization["branches"][number];
   organization: AccessibleOrganization;
 }) {
+  const { t } = useLanguage();
+
   const [status, setStatus] = useState<InventoryStatus>("ACTIVE");
   const [selectedProductId, setSelectedProductId] = useState<string | null>(
     null,
@@ -254,7 +247,7 @@ function InventoryContent({
           className="text-sm underline"
           href={applicationContextUrl(organization.id, branch.id)}
         >
-          Back to workspace
+          {t("backToWorkspace")}
         </Link>
         <h1 className="text-2xl font-semibold">Inventory</h1>
         <p className="text-muted-foreground">
@@ -263,26 +256,31 @@ function InventoryContent({
       </header>
 
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <label className="form-field">
+        <Label className="form-field">
           Product status
-          <select
-            className="form-control"
+          <NativeSelect
+            className="w-full "
             onChange={(event) =>
               setStatus(event.target.value as InventoryStatus)
             }
             value={status}
           >
-            <option value="ACTIVE">Active products</option>
-            <option value="INACTIVE">Inactive products</option>
-            <option value="ALL">All products</option>
-          </select>
-        </label>
-        <SecondaryButton
+            <NativeSelectOption value="ACTIVE">
+              Active products
+            </NativeSelectOption>
+            <NativeSelectOption value="INACTIVE">
+              Inactive products
+            </NativeSelectOption>
+            <NativeSelectOption value="ALL">All products</NativeSelectOption>
+          </NativeSelect>
+        </Label>
+        <Button
+          variant="outline"
           onClick={() => void balancesQuery.refetch()}
           type="button"
         >
           Refresh inventory
-        </SecondaryButton>
+        </Button>
       </div>
 
       <BalanceList
@@ -345,9 +343,10 @@ function BalanceList({
     <section aria-label="Inventory balances" className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((item) => (
-          <button
+          <Button
+            variant="outline"
             aria-pressed={selectedProductId === item.product.id}
-            className="rounded-lg border bg-card p-4 text-left outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="bg-card p-4 text-left transition-colors"
             key={item.product.id}
             onClick={() => onSelect(item.product.id)}
             type="button"
@@ -374,17 +373,18 @@ function BalanceList({
             <span className="mt-4 inline-block text-sm underline">
               View history
             </span>
-          </button>
+          </Button>
         ))}
       </div>
       {hasNextPage ? (
-        <SecondaryButton
+        <Button
+          variant="outline"
           disabled={isLoadingNext}
           onClick={onLoadMore}
           type="button"
         >
           {isLoadingNext ? "Loading more…" : "Load more products"}
-        </SecondaryButton>
+        </Button>
       ) : null}
     </section>
   );
@@ -551,55 +551,55 @@ function AdjustmentForm({
         </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-[12rem_minmax(0,1fr)]">
-        <label className="form-field" htmlFor={deltaId}>
+        <Label className="form-field" htmlFor={deltaId}>
           Signed adjustment ({product.product.unit})
-          <input
+          <Input
             aria-describedby={validation ? errorId : undefined}
-            className="form-control form-control--numeric"
+            className="form-control--numeric"
             id={deltaId}
             inputMode="decimal"
             name="delta"
             placeholder="e.g. +2 or -1.25"
             required
           />
-        </label>
-        <label className="form-field" htmlFor={reasonId}>
+        </Label>
+        <Label className="form-field" htmlFor={reasonId}>
           Reason
-          <select
-            className="form-control form-control--compact"
+          <NativeSelect
+            className="w-full form-control--compact"
             defaultValue="STOCK_COUNT"
             id={reasonId}
             name="reason"
           >
             {ADJUSTMENT_REASONS.map((reason) => (
-              <option key={reason} value={reason}>
+              <NativeSelectOption key={reason} value={reason}>
                 {reason.replaceAll("_", " ")}
-              </option>
+              </NativeSelectOption>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Label>
       </div>
-      <label className="form-field" htmlFor={noteId}>
+      <Label className="form-field" htmlFor={noteId}>
         Note (required for OTHER)
-        <textarea
+        <Textarea
           aria-describedby={validation ? errorId : undefined}
-          className="form-control"
+          className=""
           id={noteId}
           name="note"
         />
-      </label>
+      </Label>
       {validation ? (
         <p className="form-message" id={errorId} role="alert">
           {validation}
         </p>
       ) : null}
-      <PrimaryButton
+      <Button
         aria-busy={mutation.isPending}
         disabled={mutation.isPending}
         type="submit"
       >
         {mutation.isPending ? "Submitting adjustment…" : "Submit adjustment"}
-      </PrimaryButton>
+      </Button>
     </form>
   );
 }
@@ -678,13 +678,14 @@ function HistoryList({
         </ol>
       ) : null}
       {hasNextPage ? (
-        <SecondaryButton
+        <Button
+          variant="outline"
           disabled={isLoadingNext}
           onClick={onLoadMore}
           type="button"
         >
           {isLoadingNext ? "Loading more…" : "Load more history"}
-        </SecondaryButton>
+        </Button>
       ) : null}
     </section>
   );

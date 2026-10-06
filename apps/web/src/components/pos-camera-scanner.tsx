@@ -1,4 +1,5 @@
 "use client";
+import { Button } from "@/components/ui/button";
 
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -217,13 +218,9 @@ export function PosCameraScanner({
           Video is decoded on this device; no recording or upload. USB/manual
           scanning remains available.
         </p>
-        <button
-          className="form-action rounded-md border"
-          onClick={onClose}
-          type="button"
-        >
+        <Button variant="outline" className="" onClick={onClose} type="button">
           Close camera
-        </button>
+        </Button>
       </div>
     </dialog>,
     document.body,

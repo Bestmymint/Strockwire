@@ -201,3 +201,25 @@ test("headless print produces repeated vector labels across page boundaries (stu
     });
   }
 });
+for (const theme of ["light", "dark"] as const) {
+  test(`labels retain white paper and black text in ${theme}`, async ({
+    page,
+  }) => {
+    await page.addInitScript(
+      (value) => localStorage.setItem("stockwise.theme", value),
+      theme,
+    );
+    await stubCatalog(page);
+    await page.goto(catalogPath);
+    await page.getByRole("button", { name: "Preview barcode labels" }).click();
+    const label = page.getByRole("dialog").getByRole("article").first();
+    await expect(label).toHaveCSS("background-color", "rgb(255, 255, 255)");
+    await expect(label).toHaveCSS("color", "rgb(0, 0, 0)");
+    await page.emulateMedia({ media: "print" });
+    await expect(page.getByRole("dialog")).toHaveCSS(
+      "background-color",
+      "rgb(255, 255, 255)",
+    );
+    await expect(label).toHaveCSS("color", "rgb(0, 0, 0)");
+  });
+}

@@ -1,4 +1,7 @@
 "use client";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 import Link from "next/link";
 import { type FormEvent, useState } from "react";
@@ -87,12 +90,12 @@ export function EmailRequestForm({ kind }: EmailRequestFormProps) {
   return (
     <form className="space-y-5" noValidate onSubmit={handleSubmit}>
       <div>
-        <label className="form-field" htmlFor={`${kind}-email`}>
+        <Label className="form-field" htmlFor={`${kind}-email`}>
           Email address
-        </label>
-        <input
+        </Label>
+        <Input
           autoComplete="email"
-          className="form-control mt-1"
+          className="mt-1"
           disabled={isSubmitting}
           id={`${kind}-email`}
           name="email"
@@ -105,19 +108,15 @@ export function EmailRequestForm({ kind }: EmailRequestFormProps) {
       {error === null ? null : (
         <p
           aria-live="assertive"
-          className="text-sm text-red-700 form-message"
+          className="text-sm text-destructive form-message"
           role="alert"
         >
           {error}
         </p>
       )}
-      <button
-        className="min-h-11 w-full rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 form-action"
-        disabled={isSubmitting}
-        type="submit"
-      >
+      <Button className="w-full" disabled={isSubmitting} type="submit">
         {isSubmitting ? "Sending request…" : content.button}
-      </button>
+      </Button>
       <p className="text-center text-sm text-muted-foreground">
         <Link
           className="font-medium text-foreground underline"

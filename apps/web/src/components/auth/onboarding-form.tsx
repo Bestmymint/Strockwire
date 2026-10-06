@@ -1,4 +1,8 @@
 "use client";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
@@ -126,11 +130,11 @@ export function OnboardingForm() {
         value={fields.branchPhone}
       />
       <div>
-        <label className="form-field" htmlFor="onboarding-address">
+        <Label className="form-field" htmlFor="onboarding-address">
           Branch address (optional)
-        </label>
-        <textarea
-          className="form-control mt-1"
+        </Label>
+        <Textarea
+          className="mt-1"
           disabled={isSubmitting}
           id="onboarding-address"
           maxLength={500}
@@ -142,19 +146,15 @@ export function OnboardingForm() {
       {error === null ? null : (
         <p
           aria-live="assertive"
-          className="text-sm text-red-700 form-message"
+          className="text-sm text-destructive form-message"
           role="alert"
         >
           {error}
         </p>
       )}
-      <button
-        className="min-h-11 w-full rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 form-action"
-        disabled={isSubmitting}
-        type="submit"
-      >
+      <Button className="w-full" disabled={isSubmitting} type="submit">
         {isSubmitting ? "Creating organization…" : "Create organization"}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -180,12 +180,12 @@ function TextField({
 }) {
   return (
     <div>
-      <label className="form-field" htmlFor={id}>
+      <Label className="form-field" htmlFor={id}>
         {label}
-      </label>
-      <input
+      </Label>
+      <Input
         autoComplete={autoComplete}
-        className="form-control mt-1"
+        className="mt-1"
         disabled={disabled}
         id={id}
         maxLength={maxLength}

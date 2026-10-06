@@ -220,10 +220,10 @@ describe("POS management UI", () => {
     renderPos();
     const add = await screen.findByRole("button", { name: "Add Coffee" });
     const search = screen.getByRole("button", { name: /^Search$/ });
-    expect(add.classList.contains("form-action")).toBe(true);
-    expect(add.classList.contains("bg-foreground")).toBe(true);
+    expect(add.getAttribute("data-slot")).toBe("button");
+    expect(add.classList.contains("bg-primary")).toBe(true);
     expect(add.classList.contains("w-full")).toBe(true);
-    expect(search.classList.contains("form-action")).toBe(true);
+    expect(search.getAttribute("data-slot")).toBe("button");
     expect(search.classList.contains("self-end")).toBe(true);
   });
 

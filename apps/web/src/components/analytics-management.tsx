@@ -1,4 +1,19 @@
 "use client";
+import {
+  Table,
+  TableHeader,
+  TableRow,
+  TableHead,
+  TableBody,
+  TableCell,
+} from "@/components/ui/table";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { Button } from "@/components/ui/button";
 
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
@@ -262,7 +277,7 @@ function NetSalesChart({
   }));
   return (
     <div className="rounded-lg border bg-card p-4">
-      <h3 className="font-semibold">Net sales trend</h3>
+      <h2 className="font-semibold">Net sales trend</h2>
       <p className="mb-4 text-sm text-muted-foreground">
         THB by reporting period. Exact values are in the table below.
       </p>
@@ -283,10 +298,21 @@ function NetSalesChart({
             accessibilityLayer
             margin={{ top: 8, right: 12, bottom: 8, left: 8 }}
           >
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="label" minTickGap={24} />
-            <YAxis width={70} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+            <XAxis
+              dataKey="label"
+              minTickGap={24}
+              stroke="var(--muted-foreground)"
+            />
+            <YAxis width={70} stroke="var(--muted-foreground)" />
             <Tooltip
+              contentStyle={{
+                background: "var(--popover)",
+                color: "var(--popover-foreground)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius)",
+              }}
+              itemStyle={{ color: "var(--popover-foreground)" }}
               formatter={(_value, _name, item) =>
                 money(String(item.payload.exact))
               }
@@ -295,7 +321,7 @@ function NetSalesChart({
               type="linear"
               dataKey="netSales"
               name="Net sales"
-              stroke="#2563eb"
+              stroke="var(--foreground)"
               strokeWidth={2}
               dot={chartData.length <= 15}
               isAnimationActive={false}
@@ -314,40 +340,46 @@ function SalesSeriesTable({
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border bg-card">
-      <table className="w-full min-w-[700px] text-left text-sm">
+      <Table className="w-full min-w-[700px] text-left text-sm">
         <caption className="px-4 py-3 text-left font-semibold">
           Sales by period
         </caption>
-        <thead className="border-y bg-muted text-muted-foreground">
-          <tr>
-            <th className="px-4 py-2">Period</th>
-            <th className="px-4 py-2">Net sales</th>
-            <th className="px-4 py-2">Gross sales</th>
-            <th className="px-4 py-2">Refunds</th>
-            <th className="px-4 py-2">Sales</th>
-            <th className="px-4 py-2">Status</th>
-          </tr>
-        </thead>
-        <tbody>
+        <TableHeader className="border-y bg-muted text-muted-foreground">
+          <TableRow>
+            <TableHead className="px-4 py-2">Period</TableHead>
+            <TableHead className="px-4 py-2">Net sales</TableHead>
+            <TableHead className="px-4 py-2">Gross sales</TableHead>
+            <TableHead className="px-4 py-2">Refunds</TableHead>
+            <TableHead className="px-4 py-2">Sales</TableHead>
+            <TableHead className="px-4 py-2">Status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {buckets.map((bucket) => (
-            <tr
+            <TableRow
               className="border-b last:border-0"
               key={bucket.localStartInclusive}
             >
-              <th className="px-4 py-2 font-medium">{bucket.label}</th>
-              <td className="px-4 py-2 tabular-nums">
+              <TableHead className="px-4 py-2 font-medium">
+                {bucket.label}
+              </TableHead>
+              <TableCell className="px-4 py-2 tabular-nums">
                 {money(bucket.netSalesAmount)}
-              </td>
-              <td className="px-4 py-2 tabular-nums">
+              </TableCell>
+              <TableCell className="px-4 py-2 tabular-nums">
                 {money(bucket.grossSalesAmount)}
-              </td>
-              <td className="px-4 py-2 tabular-nums">{bucket.refundCount}</td>
-              <td className="px-4 py-2 tabular-nums">{bucket.saleCount}</td>
-              <td className="px-4 py-2">{bucket.dataStatus}</td>
-            </tr>
+              </TableCell>
+              <TableCell className="px-4 py-2 tabular-nums">
+                {bucket.refundCount}
+              </TableCell>
+              <TableCell className="px-4 py-2 tabular-nums">
+                {bucket.saleCount}
+              </TableCell>
+              <TableCell className="px-4 py-2">{bucket.dataStatus}</TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }
@@ -359,39 +391,47 @@ function CategorySeriesTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="mt-3 w-full min-w-[650px] text-left text-sm">
-        <thead className="border-y bg-muted">
-          <tr>
-            <th className="px-3 py-2">Period</th>
-            <th className="px-3 py-2">Gross sales</th>
-            <th className="px-3 py-2">Discount</th>
-            <th className="px-3 py-2">Sales after discount</th>
-            <th className="px-3 py-2">Refund</th>
-            <th className="px-3 py-2">Net sales</th>
-            <th className="px-3 py-2">Share</th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table className="mt-3 w-full min-w-[650px] text-left text-sm">
+        <TableHeader className="border-y bg-muted">
+          <TableRow>
+            <TableHead className="px-3 py-2">Period</TableHead>
+            <TableHead className="px-3 py-2">Gross sales</TableHead>
+            <TableHead className="px-3 py-2">Discount</TableHead>
+            <TableHead className="px-3 py-2">Sales after discount</TableHead>
+            <TableHead className="px-3 py-2">Refund</TableHead>
+            <TableHead className="px-3 py-2">Net sales</TableHead>
+            <TableHead className="px-3 py-2">Share</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {buckets.map((bucket) => (
-            <tr
+            <TableRow
               key={bucket.localStartInclusive}
               className="border-b last:border-0"
             >
-              <th className="px-3 py-2">{bucket.label}</th>
-              <td className="px-3 py-2">{money(bucket.grossSalesAmount)}</td>
-              <td className="px-3 py-2">{money(bucket.discountAmount)}</td>
-              <td className="px-3 py-2">
+              <TableHead className="px-3 py-2">{bucket.label}</TableHead>
+              <TableCell className="px-3 py-2">
+                {money(bucket.grossSalesAmount)}
+              </TableCell>
+              <TableCell className="px-3 py-2">
+                {money(bucket.discountAmount)}
+              </TableCell>
+              <TableCell className="px-3 py-2">
                 {money(bucket.salesAfterDiscountAmount)}
-              </td>
-              <td className="px-3 py-2">{money(bucket.refundAmount)}</td>
-              <td className="px-3 py-2">{money(bucket.netSalesAmount)}</td>
-              <td className="px-3 py-2">
+              </TableCell>
+              <TableCell className="px-3 py-2">
+                {money(bucket.refundAmount)}
+              </TableCell>
+              <TableCell className="px-3 py-2">
+                {money(bucket.netSalesAmount)}
+              </TableCell>
+              <TableCell className="px-3 py-2">
                 {nullable(bucket.categorySharePercent, "percent")}
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }
@@ -561,33 +601,33 @@ function AnalyticsContent({
         }}
       >
         <div className="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-[12rem_12rem_10rem_minmax(0,1fr)]">
-          <label className="form-field">
+          <Label className="form-field">
             From (inclusive)
-            <input
+            <Input
               required
               type="date"
               value={draftPeriod.from}
               onChange={(event) =>
                 setDraftPeriod({ ...draftPeriod, from: event.target.value })
               }
-              className="form-control form-control--date"
+              className="form-control--date"
             />
-          </label>
-          <label className="form-field">
+          </Label>
+          <Label className="form-field">
             To (exclusive)
-            <input
+            <Input
               required
               type="date"
               value={draftPeriod.to}
               onChange={(event) =>
                 setDraftPeriod({ ...draftPeriod, to: event.target.value })
               }
-              className="form-control form-control--date"
+              className="form-control--date"
             />
-          </label>
-          <label className="form-field">
+          </Label>
+          <Label className="form-field">
             Granularity
-            <select
+            <NativeSelect
               value={draftPeriod.granularity}
               onChange={(event) =>
                 setDraftPeriod({
@@ -596,17 +636,17 @@ function AnalyticsContent({
                     .value as AnalyticsPeriod["granularity"],
                 })
               }
-              className="form-control"
+              className="w-full "
             >
-              <option value="day">Day</option>
-              <option value="week">Week</option>
-              <option value="month">Month</option>
-              <option value="year">Year</option>
-            </select>
-          </label>
-          <label className="form-field">
+              <NativeSelectOption value="day">Day</NativeSelectOption>
+              <NativeSelectOption value="week">Week</NativeSelectOption>
+              <NativeSelectOption value="month">Month</NativeSelectOption>
+              <NativeSelectOption value="year">Year</NativeSelectOption>
+            </NativeSelect>
+          </Label>
+          <Label className="form-field">
             Scope
-            <select
+            <NativeSelect
               aria-label="Analytics scope"
               value={
                 effectiveScope.scope === "organization"
@@ -614,26 +654,25 @@ function AnalyticsContent({
                   : effectiveScope.branchId
               }
               onChange={(event) => setScopeValue(event.target.value)}
-              className="form-control"
+              className="w-full "
             >
               {isWideRole ? (
-                <option value="organization">All organization branches</option>
+                <NativeSelectOption value="organization">
+                  All organization branches
+                </NativeSelectOption>
               ) : null}
               {allowedBranches.map((branch) => (
-                <option key={branch.id} value={branch.id}>
+                <NativeSelectOption key={branch.id} value={branch.id}>
                   {branch.code} — {branch.name}
-                </option>
+                </NativeSelectOption>
               ))}
-            </select>
-          </label>
+            </NativeSelect>
+          </Label>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button
-            className="min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background form-action"
-            type="submit"
-          >
+          <Button className="" type="submit">
             Apply period
-          </button>
+          </Button>
           <p className="text-xs text-muted-foreground">
             Dates use the organization reporting timezone. Weeks begin Monday.
             Maximum span: 366 local dates.
@@ -652,12 +691,12 @@ function AnalyticsContent({
               "insights",
             ] as const)
         ).map((item) => (
-          <button
+          <Button
             key={item}
             type="button"
             aria-pressed={view === item}
             onClick={() => setView(item)}
-            className={`min-h-11 rounded-md px-4 text-sm font-medium ${view === item ? "bg-foreground text-background" : "border bg-card"}`}
+            variant={view === item ? "secondary" : "outline"}
           >
             {item === "sales"
               ? "Sales"
@@ -670,7 +709,7 @@ function AnalyticsContent({
                     : item === "insights"
                       ? "AI insights"
                       : "Forecast / Reorder"}
-          </button>
+          </Button>
         ))}
       </nav>
       {view === "insights" ? (
@@ -708,23 +747,23 @@ function AnalyticsContent({
             <p>Data as of {salesQuery.data.meta.sourceCutoff}</p>
           </div>
           {buckets.length > 0 ? (
-            <label className="form-field max-w-xs">
+            <Label className="form-field max-w-xs">
               Selected period
-              <select
+              <NativeSelect
                 value={activeBucket?.localStartInclusive ?? ""}
                 onChange={(event) => setSelectedBucket(event.target.value)}
-                className="form-control"
+                className="w-full "
               >
                 {buckets.map((bucket) => (
-                  <option
+                  <NativeSelectOption
                     value={bucket.localStartInclusive}
                     key={bucket.localStartInclusive}
                   >
                     {bucket.label}
-                  </option>
+                  </NativeSelectOption>
                 ))}
-              </select>
-            </label>
+              </NativeSelect>
+            </Label>
           ) : null}
           {view === "sales" ? (
             <section className="space-y-5" aria-label="Sales analytics">
@@ -757,13 +796,14 @@ function AnalyticsContent({
                   <p>{errorMessage(categoryQuery.error)}</p>
                   {categoryQuery.error instanceof AnalyticsApiError &&
                   categoryQuery.error.kind === "invalid_cursor" ? (
-                    <button
+                    <Button
+                      variant="outline"
                       type="button"
                       onClick={() => setCategoryReset((value) => value + 1)}
                       className="underline"
                     >
                       Restart category list
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
               ) : (
@@ -807,16 +847,17 @@ function AnalyticsContent({
                     </div>
                   )}
                   {categoryQuery.hasNextPage ? (
-                    <button
+                    <Button
+                      variant="outline"
                       disabled={categoryQuery.isFetchingNextPage}
                       type="button"
                       onClick={() => void categoryQuery.fetchNextPage()}
-                      className="min-h-11 rounded-md border bg-card px-4 text-sm font-medium disabled:opacity-60 form-action"
+                      className="bg-card"
                     >
                       {categoryQuery.isFetchingNextPage
                         ? "Loading next page…"
                         : "Load more categories"}
-                    </button>
+                    </Button>
                   ) : null}
                 </>
               )}
@@ -832,13 +873,14 @@ function AnalyticsContent({
                   <p>{errorMessage(branchQuery.error)}</p>
                   {branchQuery.error instanceof AnalyticsApiError &&
                   branchQuery.error.kind === "invalid_cursor" ? (
-                    <button
+                    <Button
+                      variant="outline"
                       type="button"
                       onClick={() => setBranchReset((value) => value + 1)}
                       className="underline"
                     >
                       Restart branch list
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
               ) : (
@@ -884,16 +926,17 @@ function AnalyticsContent({
                     </div>
                   )}
                   {branchQuery.hasNextPage ? (
-                    <button
+                    <Button
+                      variant="outline"
                       disabled={branchQuery.isFetchingNextPage}
                       type="button"
                       onClick={() => void branchQuery.fetchNextPage()}
-                      className="min-h-11 rounded-md border bg-card px-4 text-sm font-medium disabled:opacity-60 form-action"
+                      className="bg-card"
                     >
                       {branchQuery.isFetchingNextPage
                         ? "Loading next page…"
                         : "Load more branches"}
-                    </button>
+                    </Button>
                   ) : null}
                 </>
               )}

@@ -26,14 +26,17 @@ for (const width of [375, 430, 768, 1024, 1280, 1440]) {
         await page.locator('meta[name="description"]').getAttribute("content"),
       ).toBeTruthy();
       expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-      if (width < 701) {
+      if (width < 768) {
         await expect(
           page.getByRole("navigation", { name: "Public navigation" }),
         ).toBeHidden();
         await page.getByRole("button", { name: "Menu", exact: true }).click();
         await expect(
-          page.getByRole("navigation", { name: "Public navigation" }),
+          page
+            .getByRole("dialog")
+            .getByRole("navigation", { name: "Public navigation" }),
         ).toBeVisible();
+        await expect(page.getByRole("dialog")).toHaveCSS("opacity", "1");
         expect((await new AxeBuilder({ page }).analyze()).violations).toEqual(
           [],
         );
@@ -75,7 +78,7 @@ test("public navigation reaches features, pricing, and the actual auth forms", a
   await nav.getByRole("link", { name: "Features" }).click();
   await expect(page).toHaveURL(/\/#features$/);
   await expect(
-    page.getByRole("heading", { name: /Less guesswork/ }),
+    page.getByRole("heading", { name: /The essentials, connected/ }),
   ).toBeInViewport();
   await nav.getByRole("link", { name: "Pricing" }).click();
   await expect(page).toHaveURL("/pricing");
@@ -120,14 +123,15 @@ test("mobile menu supports keyboard use, Escape, and closes after a feature link
   await expect(
     page.getByRole("link", { name: "Skip to main content" }),
   ).toBeFocused();
-  const menu = page.getByRole("button", { name: /^(Menu|Close menu)$/ });
+  const menu = page.locator('[data-slot="sheet-trigger"]');
   await menu.focus();
   await page.keyboard.press("Enter");
   await expect(menu).toHaveAttribute("aria-expanded", "true");
-  await page.keyboard.press("Tab");
   const features = page
+    .getByRole("dialog")
     .getByRole("navigation", { name: "Public navigation" })
     .getByRole("link", { name: "Features" });
+  await features.focus();
   await expect(features).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(menu).toBeFocused();
@@ -136,7 +140,11 @@ test("mobile menu supports keyboard use, Escape, and closes after a feature link
   await features.click();
   await expect(menu).toHaveAttribute("aria-expanded", "false");
   await expect(page).toHaveURL(/\/#features$/);
-  await page.getByRole("link", { name: "Get started" }).click();
+  await menu.click();
+  await page
+    .getByRole("dialog")
+    .getByRole("link", { name: "Get started" })
+    .click();
   await expect(page).toHaveURL("/register");
   await expect(
     page.getByRole("heading", { name: "Create account" }),

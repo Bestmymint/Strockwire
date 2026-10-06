@@ -105,7 +105,9 @@ async function signIn(page: Page, email = E2E_OWNER_EMAIL) {
 }
 
 async function inspect(page: Page, info: TestInfo, name: string) {
-  const controls = page.locator(".form-control:visible");
+  const controls = page.locator(
+    '[data-slot="input"]:visible, [data-slot="native-select"]:visible, [data-slot="textarea"]:visible',
+  );
   await expect(controls.first()).toBeVisible();
   const layout = await controls.evaluateAll((elements) =>
     elements.map((element) => {
@@ -128,7 +130,7 @@ async function inspect(page: Page, info: TestInfo, name: string) {
       true,
     );
     expect(control.inPage, `${name}: ${control.name} inside page`).toBe(true);
-    if (!control.textarea) expect(control.height).toBe(44);
+    if (!control.textarea) expect(control.height).toBe(32);
     if (control.numeric) expect(control.width).toBeLessThanOrEqual(192);
   }
   expect(

@@ -1,4 +1,7 @@
 "use client";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 import { useEffect, useRef, useState } from "react";
 
@@ -147,32 +150,34 @@ export function PosBarcodeScanner({
           input.current?.focus();
         }}
       >
-        <label className="form-field">
+        <Label className="form-field">
           Scan or enter barcode
-          <input
+          <Input
             autoComplete="off"
             spellCheck={false}
             autoCapitalize="none"
-            className="form-control"
+            className=""
             disabled={disabled}
             name="barcode"
             ref={input}
           />
-        </label>
-        <button
-          className="form-action self-end rounded-md border disabled:opacity-60"
+        </Label>
+        <Button
+          variant="outline"
+          className="self-end"
           disabled={disabled}
           type="submit"
         >
           Add barcode
-        </button>
+        </Button>
       </form>
       <p className="text-sm text-muted-foreground">
         USB/Bluetooth keyboard scanner: keep this field focused and use Enter.
         Other fields keep normal keyboard behavior.
       </p>
-      <button
-        className="form-action rounded-md border disabled:opacity-60"
+      <Button
+        variant="outline"
+        className=""
         disabled={disabled}
         type="button"
         onClick={() => {
@@ -182,7 +187,7 @@ export function PosBarcodeScanner({
         }}
       >
         Scan with camera
-      </button>
+      </Button>
       <div
         role="status"
         aria-live="polite"

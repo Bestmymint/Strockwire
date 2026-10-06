@@ -1,4 +1,19 @@
 "use client";
+import { Label } from "@/components/ui/label";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableHeader,
+  TableRow,
+  TableHead,
+  TableBody,
+  TableCell,
+} from "@/components/ui/table";
 
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -109,52 +124,52 @@ export function ForecastReorderView({
         </p>
       </div>
       <div className="grid gap-4 rounded-lg border bg-card p-4 sm:grid-cols-3">
-        <label className="form-field">
+        <Label className="form-field">
           Branch
-          <select
+          <NativeSelect
             value={activeBranch?.id ?? ""}
             onChange={(event) => {
               setBranchId(event.target.value);
               setProductId("");
             }}
-            className="form-control"
+            className="w-full "
           >
             {organization.branches.map((branch) => (
-              <option key={branch.id} value={branch.id}>
+              <NativeSelectOption key={branch.id} value={branch.id}>
                 {branch.code} — {branch.name}
-              </option>
+              </NativeSelectOption>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Label>
         <div className="space-y-2">
-          <label className="form-field">
+          <Label className="form-field">
             Find Product
-            <input
+            <Input
               type="search"
               value={search}
               onChange={(event) => {
                 setSearch(event.target.value);
                 setProductId("");
               }}
-              className="form-control"
+              className=""
             />
-          </label>
-          <label className="form-field">
+          </Label>
+          <Label className="form-field">
             Product
-            <select
+            <NativeSelect
               value={chosenProduct?.id ?? ""}
               onChange={(event) => setProductId(event.target.value)}
-              className="form-control"
+              className="w-full "
             >
-              <option value="">Choose a Product</option>
+              <NativeSelectOption value="">Choose a Product</NativeSelectOption>
               {options.map((product) => (
-                <option key={product.id} value={product.id}>
+                <NativeSelectOption key={product.id} value={product.id}>
                   {product.sku} — {product.name}
                   {product.status === "INACTIVE" ? " (inactive)" : ""}
-                </option>
+                </NativeSelectOption>
               ))}
-            </select>
-          </label>
+            </NativeSelect>
+          </Label>
           {products.isPending && activeBranch ? (
             <p aria-live="polite" className="text-sm">
               Loading Products…
@@ -169,35 +184,36 @@ export function ForecastReorderView({
             <p className="text-sm">No Products match this search.</p>
           ) : null}
           {products.hasNextPage ? (
-            <button
+            <Button
+              variant="outline"
               type="button"
               onClick={() => void products.fetchNextPage()}
               disabled={products.isFetchingNextPage}
-              className="rounded-md border px-3 py-2 text-sm"
+              className=""
             >
               {products.isFetchingNextPage ? "Loading…" : "Load more Products"}
-            </button>
+            </Button>
           ) : null}
         </div>
-        <label className="form-field">
+        <Label className="form-field">
           Planning lead time
-          <select
+          <NativeSelect
             value={leadTimeDays ?? ""}
             onChange={(event) =>
               setLeadTimeDays(
                 event.target.value === "" ? null : Number(event.target.value),
               )
             }
-            className="form-control form-control--compact"
+            className="w-full form-control--compact"
           >
-            <option value="">Choose 1–7 days</option>
+            <NativeSelectOption value="">Choose 1–7 days</NativeSelectOption>
             {[1, 2, 3, 4, 5, 6, 7].map((days) => (
-              <option key={days} value={days}>
+              <NativeSelectOption key={days} value={days}>
                 {days} {days === 1 ? "day" : "days"}
-              </option>
+              </NativeSelectOption>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Label>
       </div>
       {!activeBranch ? (
         <p className="form-message" role="alert">
@@ -242,31 +258,34 @@ export function ForecastReorderView({
                       {forecastResult.horizonTotal} {forecastResult.unit} total
                     </p>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-left text-sm">
+                      <Table className="w-full text-left text-sm">
                         <caption className="py-2 text-left font-medium">
                           Daily forecast in {forecastResult.unit}
                         </caption>
-                        <thead>
-                          <tr>
-                            <th scope="col" className="py-2">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead scope="col" className="py-2">
                               Local date
-                            </th>
-                            <th scope="col">Quantity</th>
-                          </tr>
-                        </thead>
-                        <tbody>
+                            </TableHead>
+                            <TableHead scope="col">Quantity</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
                           {forecastResult.days.map((day) => (
-                            <tr key={day.localDate} className="border-t">
-                              <th scope="row" className="py-2 font-normal">
+                            <TableRow key={day.localDate} className="border-t">
+                              <TableHead
+                                scope="row"
+                                className="py-2 font-normal"
+                              >
                                 {day.localDate}
-                              </th>
-                              <td className="tabular-nums">
+                              </TableHead>
+                              <TableCell className="tabular-nums">
                                 {day.quantity} {forecastResult.unit}
-                              </td>
-                            </tr>
+                              </TableCell>
+                            </TableRow>
                           ))}
-                        </tbody>
-                      </table>
+                        </TableBody>
+                      </Table>
                     </div>
                   </>
                 )}

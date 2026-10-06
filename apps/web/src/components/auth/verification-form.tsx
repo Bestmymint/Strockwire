@@ -1,4 +1,5 @@
 "use client";
+import { Button } from "@/components/ui/button";
 
 import Link from "next/link";
 import { type FormEvent, useState } from "react";
@@ -80,19 +81,15 @@ export function VerificationForm() {
       {error === null ? null : (
         <p
           aria-live="assertive"
-          className="text-sm text-red-700 form-message"
+          className="text-sm text-destructive form-message"
           role="alert"
         >
           {error}
         </p>
       )}
-      <button
-        className="min-h-11 w-full rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 form-action"
-        disabled={isSubmitting}
-        type="submit"
-      >
+      <Button className="w-full" disabled={isSubmitting} type="submit">
         {isSubmitting ? "Verifying email…" : "Verify email"}
-      </button>
+      </Button>
       <p className="text-center text-sm text-muted-foreground">
         Need another link?{" "}
         <Link

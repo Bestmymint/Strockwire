@@ -1,306 +1,372 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-
-import styles from "@/components/marketing/marketing.module.css";
+import {
+  ArrowRight,
+  BarChart3,
+  Boxes,
+  ClipboardList,
+  Package,
+  Receipt,
+  ShoppingCart,
+  Store,
+  Truck,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export const metadata: Metadata = {
-  title: "StockWise | Smart inventory & sales for SMEs",
+  title: "StockWise | Inventory and sales, in one workspace",
   description:
-    "Manage branch inventory, purchasing, receiving, POS, and sales with StockWise. Understand performance with analytics, forecasts, and reorder guidance.",
+    "Catalog, branch inventory, purchasing, receiving, POS, sales history and analytics for SME retail operations.",
 };
-
-const capabilities = [
-  {
-    symbol: "▦",
-    label: "Inventory control",
-    title: "Know what’s on your shelves.",
-    description:
-      "Keep products and categories organized. See stock by branch and trace each change through your inventory movement history.",
-    detail: "Catalog · Branch stock · Movement history",
-  },
-  {
-    symbol: "↓",
-    label: "Purchasing & receiving",
-    title: "Follow every order to arrival.",
-    description:
-      "Manage suppliers, create purchase orders, and record received items. Keep purchasing, stock, and recorded costs connected.",
-    detail: "Suppliers · Purchase orders · Receiving",
-  },
-  {
-    symbol: "↗",
-    label: "Point of sale",
-    title: "Keep the sale and its story.",
-    description:
-      "Sell through POS, look up past sales, and view receipts. Handle linked refunds with optional restocking at the original branch.",
-    detail: "POS · Sales history · Receipts & refunds",
-  },
-  {
-    symbol: "≋",
-    label: "Analytics & planning",
-    title: "Make your next move informed.",
-    description:
-      "Review sales and inventory performance. Use demand forecasts and reorder recommendations to support your replenishment decisions.",
-    detail: "KPIs · Forecasts · Reorder guidance",
-  },
-];
-
-const workflow = [
-  {
-    title: "Set up your products",
-    description:
-      "Organize your catalog and suppliers, then give your team access to the right branches.",
-  },
-  {
-    title: "Purchase and receive",
-    description:
-      "Track purchase orders and record arrivals into branch inventory.",
-  },
-  {
-    title: "Sell and keep track",
-    description:
-      "Check out through POS and keep sales, receipts, and stock movements connected.",
-  },
-  {
-    title: "Review and replenish",
-    description:
-      "Explore performance and use planning tools to decide what to order next.",
-  },
-];
-
+const features = [
+  [
+    Package,
+    "Catalog",
+    "Keep products, categories, SKUs and barcodes organized across your business.",
+  ],
+  [
+    Boxes,
+    "Branch inventory",
+    "See stock balances and trace adjustments through movement history.",
+  ],
+  [
+    Truck,
+    "Suppliers",
+    "Keep supplier contacts alongside your purchasing workflow.",
+  ],
+  [
+    ClipboardList,
+    "Purchase orders & receiving",
+    "Follow orders through arrival and record received quantities and costs.",
+  ],
+  [
+    ShoppingCart,
+    "Point of sale",
+    "Check out with cash or confirmed transfer and print the recorded sale.",
+  ],
+  [
+    Receipt,
+    "Sales history & refunds",
+    "Review immutable sales and linked refunds with optional same-branch restocking.",
+  ],
+  [
+    BarChart3,
+    "Analytics & planning",
+    "Review sales and inventory, forecast demand and consider advisory reorder quantities.",
+  ],
+  [
+    Store,
+    "Branch access",
+    "Share the catalog while teams work within their assigned roles and branches.",
+  ],
+] as const;
 export default function HomePage() {
   return (
-    <>
+    <div className="mx-auto max-w-6xl px-5 sm:px-8">
       <section
-        className={`${styles.container} ${styles.hero}`}
         aria-labelledby="hero-title"
+        className="mx-auto max-w-3xl py-16 text-center sm:py-24"
       >
-        <div>
-          <p className={styles.eyebrow}>
-            <span className={styles.statusDot} /> A clearer view of retail
-          </p>
-          <h1 id="hero-title">
-            Know your stock.
-            <br />
-            See your sales.
-            <br />
-            <span>Plan your next move.</span>
-          </h1>
-          <p className={styles.heroDescription}>
-            From the first purchase order to the next reorder, StockWise brings
-            your inventory, sales, and analytics together. Built for SME
-            retailers and the teams behind them.
-          </p>
-          <div className={styles.actions}>
-            <Link className={styles.button} href="/register">
-              Create your account <span aria-hidden="true">↗</span>
-            </Link>
-            <Link className={styles.secondaryButton} href="#features">
-              Explore the features <span aria-hidden="true">↓</span>
-            </Link>
-          </div>
-          <p className={styles.caption}>
-            One connected workflow. Across your branches.
-          </p>
+        <Badge variant="outline">Inventory and sales, in one workspace.</Badge>
+        <h1
+          id="hero-title"
+          className="mt-6 text-4xl font-semibold tracking-tight text-balance sm:text-6xl"
+        >
+          Run your inventory with clarity.
+        </h1>
+        <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-pretty text-muted-foreground sm:text-lg">
+          From purchasing and receiving to POS, sales history and analytics. One
+          workspace for the everyday operations of SME retail teams.
+        </p>
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <Button
+            size="lg"
+            nativeButton={false}
+            role="link"
+            render={<Link href="/register" />}
+          >
+            Get started
+            <ArrowRight />
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            nativeButton={false}
+            role="link"
+            render={<Link href="#features" />}
+          >
+            View features
+          </Button>
         </div>
-        <figure className={styles.flowBoard}>
-          <figcaption>
-            <span className={styles.eyebrow}>The connected store</span>
-            <strong>Every movement has a next step.</strong>
-          </figcaption>
-          <div className={styles.flowTrack}>
-            <div className={styles.flowItem}>
-              <span aria-hidden="true">↓</span>
-              <div>
-                <strong>Purchase & receive</strong>
-                <p>From supplier to stock</p>
-              </div>
-            </div>
-            <div className={`${styles.flowItem} ${styles.flowInventory}`}>
-              <span aria-hidden="true">▦</span>
-              <div>
-                <strong>Branch inventory</strong>
-                <p>Know what’s available</p>
-              </div>
-              <span className={styles.flowTag}>In view</span>
-            </div>
-            <div className={styles.flowItem}>
-              <span aria-hidden="true">↗</span>
-              <div>
-                <strong>Sell & record</strong>
-                <p>POS, receipts, and history</p>
-              </div>
-            </div>
-            <div className={`${styles.flowItem} ${styles.flowPlan}`}>
-              <span aria-hidden="true">↻</span>
-              <div>
-                <strong>Review & replenish</strong>
-                <p>Analytics into your next order</p>
-              </div>
-            </div>
-          </div>
-          <p className={styles.boardCaption}>
-            Illustrative workflow · Decisions stay with you
-          </p>
-        </figure>
       </section>
       <section
-        className={styles.featureSection}
+        aria-label="Illustrative StockWise product preview"
+        className="pb-16"
+      >
+        <Card className="gap-0 overflow-hidden">
+          <CardHeader className="flex-row items-center justify-between border-b pb-4">
+            <div className="flex items-center gap-2 font-semibold">
+              <Package className="size-4" />
+              StockWise / Main branch
+            </div>
+            <Badge variant="secondary">Illustrative data</Badge>
+          </CardHeader>
+          <CardContent className="grid gap-6 pt-6 md:grid-cols-[160px_1fr]">
+            <div className="hidden space-y-1 border-r pr-4 text-sm md:block">
+              {[
+                "Overview",
+                "Catalog",
+                "Inventory",
+                "Purchasing",
+                "Sales",
+                "Analytics",
+              ].map((label, i) => (
+                <p
+                  key={label}
+                  className={
+                    i === 0
+                      ? "rounded-md bg-muted px-3 py-2 font-medium"
+                      : "px-3 py-2 text-muted-foreground"
+                  }
+                >
+                  {label}
+                </p>
+              ))}
+            </div>
+            <div className="min-w-0 space-y-6">
+              <div>
+                <p className="text-xs text-muted-foreground">
+                  OPERATIONS OVERVIEW
+                </p>
+                <h2 className="mt-1 text-xl font-semibold">
+                  A clearer picture of your store
+                </h2>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {[
+                  ["Net sales", "THB 12,450.00"],
+                  ["Completed sales", "42"],
+                  ["Products to review", "8"],
+                ].map(([label, value]) => (
+                  <Card size="sm" key={label}>
+                    <CardContent>
+                      <p className="text-xs text-muted-foreground">{label}</p>
+                      <p className="mt-2 text-xl font-semibold tabular-nums">
+                        {value}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              <div className="rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Product</TableHead>
+                      <TableHead>SKU</TableHead>
+                      <TableHead className="text-right">Available</TableHead>
+                      <TableHead>Review</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {[
+                      ["Green tea", "TEA-01", "24", "Stable"],
+                      ["Coffee beans", "COF-02", "6", "Reorder review"],
+                      ["Paper cups", "CUP-03", "120", "Stable"],
+                    ].map((row) => (
+                      <TableRow key={row[1]}>
+                        <TableCell className="font-medium">{row[0]}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {row[1]}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {row[2]}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{row[3]}</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Sample values demonstrate existing capabilities. Your workspace
+                uses your recorded business data.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+      <section
         id="features"
         aria-labelledby="features-title"
+        className="scroll-mt-6 border-t py-16"
       >
-        <div className={styles.container}>
-          <div className={styles.sectionHeading}>
-            <p className={styles.eyebrow}>
-              Your everyday operations, connected
-            </p>
-            <h2 id="features-title">
-              Less guesswork.
-              <br />
-              More clarity.
-            </h2>
-            <p>
-              For shop owners, store managers, inventory teams, and cashiers who
-              need to work from the same records.
-            </p>
-          </div>
-          <div className={styles.featureGrid}>
-            {capabilities.map((capability) => (
-              <article className={styles.featureCard} key={capability.label}>
-                <span aria-hidden="true" className={styles.featureSymbol}>
-                  {capability.symbol}
-                </span>
-                <p className={styles.eyebrow}>{capability.label}</p>
-                <h3>{capability.title}</h3>
-                <p>{capability.description}</p>
-                <p className={styles.featureDetail}>{capability.detail}</p>
-              </article>
-            ))}
-          </div>
+        <p className="text-sm text-muted-foreground">
+          Built around daily retail work
+        </p>
+        <h2
+          id="features-title"
+          className="mt-2 text-3xl font-semibold tracking-tight"
+        >
+          The essentials, connected.
+        </h2>
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {features.map(([Icon, title, description]) => (
+            <Card key={title}>
+              <CardContent>
+                <Icon className="mb-4 size-5" aria-hidden="true" />
+                <h3 className="font-semibold">{title}</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  {description}
+                </p>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       </section>
-      <section
-        className={`${styles.container} ${styles.section}`}
-        aria-labelledby="workflow-title"
-      >
-        <div className={styles.sectionHeading}>
-          <p className={styles.eyebrow}>How it works</p>
-          <h2 id="workflow-title">A rhythm your store already knows.</h2>
-          <p>
-            Keep each step connected, from setting up your shelves to planning
-            their next refill.
-          </p>
-        </div>
-        <ol className={styles.workflow}>
-          {workflow.map((step, index) => (
-            <li key={step.title}>
-              <span className={styles.stepNumber} aria-hidden="true">
-                0{index + 1}
-              </span>
-              <h3>{step.title}</h3>
-              <p>{step.description}</p>
+      <section aria-labelledby="workflow-title" className="border-t py-16">
+        <h2
+          id="workflow-title"
+          className="text-3xl font-semibold tracking-tight"
+        >
+          A workflow your team can follow.
+        </h2>
+        <ol className="mt-8 grid gap-6 sm:grid-cols-5">
+          {[
+            ["Purchase", "Create an order with your supplier."],
+            ["Receive", "Record arrivals and received costs."],
+            ["Stock", "Track balances at the right branch."],
+            ["Sell", "Complete checkout and retain the sale."],
+            ["Review", "Use analytics to plan the next order."],
+          ].map(([title, copy], i) => (
+            <li key={title}>
+              <p className="text-xs text-muted-foreground">0{i + 1}</p>
+              <h3 className="mt-2 font-semibold">{title}</h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {copy}
+              </p>
             </li>
           ))}
         </ol>
       </section>
       <section
-        className={`${styles.container} ${styles.branchSection}`}
-        aria-labelledby="branches-title"
+        aria-labelledby="analytics-title"
+        className="grid items-center gap-8 border-t py-16 md:grid-cols-2"
       >
         <div>
-          <p className={styles.eyebrow}>One business. Each branch in view.</p>
-          <h2 id="branches-title">
-            Room for your team.
-            <br />
-            Clarity for your business.
+          <p className="text-sm text-muted-foreground">
+            Records into decisions
+          </p>
+          <h2
+            id="analytics-title"
+            className="mt-2 text-3xl font-semibold tracking-tight"
+          >
+            Understand performance. Plan what comes next.
           </h2>
-          <p>
-            Share your product catalog and suppliers across the organization
-            while keeping stock, purchases, and sales tied to each branch.
+          <p className="mt-4 leading-7 text-muted-foreground">
+            Review sales, products, branches and inventory with deterministic
+            analytics. Forecast demand and review reorder guidance when enough
+            history is available.
           </p>
-          <p>
-            Give owners and administrators business-wide visibility, and let
-            store teams work within their assigned branches.
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            Saved AI summaries explain aggregate performance. Forecasts remain
+            estimates, and purchasing decisions stay with your team.
           </p>
         </div>
-        <div className={styles.branchBoard}>
-          <p className={styles.eyebrow}>Your organization</p>
-          <h3>A shared catalog. Local operations.</h3>
-          <div className={styles.branchTiles}>
-            <div>
-              <strong>Main store</strong>
-              <span>Stock · Purchasing · Sales</span>
+        <Card>
+          <CardHeader>
+            <h3 className="font-semibold">Net sales by reporting period</h3>
+            <p className="text-xs text-muted-foreground">
+              Illustrative data · THB
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div
+              className="flex h-40 items-end gap-4 border-b"
+              role="img"
+              aria-label="Illustrative bar chart: Monday 1200, Tuesday 1800, Wednesday 1500, Thursday 2400, Friday 2100 baht"
+            >
+              {[50, 75, 62, 100, 87].map((height, i) => (
+                <div key={i} className="flex h-full flex-1 items-end">
+                  <div
+                    className="w-full rounded-t-sm bg-foreground/80"
+                    style={{ height: height + "%" }}
+                  />
+                </div>
+              ))}
             </div>
-            <div>
-              <strong>Another branch</strong>
-              <span>Stock · Purchasing · Sales</span>
+            <div className="mt-2 grid grid-cols-5 text-center text-xs text-muted-foreground">
+              {["Mon", "Tue", "Wed", "Thu", "Fri"].map((day) => (
+                <span key={day}>{day}</span>
+              ))}
             </div>
-          </div>
-          <p>Connected records, with access based on each person’s role.</p>
-        </div>
+            <p className="mt-4 text-sm text-muted-foreground">
+              Sales trends, with exact figures available in your reporting
+              tables.
+            </p>
+          </CardContent>
+        </Card>
       </section>
-      <section
-        className={`${styles.container} ${styles.insightSection}`}
-        aria-labelledby="insight-title"
-      >
+      <section className="flex flex-col justify-between gap-5 border-t py-12 sm:flex-row sm:items-center">
         <div>
-          <p className={styles.eyebrow}>From records to perspective</p>
-          <h2 id="insight-title">
-            See the pattern.
-            <br />
-            Decide the next step.
+          <h2 className="text-xl font-semibold">
+            Find the right starting point.
           </h2>
-          <p>
-            Explore sales KPIs, inventory movement, and branch performance.
-            Forecast observed demand and review advisory reorder quantities when
-            enough history is available.
-          </p>
-          <p>
-            Read saved AI-assisted summaries of aggregate performance alongside
-            the underlying analytics. Your team stays in charge of purchasing
-            and stock decisions.
+          <p className="mt-2 text-sm text-muted-foreground">
+            Explore proposed plans. Pricing and inclusions are not finalized.
           </p>
         </div>
-        <div className={styles.insightNotes}>
-          <div>
-            <span>Understand</span>
-            <strong>Sales & inventory performance</strong>
-          </div>
-          <div>
-            <span>Plan</span>
-            <strong>Forecast & reorder guidance</strong>
-          </div>
-          <div>
-            <span>Reflect</span>
-            <strong>Saved AI-assisted insights</strong>
-          </div>
-          <p>
-            Forecasts are estimates. Recommendations are guidance, with data
-            availability made visible.
-          </p>
-        </div>
+        <Button
+          variant="outline"
+          nativeButton={false}
+          role="link"
+          render={<Link href="/pricing" />}
+        >
+          Explore pricing
+          <ArrowRight />
+        </Button>
       </section>
       <section
-        className={`${styles.container} ${styles.finalCta}`}
         aria-labelledby="cta-title"
+        className="mb-16 rounded-xl border bg-muted/40 p-8 text-center sm:p-12"
       >
-        <p className={styles.eyebrow}>Start with a clearer picture</p>
-        <h2 id="cta-title">Bring your store’s next chapter into view.</h2>
-        <p>
-          Create an account to begin the existing verification and setup flow,
-          or explore our pre-launch plan concepts.
+        <h2 id="cta-title" className="text-3xl font-semibold tracking-tight">
+          Bring your retail operations together.
+        </h2>
+        <p className="mx-auto mt-4 max-w-xl leading-7 text-muted-foreground">
+          Create an account, verify your email and set up your organization to
+          begin.
         </p>
-        <div className={styles.actions}>
-          <Link className={styles.button} href="/register">
-            Get started <span aria-hidden="true">↗</span>
-          </Link>
-          <Link className={styles.secondaryButton} href="/pricing">
-            Explore pricing
-          </Link>
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          <Button
+            nativeButton={false}
+            role="link"
+            render={<Link href="/register" />}
+          >
+            Get started
+          </Button>
+          <Button
+            variant="outline"
+            nativeButton={false}
+            role="link"
+            render={<Link href="/login" />}
+          >
+            Sign in
+          </Button>
         </div>
-        <p className={styles.caption}>
-          Already have an account? <Link href="/login">Sign in</Link>
-        </p>
       </section>
-    </>
+    </div>
   );
 }

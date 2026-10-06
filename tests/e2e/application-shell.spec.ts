@@ -118,6 +118,79 @@ test("desktop sidebar preserves scoped navigation, active state, logo and logout
   });
 });
 
+test("desktop sidebar collapse returns keyboard focus to the trigger and blocks Tab into inert content", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page);
+  const sidebar = page.getByRole("complementary", {
+    name: "Application sidebar",
+  });
+  const container = page.locator('[data-slot="sidebar"]');
+  const panel = page.locator('[data-slot="sidebar-container"]');
+  const menu = page.getByRole("button", { name: "Menu", exact: true });
+  const catalog = sidebar.getByRole("link", { name: "Catalog", exact: true });
+
+  const focusInsideSidebar = () =>
+    page.evaluate(
+      (selector) =>
+        document.querySelector(selector)?.contains(document.activeElement) ??
+        false,
+      '[data-slot="sidebar"]',
+    );
+
+  // Expanded baseline: no inert, panel on-screen, slide transition intact.
+  await expect(menu).toHaveAttribute("aria-expanded", "true");
+  await expect(container).not.toHaveAttribute("inert");
+  expect((await panel.boundingBox())!.x).toBe(0);
+  const transition = await panel.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return {
+      property: style.transitionProperty,
+      duration: style.transitionDuration,
+    };
+  });
+  expect(transition.property).toContain("left");
+  expect(transition.property).toContain("width");
+  expect(transition.duration).toContain("0.2s");
+
+  // Put keyboard focus on a real sidebar link, then collapse with the
+  // keyboard shortcut so focus is inside the sidebar at collapse time.
+  await catalog.focus();
+  await expect(catalog).toBeFocused();
+  await page.keyboard.press("Control+b");
+
+  // Focus is returned to the visible trigger; content becomes inert and the
+  // panel slides fully off-screen.
+  await expect(menu).toHaveAttribute("aria-expanded", "false");
+  await expect(menu).toBeFocused();
+  await expect(container).toHaveAttribute("inert");
+  await expect.poll(async () => (await panel.boundingBox())!.x).toBe(-256);
+
+  // Neither Tab nor Shift+Tab reaches the collapsed off-screen sidebar.
+  for (let i = 0; i < 10; i++) {
+    await page.keyboard.press("Tab");
+    expect(await focusInsideSidebar()).toBe(false);
+    const focusedX = await page.evaluate(() => {
+      const rect = document.activeElement?.getBoundingClientRect();
+      return rect ? rect.x : 0;
+    });
+    expect(focusedX).toBeGreaterThanOrEqual(0);
+  }
+  for (let i = 0; i < 10; i++) {
+    await page.keyboard.press("Shift+Tab");
+    expect(await focusInsideSidebar()).toBe(false);
+  }
+
+  // Reopening restores normal keyboard access to the sidebar.
+  await page.keyboard.press("Control+b");
+  await expect(menu).toHaveAttribute("aria-expanded", "true");
+  await expect(container).not.toHaveAttribute("inert");
+  await expect.poll(async () => (await panel.boundingBox())!.x).toBe(0);
+  await menu.focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect.poll(focusInsideSidebar).toBe(true);
+});
 test("small-screen menu supports keyboard navigation and scoped logo links", async ({
   page,
 }, testInfo) => {
@@ -131,9 +204,11 @@ test("small-screen menu supports keyboard navigation and scoped logo links", asy
   await menu.focus();
   await page.keyboard.press("Enter");
   await expect(sidebar).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Close menu" }),
-  ).toHaveAttribute("aria-expanded", "true");
+  // While the Sheet is open the background (including the Menu trigger) is
+  // inert, so the trigger's aria-expanded is not observable; the visible
+  // "Close menu" control is the accessible close affordance.
+  const closeMenu = page.getByRole("button", { name: "Close menu" });
+  await expect(closeMenu).toBeVisible();
   await expect(sidebar.getByRole("button", { name: "Log out" })).toBeVisible();
   await expectNoOverflow(page);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
@@ -142,6 +217,25 @@ test("small-screen menu supports keyboard navigation and scoped logo links", asy
     fullPage: true,
   });
 
+  // The visible close control is keyboard-reachable and closes the Sheet.
+  await closeMenu.focus();
+  await expect(closeMenu).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(sidebar).toBeHidden();
+  await expect(menu).toHaveAttribute("aria-expanded", "false");
+
+  // Escape still closes the Sheet.
+  await menu.focus();
+  await page.keyboard.press("Enter");
+  await expect(sidebar).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(sidebar).toBeHidden();
+  await expect(menu).toHaveAttribute("aria-expanded", "false");
+
+  // Reopen for the navigation flow below.
+  await menu.focus();
+  await page.keyboard.press("Enter");
+  await expect(sidebar).toBeVisible();
   await sidebar
     .getByRole("link", { name: "Catalog", exact: true })
     .press("Enter");
@@ -155,13 +249,20 @@ test("small-screen menu supports keyboard navigation and scoped logo links", asy
     path: testInfo.outputPath("mobile-catalog.png"),
     fullPage: true,
   });
-  await page.getByRole("link", { name: "StockWise" }).click();
+  // The logo link is scoped inside the sidebar; on mobile it is only
+  // reachable through the Sheet, so reopen it to exercise the scoped logo.
+  await menu.focus();
+  await page.keyboard.press("Enter");
+  await expect(sidebar).toBeVisible();
+  await sidebar.getByRole("link", { name: "StockWise" }).click();
   await expect(page).toHaveURL(homePath);
   await page.setViewportSize({ width: 320, height: 640 });
   await expectNoOverflow(page);
   await page.setViewportSize({ width: 768, height: 1024 });
   await expect(menu).toBeVisible();
-  await expect(sidebar).toBeHidden();
+  // 768px is the desktop breakpoint (useIsMobile is innerWidth < 768), so the
+  // offcanvas desktop sidebar is visible here, not the mobile Sheet.
+  await expect(sidebar).toBeVisible();
   await expectNoOverflow(page);
 });
 
@@ -193,7 +294,7 @@ test("signed-out public and app surfaces do not expose authenticated navigation"
 }, testInfo) => {
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: /Know your stock/ }),
+    page.getByRole("heading", { name: /Run your inventory with clarity/ }),
   ).toBeVisible();
   await expect(
     page

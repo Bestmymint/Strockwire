@@ -1,4 +1,14 @@
 "use client";
+import { Badge } from "@/components/ui/badge";
+import { useLanguage } from "@/providers/language-provider";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 import {
   useInfiniteQuery,
@@ -95,6 +105,8 @@ function SupplierContent({
   };
   branchId: string | null;
 }) {
+  const { t } = useLanguage();
+
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<SupplierStatusFilter>("active");
@@ -120,7 +132,7 @@ function SupplierContent({
           className="text-sm underline"
           href={applicationContextUrl(organization.id, branchId)}
         >
-          Back to workspace
+          {t("backToWorkspace")}
         </Link>
         <h1 className="text-2xl font-semibold">Suppliers</h1>
         <p className="form-message" role="alert">
@@ -137,7 +149,7 @@ function SupplierContent({
           className="text-sm underline"
           href={applicationContextUrl(organization.id, branchId)}
         >
-          Back to workspace
+          {t("backToWorkspace")}
         </Link>
         <h1 className="mt-3 text-2xl font-semibold">Suppliers</h1>
         <p className="text-muted-foreground">
@@ -155,35 +167,36 @@ function SupplierContent({
         onSave={(input) => createSupplier(organization.id, input).then(refresh)}
       />
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem_auto]">
-        <label className="form-field">
+        <Label className="form-field">
           Search suppliers
-          <input
-            className="form-control"
+          <Input
+            className=""
             defaultValue={search}
             onChange={(event) => setSearch(event.target.value)}
           />
-        </label>
-        <label className="form-field">
+        </Label>
+        <Label className="form-field">
           Status
-          <select
-            className="form-control"
+          <NativeSelect
+            className="w-full "
             onChange={(event) =>
               setStatus(event.target.value as SupplierStatusFilter)
             }
             value={status}
           >
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-            <option value="all">All</option>
-          </select>
-        </label>
-        <button
-          className="min-h-11 self-end rounded-md border px-4 text-sm font-medium form-action"
+            <NativeSelectOption value="active">Active</NativeSelectOption>
+            <NativeSelectOption value="inactive">Inactive</NativeSelectOption>
+            <NativeSelectOption value="all">All</NativeSelectOption>
+          </NativeSelect>
+        </Label>
+        <Button
+          variant="outline"
+          className="self-end"
           onClick={() => void refresh()}
           type="button"
         >
           Refresh
-        </button>
+        </Button>
       </div>
       {suppliers.isPending ? (
         <p aria-live="polite">Loading suppliers…</p>
@@ -208,14 +221,15 @@ function SupplierContent({
         </div>
       )}
       {suppliers.hasNextPage ? (
-        <button
-          className="min-h-11 rounded-md border px-4 text-sm font-medium form-action"
+        <Button
+          variant="outline"
+          className=""
           disabled={suppliers.isFetchingNextPage}
           onClick={() => void suppliers.fetchNextPage()}
           type="button"
         >
           {suppliers.isFetchingNextPage ? "Loading…" : "Load more"}
-        </button>
+        </Button>
       ) : null}
     </section>
   );
@@ -277,23 +291,23 @@ function SupplierForm({
           label="Phone (optional)"
           name="phone"
         />
-        <label className="form-field sm:col-span-2">
+        <Label className="form-field sm:col-span-2">
           Address (optional)
-          <textarea
-            className="form-control"
+          <Textarea
+            className=""
             defaultValue={initial.address}
             name="address"
           />
-        </label>
+        </Label>
       </div>
-      <button
+      <Button
         aria-busy={mutation.isPending}
-        className="mt-4 min-h-11 rounded-md bg-foreground px-4 text-sm font-medium text-background disabled:opacity-60 form-action"
+        className="mt-4"
         disabled={mutation.isPending}
         type="submit"
       >
         {mutation.isPending ? "Saving…" : label}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -324,9 +338,9 @@ function SupplierCard({
     <article className="rounded-lg border bg-card p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-semibold">{supplier.name}</h2>
-        <span className="rounded-full border px-2 py-1 text-xs">
+        <Badge variant="outline">
           {supplier.status === "ACTIVE" ? "Active" : "Inactive"}
-        </span>
+        </Badge>
       </div>
       <SupplierForm
         initial={{
@@ -341,15 +355,16 @@ function SupplierCard({
         onSave={(input) => edit.mutateAsync(input)}
       />
       {canLifecycle ? (
-        <button
+        <Button
+          variant="outline"
           aria-busy={lifecycle.isPending}
-          className="mt-3 min-h-11 rounded-md border px-4 text-sm font-medium form-action"
+          className="mt-3"
           disabled={pending}
           onClick={() => void lifecycle.mutateAsync().catch(onError)}
           type="button"
         >
           {supplier.status === "ACTIVE" ? "Deactivate" : "Reactivate"}
-        </button>
+        </Button>
       ) : null}
     </article>
   );
@@ -368,19 +383,15 @@ function Field({
   type?: string;
 }) {
   return (
-    <label className="form-field">
+    <Label className="form-field">
       {label}
-      <input
-        className={
-          name === "phone"
-            ? "form-control form-control--compact"
-            : "form-control"
-        }
+      <Input
+        className={name === "phone" ? "form-control--compact" : ""}
         defaultValue={defaultValue}
         name={name}
         required={required}
         type={type}
       />
-    </label>
+    </Label>
   );
 }

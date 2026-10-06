@@ -4,7 +4,7 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   testDir: "./tests/e2e",
-  testMatch: "marketing.spec.ts",
+  testMatch: ["marketing.spec.ts", "preferences.browser.spec.ts"],
   outputDir: "test-results/public",
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   reporter: "list",

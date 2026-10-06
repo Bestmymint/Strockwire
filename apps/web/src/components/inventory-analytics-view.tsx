@@ -1,4 +1,13 @@
 "use client";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableHeader,
+  TableRow,
+  TableHead,
+  TableBody,
+  TableCell,
+} from "@/components/ui/table";
 
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -127,13 +136,14 @@ export function InventoryAnalyticsView({
         <p>{errorText(query.error)}</p>
         {query.error instanceof AnalyticsApiError &&
         query.error.kind === "invalid_cursor" ? (
-          <button
+          <Button
+            variant="outline"
             type="button"
             className="underline"
             onClick={() => setReset((value) => value + 1)}
           >
             Restart inventory list
-          </button>
+          </Button>
         ) : null}
       </div>
     );
@@ -287,39 +297,51 @@ export function InventoryAnalyticsView({
                     </section>
                   ) : null}
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[700px] text-left text-sm">
+                    <Table className="w-full min-w-[700px] text-left text-sm">
                       <caption className="py-2 text-left font-medium">
                         Movement by period for {row.productName} (
                         {row.productUnit})
                       </caption>
-                      <thead>
-                        <tr className="border-b">
-                          <th scope="col">Period</th>
-                          <th scope="col">Received</th>
-                          <th scope="col">Sales depletion</th>
-                          <th scope="col">Refund returns</th>
-                          <th scope="col">Positive adjustments</th>
-                          <th scope="col">Negative adjustments</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                      <TableHeader>
+                        <TableRow className="border-b">
+                          <TableHead scope="col">Period</TableHead>
+                          <TableHead scope="col">Received</TableHead>
+                          <TableHead scope="col">Sales depletion</TableHead>
+                          <TableHead scope="col">Refund returns</TableHead>
+                          <TableHead scope="col">
+                            Positive adjustments
+                          </TableHead>
+                          <TableHead scope="col">
+                            Negative adjustments
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
                         {row.buckets.map((bucket) => (
-                          <tr
+                          <TableRow
                             key={bucket.localStartInclusive}
                             className="border-b last:border-0"
                           >
-                            <th scope="row" className="py-2">
+                            <TableHead scope="row" className="py-2">
                               {bucket.label}
-                            </th>
-                            <td>{bucket.purchaseReceivedQuantity}</td>
-                            <td>{bucket.saleDepletionQuantity}</td>
-                            <td>{bucket.refundReturnQuantity}</td>
-                            <td>{bucket.positiveAdjustmentQuantity}</td>
-                            <td>{bucket.negativeAdjustmentQuantity}</td>
-                          </tr>
+                            </TableHead>
+                            <TableCell>
+                              {bucket.purchaseReceivedQuantity}
+                            </TableCell>
+                            <TableCell>
+                              {bucket.saleDepletionQuantity}
+                            </TableCell>
+                            <TableCell>{bucket.refundReturnQuantity}</TableCell>
+                            <TableCell>
+                              {bucket.positiveAdjustmentQuantity}
+                            </TableCell>
+                            <TableCell>
+                              {bucket.negativeAdjustmentQuantity}
+                            </TableCell>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
               </details>
@@ -327,16 +349,17 @@ export function InventoryAnalyticsView({
           </div>
         ))}
         {query.hasNextPage ? (
-          <button
+          <Button
+            variant="outline"
             type="button"
             disabled={query.isFetchingNextPage}
             onClick={() => void query.fetchNextPage()}
-            className="min-h-11 rounded-md border bg-card px-4 text-sm font-medium disabled:opacity-60"
+            className="bg-card"
           >
             {query.isFetchingNextPage
               ? "Loading next page…"
               : "Load more inventory"}
-          </button>
+          </Button>
         ) : null}
       </section>
     </section>

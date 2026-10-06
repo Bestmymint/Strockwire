@@ -1,7 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import styles from "@/components/marketing/marketing.module.css";
+import { ArrowRight, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 
 export const metadata: Metadata = {
   title: "StockWise pricing | Pre-launch plan concepts",
@@ -47,124 +57,122 @@ const plans = [
 
 export default function PricingPage() {
   return (
-    <>
+    <div className="mx-auto max-w-6xl px-5 py-16 sm:px-8">
       <section
-        className={`${styles.container} ${styles.pricingIntro}`}
         aria-labelledby="pricing-title"
+        className="mx-auto max-w-2xl text-center"
       >
-        <p className={styles.eyebrow}>Pre-launch plan concepts</p>
-        <h1 id="pricing-title">
-          Different stages.
-          <br />
-          <span>The same clearer view.</span>
+        <Badge variant="outline">Pre-launch plan concepts</Badge>
+        <h1
+          id="pricing-title"
+          className="mt-5 text-4xl font-semibold tracking-tight sm:text-5xl"
+        >
+          A starting point for every stage.
         </h1>
-        <p>
+        <p className="mt-5 leading-7 text-muted-foreground">
           From your first store to a growing branch network, explore how
           StockWise can fit the way you work.
         </p>
-        <div className={styles.pricingNotice}>
-          <strong>Pricing is coming soon.</strong> These are proposed plan
-          concepts, not subscriptions available for purchase. Prices, feature
-          inclusions, branch and user allowances, and support terms are not
-          finalized. The focus areas below describe possible uses of existing
-          product capabilities, not feature restrictions.
-        </div>
       </section>
+      <Alert className="my-10">
+        <AlertTitle>Pricing is coming soon.</AlertTitle>
+        <AlertDescription>
+          These are proposed plan concepts, not subscriptions available for
+          purchase. Prices, feature inclusions, branch and user allowances, and
+          support terms are not finalized. The focus areas below describe
+          possible uses of existing product capabilities, not feature
+          restrictions.
+        </AlertDescription>
+      </Alert>
       <section
-        className={`${styles.container} ${styles.pricingGrid}`}
         aria-label="Proposed plans"
+        className="grid gap-5 md:grid-cols-3"
       >
         {plans.map((plan) => (
           <article
-            className={styles.pricingCard}
             key={plan.name}
-            aria-labelledby={`plan-${plan.name.toLowerCase()}`}
+            aria-labelledby={"plan-" + plan.name.toLowerCase()}
           >
-            <p className={styles.eyebrow}>Proposed plan</p>
-            <h2 id={`plan-${plan.name.toLowerCase()}`}>{plan.name}</h2>
-            <p className={styles.planAudience}>{plan.audience}</p>
-            <p className={styles.planPrice}>Coming soon</p>
-            <p className={styles.caption}>Subscription price to be announced</p>
-            <hr />
-            <h3>Planning focus</h3>
-            <p>{plan.focus}</p>
-            <ul>
-              {plan.features.map((feature) => (
-                <li key={feature}>
-                  <span aria-hidden="true">✓</span>
-                  {feature}
-                </li>
-              ))}
-            </ul>
-            <Link className={styles.secondaryButton} href="/register">
-              Create an account <span aria-hidden="true">↗</span>
-            </Link>
+            <Card className="h-full">
+              <CardHeader>
+                <Badge variant="secondary" className="w-fit">
+                  Proposed plan
+                </Badge>
+                <h2
+                  id={"plan-" + plan.name.toLowerCase()}
+                  className="mt-2 text-xl font-semibold"
+                >
+                  {plan.name}
+                </h2>
+                <CardDescription>{plan.audience}</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-1 flex-col gap-5">
+                <div>
+                  <p className="text-3xl font-semibold tracking-tight">
+                    Coming soon
+                  </p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Subscription price to be announced
+                  </p>
+                </div>
+                <Separator />
+                <div>
+                  <h3 className="font-medium">Planning focus</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {plan.focus}
+                  </p>
+                </div>
+                <ul className="space-y-3">
+                  {plan.features.map((feature) => (
+                    <li
+                      className="flex items-start gap-2 text-sm"
+                      key={feature}
+                    >
+                      <Check
+                        className="mt-0.5 size-4 shrink-0"
+                        aria-hidden="true"
+                      />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  variant="outline"
+                  className="mt-auto"
+                  nativeButton={false}
+                  role="link"
+                  render={<Link href="/register" />}
+                >
+                  Create an account
+                  <ArrowRight />
+                </Button>
+              </CardContent>
+            </Card>
           </article>
         ))}
       </section>
-      <p className={`${styles.container} ${styles.planFootnote}`}>
+      <p className="mt-6 text-sm leading-6 text-muted-foreground">
         Creating an account starts StockWise’s registration and verification
         flow. It does not select a plan, start a paid subscription, or authorize
         a payment.
       </p>
-      <section
-        className={`${styles.container} ${styles.pricingQuestions}`}
-        aria-labelledby="questions-title"
-      >
-        <div>
-          <p className={styles.eyebrow}>A few things to know</p>
-          <h2 id="questions-title">
-            Clear expectations.
-            <br />
-            From the start.
-          </h2>
-        </div>
-        <div>
-          <article>
-            <h3>Can I purchase a subscription?</h3>
-            <p>
-              Not yet. This page presents proposed plans. Billing and paid
-              subscriptions are not available, and no payment details are
-              collected here.
-            </p>
-          </article>
-          <article>
-            <h3>Are branch or user limits enforced?</h3>
-            <p>
-              There are no subscription-based limits or feature entitlements
-              implemented. Role-based access still applies to the current
-              application.
-            </p>
-          </article>
-          <article>
-            <h3>What happens after I create an account?</h3>
-            <p>
-              Request your verification email, verify your address, and sign in.
-              New businesses can then set up an organization and its first
-              branch; invited members follow their invitation flow.
-            </p>
-          </article>
-        </div>
-      </section>
-      <section
-        className={`${styles.container} ${styles.finalCta}`}
-        aria-labelledby="pricing-cta-title"
-      >
-        <p className={styles.eyebrow}>Get to know StockWise</p>
-        <h2 id="pricing-cta-title">Start with your store’s workflow.</h2>
-        <p>
-          Explore inventory, purchasing, sales, and planning in one connected
-          product.
+      <section className="mt-16 border-t pt-10">
+        <h2 className="text-2xl font-semibold">Explore the product first.</h2>
+        <p className="mt-3 max-w-2xl leading-7 text-muted-foreground">
+          StockWise brings inventory, purchasing, receiving, POS and reporting
+          together. Proposed plans do not introduce feature restrictions in the
+          current application.
         </p>
-        <div className={styles.actions}>
-          <Link className={styles.button} href="/register">
-            Get started <span aria-hidden="true">↗</span>
-          </Link>
-          <Link className={styles.secondaryButton} href="/#features">
-            Explore the features
-          </Link>
-        </div>
+        <Button
+          className="mt-5"
+          variant="outline"
+          nativeButton={false}
+          role="link"
+          render={<Link href="/#features" />}
+        >
+          View features
+        </Button>
       </section>
-    </>
+    </div>
   );
 }
