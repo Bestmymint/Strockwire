@@ -445,7 +445,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 - **Status:** Forecasting V1's internal Branch/Product calculation is implemented
   by P6-M4-T02 under `ADR-031`; internal advisory Reorder V1 is implemented by
   P6-M4-T03 under `ADR-032`. The combined Forecast/Reorder API/UI flow is
-  implemented by P6-M4-T04 in `89c5d722a0088e9fb930082bd423ebdb1adc455f`.
+  implemented by P6-M4-T04 in `ca8509a1b54af66b3b3bdf3d3af75fdd72ae2448`.
   Analytics time follows `ADR-029`, quantity follows `ADR-022`, and no-negative
   stock follows `ADR-024`.
 - **Actor:** `OWNER`, `ADMIN`, `BRANCH_MANAGER`, or `INVENTORY_STAFF` within the accepted forecast/reorder scope
