@@ -26,6 +26,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BrandLogo } from "@/components/brand-logo";
 import {
   Sidebar,
   SidebarContent,
@@ -161,11 +162,10 @@ function WorkspaceShell({ children }: AppShellProps) {
         <header className="border-b">
           <div className="mx-auto flex min-h-16 max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2">
             <Link
-              className="flex items-center gap-2 text-lg font-semibold"
+              className="flex items-center rounded-md focus-visible:outline-2 focus-visible:outline-ring"
               href="/"
             >
-              <Package className="size-5" aria-hidden="true" />
-              StockWise
+              <BrandLogo priority className="h-7" />
             </Link>
             <nav
               aria-label={t("primaryNavigation")}
@@ -262,12 +262,11 @@ function WorkspaceNavigation({
       <aside aria-label={t("sidebar")} className="flex h-full min-h-0 flex-col">
         <SidebarHeader>
           <Link
-            className="flex h-9 items-center gap-2 px-2 text-base font-semibold"
+            className="flex h-9 items-center rounded-md px-2 focus-visible:outline-2 focus-visible:outline-ring"
             href={homeUrl}
             onClick={() => setOpenMobile(false)}
           >
-            <Package className="size-5" aria-hidden="true" />
-            StockWise
+            <BrandLogo className="h-6" />
           </Link>
           {organization && (
             <div className="rounded-lg border p-3">

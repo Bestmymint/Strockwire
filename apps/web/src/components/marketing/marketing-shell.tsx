@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, Package, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +13,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { BrandLogo } from "@/components/brand-logo";
 import { PreferenceControls } from "@/components/preference-controls";
 import { useLanguage } from "@/providers/language-provider";
 
@@ -74,11 +75,10 @@ export function MarketingShell({ children }: { children: ReactNode }) {
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-5 sm:px-8">
           <Link
             aria-label={t("brandHome")}
-            className="flex items-center gap-2 rounded-md text-lg font-semibold tracking-tight focus-visible:outline-2 focus-visible:outline-ring"
+            className="flex items-center rounded-md focus-visible:outline-2 focus-visible:outline-ring"
             href="/"
           >
-            <Package className="size-5" aria-hidden="true" />
-            StockWise
+            <BrandLogo priority className="h-7" />
           </Link>
           <nav
             aria-label={t("publicNavigation")}
@@ -133,8 +133,11 @@ export function MarketingShell({ children }: { children: ReactNode }) {
       <footer className="border-t">
         <div className="mx-auto grid max-w-6xl gap-6 px-5 py-10 sm:px-8 md:grid-cols-2">
           <div>
-            <Link className="font-semibold" href="/">
-              StockWise
+            <Link
+              className="inline-flex rounded-md focus-visible:outline-2 focus-visible:outline-ring"
+              href="/"
+            >
+              <BrandLogo className="h-6" />
             </Link>
             <p className="mt-2 text-sm text-muted-foreground">
               {t("footerDescription")}
