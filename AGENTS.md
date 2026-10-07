@@ -5,7 +5,7 @@ This file is the execution contract for human and AI developers working in the `
 | Field | Value |
 | --- | --- |
 | Documentation baseline | Architecture Freeze v1 |
-| Last updated | 2026-10-04 |
+| Last updated | 2026-10-08 |
 
 ## 1. Project overview
 
@@ -39,7 +39,7 @@ Repository/tooling work, application shells, and other unrelated foundation work
 
 At minimum, enforce these gates:
 
-- Identity/onboarding/authorization decisions are accepted in `ADR-013`–`ADR-021`; implementation must follow their session, email, onboarding, invitation, registration-security, RBAC, branch-context, and membership-lifecycle boundaries.
+- Identity/onboarding/authorization follow `ADR-013`–`ADR-021` and the superseding verification contract `ADR-034`. T02A schema/runtime changes remain unimplemented; require separately authorized forward migration work before runtime cutover. Historical P2 task descriptions below are implementation provenance, not the new target.
 - Inventory mutations: `ADR-024`; quantity representation is accepted by `ADR-022`
 - POS/sales monetary behavior: `ADR-027` plus `ADR-016`, `ADR-022`, `ADR-024`, and `ADR-026`; `OQ-008` is resolved
 - Refund behavior: `ADR-028` plus `ADR-016`, `ADR-022`, `ADR-024`, `ADR-026`, and `ADR-027`; `OQ-009` is resolved and VOID is excluded from V1
@@ -298,13 +298,14 @@ These rules are accepted; exact formatter/linter configuration is part of Reposi
 - Registration passwords contain 15–128 Unicode code points and are preserved exactly: do not trim, normalize, truncate, or add composition rules. Whitespace and Unicode are allowed; breached-password screening is deferred.
 - P2-M2-T01 uses `argon2@0.45.1` Argon2id with `memoryCost=65536` KiB, `timeCost=3`, `parallelism=4`, a library-generated salt, and PHC-format storage. Never log, return, or persist plaintext passwords.
 - New and canonical-email duplicate registration attempts return the same generic `202 Accepted` public response. Registration permits five attempts per 15 minutes per canonical email in deterministic process-local memory, logs neither email nor password, and returns `429` with `Retry-After` when exhausted. Distributed/IP-aware controls and proxy trust remain `OQ-020`.
-- P2-M2-T01 creates an unverified user with nullable `displayName` but no verification token or email. P2-M2-T03 owns token creation/resend, provider integration/delivery, and verification.
+- `ADR-034` is the accepted OTP-first verification target, not implemented runtime: registration establishes version-bound pending credentials, initiates verification, and returns real/phantom continuation without authenticated authority. Follow its atomic duplicate-replacement/admission rules and the API/database contracts; do not implement mailbox-only verification.
 - Browser authentication uses only the `ADR-013` opaque, hash-only PostgreSQL session in an HttpOnly host-only `SameSite=Lax` cookie (`Secure` in production). Do not add JWT browser authentication, web-storage tokens, or refresh-token flows.
 - Login uses `stockwise_session` with `Path=/`, no `Domain`, and `Secure` only when required `STOCKWISE_RUNTIME_ENV=production`; local HTTP development uses `development`. Session idle, absolute, and touch-minute values are API-owned configuration with accepted baselines `1440`, `10080`, and `15`.
-- Login processes five credential failures per canonical email per fixed 15-minute process-local window. Only credential failures count and success does not reset the active window. Missing accounts use the fixed centralized dummy Argon2 PHC verifier; never generate it per request or log it.
-- Successful login always creates a fresh 32-byte CSPRNG token and stores only its SHA-256 hash. A currently valid same-user incoming session is revoked as `login_rotation` in the fresh-session transaction. Authentication context contains active verified actor/session identity only; never derive memberships, roles, organizations, branches, or permissions from client input.
-- Verification resend and password-reset request independently permit three syntactically valid requests per canonical email per fixed 15-minute process-local window. The SHA-256-derived key contains no plaintext email; every valid request consumes before lookup/provider work regardless of existence, eligibility, or delivery result. Attempt four returns `429` plus deterministic `Retry-After`; malformed email creates no entry. Reset completion has no MVP limiter and rejects invalid token state before Argon2. `OQ-020` remains open for distributed/IP/global/provider/proxy/multi-instance/production hardening.
-- Verification/reset use fresh 32-byte opaque tokens with SHA-256-only persistence, 24-hour/30-minute expiry, row-serialized replacement, conditional single-use consumption, and provider-failure compensation. `STOCKWISE_EMAIL_PROVIDER` defaults to non-delivery in development/test and Resend in production; development may explicitly select Resend for manual UAT, test rejects it, and production rejects non-delivery. Resend requires server-only `RESEND_API_KEY`/`STOCKWISE_EMAIL_FROM`. Never log provider payloads, complete sensitive URLs, raw/hash tokens, or provider errors.
+- Login and the dedicated verification-password-proof fallback share five credential failures per canonical email per fixed 15-minute process-local window. Only credential failures count; success does not reset the window. Missing accounts use the fixed dummy Argon2 verifier. Revalidate the password snapshot/version before issuing any authority.
+- Only ordinary ACTIVE/verified login creates/rotates `stockwise_session`. Correct-password ACTIVE/unverified login returns `verification_required` plus verification-only proof, no Session/application-cookie mutation or automatic mail. Proof cannot construct `TrustedAuthenticationContext` or grant tenant authority.
+- `ADR-034` registration/resend share three verification-delivery requests per canonical email per 15 minutes; reset request retains its independent three-request budget. Reset remains ACTIVE/verified-only, rejects invalid tokens before Argon2, and advances credential version/revokes sessions atomically without creating one. `OQ-020` remains open for distributed/cloud hardening.
+- Verification requires both the current-version password proof and unified ten-minute OTP/link challenge. OTP uses dedicated HMAC and five durable failures (`LINK_ONLY` thereafter); link stays 32-byte/hash-only. The stateless AES-GCM proof cookie is always Secure/HttpOnly/Strict, even locally; it is never JS-visible or stored in a proof table. Resend never changes proof. Follow `ADR-034` for crypto, phantom responses, Origin, locking, and delivery rules rather than inventing variants.
+- Reset retains its 30-minute hash-only token. Provider selection remains development/test non-delivery and production Resend, with explicit development Resend opt-in, test rejection, and production non-delivery rejection. Never log passwords, OTPs, proof/session/link/reset credentials or hashes, provider secrets/payloads, or sensitive URLs/headers.
 - Apply rate limiting/abuse controls to authentication and other sensitive endpoints.
 - Prevent horizontal and vertical privilege escalation with organization, branch, and role checks.
 - Use generic not-found/forbidden behavior that does not reveal another tenant's data.

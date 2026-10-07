@@ -6,7 +6,7 @@
 | Base path | `/api/v1` |
 | Style | JSON REST |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-09-24 |
+| Last updated | 2026-10-08 |
 
 ## 1. Scope and authority
 
@@ -107,6 +107,26 @@ The project must choose one consistent boundary between `409` and `422` during A
 ### 3.5 Authentication
 
 Browser authentication uses opaque server-side PostgreSQL sessions. The API sets the cryptographically random session token only in the `stockwise_session` HttpOnly, host-only, `Path=/`, `SameSite=Lax` cookie (`Secure` in production, not local HTTP); PostgreSQL stores only its cryptographic hash. The browser does not receive a JWT or refresh token and must not use `localStorage` or `sessionStorage` for authentication. Session idle and absolute timeouts are configurable (sliding 24 hours and fixed seven days as the baseline), and valid activity persists at most one touch per 15 minutes. The API validates expiry, revocation, and active verified account state for authentication; membership and authorization remain a separate server-resolved boundary.
+
+`ADR-034` adds the following accepted, not-yet-implemented target:
+verification password proof, delivered only in the
+`__Host-stockwise_verification_proof` cookie. It is an AES-256-GCM encrypted,
+origin-bound, ten-minute absolute proof of password installation/knowledge for
+one exact credential version. It grants no session, `TrustedAuthenticationContext`,
+tenant, or protected-API authority. Completion checks it with mailbox proof;
+the dedicated fallback establishes fresh proof from password input, not from
+presenting an existing cookie. Only registration that installs the password,
+correct-password unverified login, or correct-password pending fallback mints
+real proof. Generic registration and correct-password verified fallback may
+issue phantom proof; ordinary verified login instead clears it.
+Resend and completion never mint, refresh, or upgrade it. Successful
+verification, successful ordinary login, and successful logout clear it. The
+cookie is `Secure` always, `HttpOnly`, `SameSite=Strict`, `Path=/`, host-only
+(no `Domain`), `Max-Age` at most 600 seconds and never beyond the proof
+expiry; duplicate or malformed proof cookies are rejected. Local browser
+Secure-cookie compatibility must be verified; use local HTTPS if required,
+never omit `Secure`. The proof is never returned in JSON,
+URLs, web storage, or bearer headers.
 
 This contract uses these semantic labels:
 
@@ -244,14 +264,16 @@ requests.
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `POST /auth/register` | Public | Email and password only | `202 Accepted` account-safe verification-next-step result; no session, token, organization, or branch created | Invalid input/rate limit/database or hashing failure; canonical-email duplicates receive the same public response as new accounts | Implemented by P2-M2-T01 |
-| `POST /auth/login` | Public | Email and password only | `200`; sets a fresh opaque session cookie and returns only safe actor `id`, canonical `email`, and nullable `displayName` | Strict validation; generic invalid credentials for wrong/missing/unverified/disabled accounts; accepted login rate limit; safe database/hashing failure | Implemented by P2-M2-T02 |
-| `POST /auth/logout` | Safely idempotent | None | `204`; revokes a valid current session and clears its cookie | Missing/malformed/unknown/expired/revoked state is idempotent; dependency failure does not clear cookie | Implemented by P2-M2-T03 |
-| `POST /auth/logout-all` | Authenticated | None | `204`; revokes all sessions for current user and clears current cookie | Authentication/dependency/cross-site-request failure | Implemented by P2-M2-T03 |
-| `POST /auth/verify-email` | Public | `{ "token": "opaque-token" }` | `200` verified result | Generic `400 INVALID_TOKEN` for expired/used/invalid/replaced token | Implemented by P2-M2-T03 |
-| `POST /auth/verification-resend` | Public | `{ "email": "account@example.com" }` | Generic `202`; creates/replaces and delivers only for an eligible unverified account | Validation; accepted three-per-15-minute limit; provider failure remains non-disclosing | Implemented by P2-M2-T03 |
+| `POST /auth/register` | Public | Email and password only | `202 Accepted` `data {status: "accepted", nextStep: "verify_email", verification: {challengeId}}`; sets the verification proof cookie (real or phantom); no session, organization, or branch created | Invalid input/rate limit/database or hashing failure; canonical-email duplicates receive the same public response as new accounts | Planned `ADR-034`; implemented baseline P2-M2-T01 |
+| `POST /auth/login` | Public | Email and password only | Verified account: `200`; sets a fresh opaque session cookie and returns only safe actor `id`, canonical `email`, and nullable `displayName`. Pending account: `202` `data {status: "verification_required", verification: {challengeId}}` with a real proof cookie and no session | Strict validation; generic `401 INVALID_CREDENTIALS` for wrong/missing/disabled accounts; accepted login rate limit; safe database/hashing failure | Planned `ADR-034`; implemented baseline P2-M2-T02 |
+| `POST /auth/logout` | Safely idempotent | None | `204`; revokes a valid current session, clears its cookie, and clears the proof cookie on success | Missing/malformed/unknown/expired/revoked state is idempotent; dependency failure does not clear cookie | Implemented by P2-M2-T03; `ADR-034` adds proof-cookie clearing |
+| `POST /auth/logout-all` | Authenticated | None | `204`; revokes all sessions for current user and clears current application/proof cookies on success | Authentication/dependency/cross-site-request failure | Implemented P2-M2-T03; proof cleanup planned `ADR-034` |
+| `POST /auth/verify-email-code` | Public | `{ "email", "challengeId", "code" }` plus a valid proof cookie | `200` `data {status: "verified"}`; clears the proof cookie | Generic `400 INVALID_VERIFICATION_CODE` for invalid mail regardless of proof; `401 VERIFICATION_PASSWORD_PROOF_REQUIRED` only for valid mail with missing/phantom/stale proof; both proofs mandatory | Planned `ADR-034` |
+| `POST /auth/verify-email` | Public | `{ "token" }` plus a valid proof cookie | `200` `data {status: "verified"}`; clears the proof cookie | Generic `400 INVALID_TOKEN` for invalid mail regardless of proof; `401 VERIFICATION_PASSWORD_PROOF_REQUIRED` only for valid mail with missing/phantom/stale proof; both proofs mandatory | Planned `ADR-034`; implemented baseline P2-M2-T03 |
+| `POST /auth/verification-resend` | Public | `{ "email": "account@example.com" }` | `202` `data {status: "accepted", verification: {challengeId}}`; never creates, refreshes, or clears a proof cookie | Validation; shared mail budget three per 15 minutes per canonical email; explicit `429` with `Retry-After`; provider failure remains non-disclosing | Planned `ADR-034`; implemented baseline P2-M2-T03 |
 | `POST /auth/forgot-password` | Public | `{ "email": "account@example.com" }` | Generic `202`; creates/replaces and delivers only for an eligible account | Validation; accepted three-per-15-minute limit; provider failure remains non-disclosing | Implemented by P2-M2-T03 |
-| `POST /auth/reset-password` | Public | `{ "token": "opaque-token", "newPassword": "exact-value" }` | `200` reset result; atomically consumes token, updates password, and revokes all sessions | Generic `400 INVALID_TOKEN`; password validation; safe dependency failure | Implemented by P2-M2-T03 |
+| `POST /auth/reset-password` | Public | `{ "token": "opaque-token", "newPassword": "exact-value" }` | `200` reset result; atomically consumes token, updates password, increments credential version, invalidates open challenges, and revokes all sessions | Generic `400 INVALID_TOKEN`; password validation; safe dependency failure | Implemented by P2-M2-T03; `ADR-034` adds version increment and open-challenge invalidation |
+| `POST /auth/verification-password-proof` | Public | `{ "email", "password" }` | `202` `data {status: "accepted"}`; sets a real proof cookie for a correct pending account and a phantom proof cookie for a correct verified account; never creates a session, challenge, or mail | Same login limiter object; generic `401 INVALID_CREDENTIALS` for wrong/missing/disabled | Planned `ADR-034` |
 | `GET /me` | Authenticated | None | Safe profile and onboarding status | Authentication required | Planned after identity foundation |
 | `PATCH /me/profile` | Authenticated | Required display name; optional phone | Updated safe profile | Validation, stale/conflict | Planned after identity foundation |
 | `GET /me/organizations` | Authenticated | Pagination if needed | Accessible organization summaries | Authentication required | Planned |
@@ -298,33 +320,75 @@ eligibility transactionally.
 
 ### Registration contract
 
-- Email uses the canonical surrounding-whitespace-trimmed lowercase policy.
-- Password contains 15–128 Unicode code points. Its submitted value is not
-  trimmed, Unicode-normalized, silently truncated, or subject to character-class
-  composition rules; whitespace and Unicode are accepted. Breached-password
-  screening is deferred.
-- Password storage uses the PHC-format output from `argon2@0.45.1` Argon2id with
-  `memoryCost=65536` KiB, `timeCost=3`, `parallelism=4`, and the library-generated
-  random salt.
-- A newly persisted user has `emailVerifiedAt = null` and `displayName = null`.
-  P2-M2-T01 creates no verification-token record, sends no email, establishes no
-  authenticated session, and creates no organization or branch.
+- Email uses `email.trim().toLowerCase()`; the existing 320-character limit
+  applies.
+- Password contains exactly 15–128 Unicode code points. Its submitted value is
+  not trimmed, Unicode-normalized, silently truncated, or subject to
+  character-class composition rules; whitespace and Unicode are accepted.
+  Breached-password screening is deferred.
+- Password storage uses the PHC-format output from `argon2@0.45.1` Argon2id
+  with `memoryCost=65536` KiB, `timeCost=3`, `parallelism=4`, and the
+  library-generated random salt.
+- The registration limiter (5 attempts per 15 minutes per canonical email) is
+  evaluated first.
+- Every valid, permitted request performs the same Argon2id hash before the
+  eligibility lookup; there is no account-existence pre-read before hashing.
+  The implemented P2-M2-T01 baseline already follows this hash-before-lookup
+  path.
+- A shared mail budget of 3 valid requests per canonical email per 15 minutes
+  covers signup and verification resend together. It is consumed before the
+  lookup regardless of eligibility or provider, keyed by SHA-256 of the
+  canonical email, and is not reset by success. Signup with the mail budget
+  exhausted remains generic `202`; explicit resend with the budget exhausted
+  returns `429` with `Retry-After`.
+- A bounded 32 outstanding dispatch slots are reserved before a pending
+  duplicate replacement.
+- Initial admitted user: the user row (`credentialVersion = 1`), the bound
+  verification challenge, and the prepared real proof are created atomically.
+- Initial delivery suppressed: the password/user row with `credentialVersion =
+  1` and the bound challenge are still created, the challenge is immediately
+  `REVOKED` with reason `DELIVERY_SUPPRESSED`, and a real proof is prepared;
+  no send occurs; later login/resend recovers when admission is available.
+- Eligible duplicate admitted: under the user lock, the password hash,
+  `credentialVersion` increment, `passwordChangedAt`, supersession, the
+  successor challenge, and the prepared real proof are committed atomically.
+- Duplicate suppressed: no password, version, or challenge change; the
+  response is the same generic accepted result with a phantom proof.
+- Verified or disabled accounts: no change; phantom proof.
+- Crypto preparation failure before commit rolls back; the cookie is set only
+  after commit.
+- Provider dispatch happens after commit and after response finish, with a
+  10-second timeout, no auto-retry, and no outbox. Dispatch is tracked,
+  caught, and bounded-drained; it releases all reserved slots and aborts with
+  conditional compensation on the exact issued row, never a new successor or
+  the previous password. Crash loss is best-effort resend recovery. Known
+  stale/expired challenges are skipped before the call. Provider latency never
+  appears in the public response, and there is no delayed rollback of
+  password or version.
+- Every accepted registration sets a fresh same-size real/phantom proof cookie
+  and returns a same-format real/phantom challenge UUID. Real proof exists only
+  when registration installed the password. Phantom encrypted usable=false,
+  random UUID subject, version 1, and matching timestamp/encoding/key family
+  grant no authority.
 - New and canonical-email duplicate attempts return the same generic `202
-  Accepted` response and verification next step. PostgreSQL canonical-email
-  uniqueness is the final concurrency boundary; Prisma/database uniqueness
-  details are never returned or logged.
-- P2-M2-T03 owns verification-token creation, resend, provider
-  integration/delivery, and verification behavior.
+  Accepted` response. PostgreSQL canonical-email uniqueness is the final
+  concurrency boundary; Prisma/database uniqueness details are never returned
+  or logged.
+- The implemented P2-M2-T01 baseline predates `ADR-034`: it creates no
+  verification challenge or proof cookie and returns the pre-`ADR-034`
+  envelope without a `verification` object.
 
-New and duplicate registrations use this exact public success envelope; it
-contains no user identifier, email, credential metadata, or indication that a
-row was created:
+Accepted target success envelope (all accepted registrations, real or
+phantom):
 
 ```json
 {
   "data": {
+    "status": "accepted",
     "nextStep": "verify_email",
-    "status": "accepted"
+    "verification": {
+      "challengeId": "opaque-challenge-uuid"
+    }
   },
   "meta": {
     "requestId": "opaque-request-id"
@@ -332,54 +396,76 @@ row was created:
 }
 ```
 
-`nextStep` states the required account lifecycle step. It does not claim that
-P2-M2-T01 created a verification token or sent email; those actions remain
-owned by P2-M2-T03.
-
-The implementation does not perform an account-existence pre-read. Every valid,
-permitted request follows the same Argon2id-and-create path until PostgreSQL
-accepts the insert or reports the canonical-email uniqueness conflict. This is
-the minimal database-authoritative race-safe path, not a synthetic timing delay.
-Runtime and database scheduling can still vary, while distributed/high-cardinality
-abuse and stronger production timing controls remain under `OQ-020`.
+`nextStep` asserts neither account creation nor delivery. `challengeId` is a
+noncredential selector: an issued challenge UUID or same-format phantom.
+It is never eligibility/password proof. The implemented baseline response
+has no `verification` object.
 
 ### Registration/login security requirements
 
 - Do not return password hashes or credential metadata.
 - Do not reveal account existence through materially different messages/timing where practical.
 - Apply rate limiting and security telemetry without logging submitted email or password values.
-- Do not return raw session, verification, reset, or invitation tokens in persisted resources, logs, or general response payloads.
-- Verification, reset, and invitation delivery use the provider abstraction. Development defaults to non-delivery and may explicitly select Resend for manual UAT; test rejects Resend; production defaults to Resend and rejects non-delivery.
-- Forgot-password and resend responses are account-safe and non-disclosing. Verification and reset tokens are single-use and expiry-bound; successful reset revokes every user session.
+- Do not return raw session, verification, reset, or invitation tokens, or
+  verification proof values, in persisted resources, logs, or general response
+  payloads.
+- Verification, reset, and invitation delivery use the provider abstraction.
+  Development defaults to non-delivery and may explicitly select Resend for
+  manual UAT; test rejects Resend; production defaults to Resend and rejects
+  non-delivery.
+- Forgot-password and resend responses are account-safe and non-disclosing.
+  Verification challenges are single-consumption with a 10-minute expiry, and
+  reset tokens are single-use and expiry-bound; successful reset revokes every
+  user session, increments the credential version, and invalidates open
+  verification challenges.
 
 ### Login and authenticated-session contract
 
 - Request validation accepts only `email` and `password`, rejects unknown
   fields, canonicalizes email with the registration policy, and preserves the
   password exactly without trimming, normalization, or truncation.
-- Correct credentials require an `ACTIVE` user with non-null
-  `emailVerifiedAt`. Wrong password, missing canonical account, disabled user,
-  and unverified user all return `401 INVALID_CREDENTIALS` with the same public
-  message. Missing accounts execute verification against one fixed valid dummy
-  Argon2 PHC hash through the centralized verifier.
-- Successful authentication generates a fresh 32-byte CSPRNG token and stores
-  only its deterministic SHA-256 hash. The database session identifier and
-  token hash are never serialized. A currently valid same-user incoming cookie
-  session is revoked as `login_rotation` atomically with fresh-session creation.
+- After the shared login/fallback limiter check, read hash and credential version
+  together as a snapshot and verify outside locks. Missing accounts use the
+  fixed valid dummy Argon2 PHC hash through the centralized verifier.
+- Wrong password, missing canonical account, and disabled user all return
+  `401 INVALID_CREDENTIALS` with the same public message. Wrong/missing
+  attempts increment the existing five-failures per 15-minute fixed window; a
+  disabled account with the correct password is non-counting, and success does
+  not reset the window.
+- Correct-password ACTIVE/unverified login rechecks the demonstrated snapshot
+  version and eligibility under the user lock before issuing proof,
+  and returns `202` with `data {status: "verification_required",
+  nextStep: "verify_email", verification: {challengeId}}` where
+  `challengeId` is the usable non-terminal challenge UUID or `null`, plus a
+  real proof cookie. No `Session` row, `stockwise_session` cookie, rotation,
+  or incoming revocation occurs, and no automatic mail is sent.
+- Correct password with an `ACTIVE` verified account: `200` with the existing
+  actor/session behavior, but the server revalidates the snapshot
+  `credentialVersion` before issuing authority and clears the proof cookie.
+  A concurrent version change fails closed with the generic invalid result.
+- Successful verified authentication generates a fresh 32-byte CSPRNG token
+  and stores only its deterministic SHA-256 hash. The database session
+  identifier and token hash are never serialized. A currently valid same-user
+  incoming cookie session is revoked as `login_rotation` atomically with
+  fresh-session creation.
 - Initial idle expiry is login plus 24 hours and absolute expiry is login plus
   seven days by default. Valid authenticated requests persist a touch at most
   once per 15 minutes, setting idle expiry to
   `min(now + idle timeout, absolute expiry)`. Required touch failure, expiry,
   revocation, unknown token, disabled/unverified actor, and database failure all
   fail authentication closed.
-- The login-only limiter processes five credential failures per canonical email
-  per fixed 15-minute process-local window. Success is allowed before
+- The shared login/fallback limiter processes five credential failures per canonical
+  email per fixed 15-minute process-local window. Success is allowed before
   exhaustion and does not reset the active window. Subsequent attempts after
   five failures receive `429 RATE_LIMITED` and remaining-window `Retry-After`.
-  Malformed requests do not create limiter keys. Distributed/IP-aware/global
-  controls and proxy trust remain under `OQ-020`.
+  Malformed requests do not create limiter keys. The
+  `POST /auth/verification-password-proof` fallback shares this same limiter
+  object. Distributed/IP-aware/global controls and proxy trust remain under
+  `OQ-020`.
+- The implemented P2-M2-T02 baseline rejects unverified accounts with `401
+  INVALID_CREDENTIALS` and returns no `202` verification shape.
 
-Successful login returns exactly this public shape (with `displayName` as a
+Verified login returns exactly this public shape (with `displayName` as a
 string when already populated):
 
 ```json
@@ -397,43 +483,77 @@ string when already populated):
 }
 ```
 
-It returns no session ID/hash, password data, membership, role, organization,
-branch, permission, or authorization state. Organization/branch options belong
-to later onboarding and access-management work.
+Pending login returns the same shape as registration with `status`
+`"verification_required"` and nullable `challengeId`:
+
+```json
+{
+  "data": {
+    "status": "verification_required",
+    "nextStep": "verify_email",
+    "verification": {
+      "challengeId": null
+    }
+  },
+  "meta": {
+    "requestId": "opaque-request-id"
+  }
+}
+```
+
+Both responses return no session ID/hash, password data, membership, role,
+organization, branch, permission, or authorization state. Organization/branch
+options belong to later onboarding and access-management work.
 
 ### Logout and credential-lifecycle contract
 
 - `POST /auth/logout` is safely idempotent for a missing, malformed, unknown,
   expired, or already revoked cookie. A syntactically valid token is hashed for
   lookup; a matching open session is revoked as `logout`. The cookie is cleared
-  only after the revocation attempt succeeds. `POST /auth/logout-all` requires a
-  valid authenticated context, revokes every open session for that actor as
-  `logout_all`, and clears the current cookie. Both cookie-authenticated writes
-  reject a cross-site Fetch Metadata signal or a mismatched supplied `Origin`;
-  `SameSite=Lax` remains the primary browser cookie control.
+  only after the revocation attempt succeeds. On success it also clears the
+  verification proof cookie; there is no global stateless revocation of proofs.
+  `POST /auth/logout-all` requires a valid authenticated context, revokes every
+  open session for that actor as `logout_all`, and clears application/proof cookies.
+  Both cookie-authenticated writes reject a cross-site Fetch Metadata signal
+  or a mismatched supplied `Origin`; `SameSite=Lax` remains the primary browser
+  cookie control.
 - The cleared `stockwise_session` cookie retains `Path=/`, `HttpOnly`,
   `SameSite=Lax`, host-only scope, and production-only `Secure`, and adds
-  `Max-Age=0` plus the epoch `Expires` value. Logout never returns a session ID,
-  raw token, or token hash.
+  `Max-Age=0` plus the epoch `Expires` value. The cleared proof cookie retains
+  `Path=/`, `HttpOnly`, `SameSite=Strict`, host-only scope, `Secure`, and adds
+  `Max-Age=0` plus the epoch `Expires` value. Logout never returns a session
+  ID, raw token, token hash, or proof value.
 - Verification resend is also initial verification issuance. Eligible means an
-  active, unverified account. Issuance uses a fresh 32-byte CSPRNG opaque token,
-  stores only SHA-256, expires after 24 hours, and serializes replacement by
-  locking the user row. Every prior open token is marked replaced before the new
-  token is created. Completion conditionally consumes the active, unexpired
-  token and sets `emailVerifiedAt` in one transaction; replay and concurrent
-  duplicate completion produce one success at most.
-- Forgot-password is eligible only for an active verified account. Issuance uses
-  the same 32-byte/hash-only boundary, expires after 30 minutes, and serializes
-  replacement through the user row. Completion validates token state before
-  Argon2, then conditionally consumes the token, updates the accepted Argon2id
-  PHC password hash/`passwordChangedAt`, and revokes every open user session as
-  `password_reset` in one transaction. It does not create a session or log the
-  user in.
-- Verification-resend and forgot-password successes use exactly
-  `202 {"data":{"status":"accepted"},"meta":{"requestId":"..."}}` for
-  eligible, missing, already verified, disabled, non-delivered, and
-  provider-failed outcomes. Provider failure conditionally revokes the just
-  issued token; raw provider errors never enter the response. Verification
+  active, unverified account. Issuance binds a fresh challenge to the current
+  `credentialVersion`, stores only the OTP MAC and link hash, expires after
+  10 minutes, and serializes replacement by locking the user row first. Every
+  prior non-terminal challenge is terminalized as `REPLACED` (expired open
+  challenges are terminalized when replaced) before the new challenge is
+  created. Resend never creates, refreshes, clears, or upgrades a proof. The
+  implemented P2-M2-T03 baseline instead issues a 24-hour link-only token;
+  under `ADR-034` completion requires both proofs (valid mail plus a valid
+  proof) and
+  conditionally consumes the challenge and sets `emailVerifiedAt` in one
+  transaction; replay and concurrent duplicate completion produce one success
+  at most.
+- Forgot-password is eligible only for an active verified account. Issuance
+  uses the same 32-byte/hash-only boundary, expires after 30 minutes, and
+  serializes replacement through the user row. Completion validates token
+  state before Argon2, then conditionally consumes the token, updates the
+  accepted Argon2id PHC password hash/`passwordChangedAt`, increments
+  `credentialVersion`, invalidates the user's open verification challenge, and
+  revokes every open user session as `password_reset` in one transaction. It
+  does not create a session or log the user in. The implemented P2-M2-T03
+  baseline performs the same flow without the version increment or challenge
+  invalidation.
+- Verification-resend successes use exactly `202` with
+  `data {status: "accepted", verification: {challengeId}}` for eligible,
+  missing, already verified, disabled, non-delivered, and provider-failed
+  outcomes; the `challengeId` is the fresh UUID for eligible outcomes.
+  Forgot-password successes use exactly `202
+  {"data":{"status":"accepted"},"meta":{"requestId":"..."}}` for the same
+  outcomes. Provider failure conditionally revokes the just issued challenge
+  or token; raw provider errors never enter the response. Verification
   completion returns `200` with `data.status = "verified"`; reset completion
   returns `200` with `data.status = "password_reset"`.
 - Production uses Resend through the API-owned provider interface. Development
@@ -443,17 +563,124 @@ to later onboarding and access-management work.
   provider response bodies, message payloads, API keys, and complete sensitive
   links are not logged.
 
-Verification resend and forgot-password use independent fixed-window limiters.
-Each allows three syntactically valid requests per canonical email per 15
-minutes, keys only a SHA-256 derivative, and consumes before account lookup and
-provider work regardless of eligibility or delivery outcome. Attempt four and
-later returns `429 RATE_LIMITED` with deterministic remaining-window
-`Retry-After`; success does not reset the window. Malformed email creates no
-entry. Reset completion has no separate MVP limiter and rejects malformed,
-unknown, expired, revoked, replaced, or consumed tokens before Argon2. These are
-narrow application-level exceptions only: all distributed/IP/global/provider,
-proxy-trust, multi-instance, production DoS, and long-term telemetry behavior
-remains open under `OQ-020`.
+The registration limiter (5 per 15 minutes per canonical email) is evaluated
+first on signup. The shared mail budget allows three valid requests per
+canonical email per 15 minutes across signup and verification resend, keys
+only a SHA-256 derivative, and consumes before account lookup and provider
+work regardless of eligibility or delivery outcome. Attempt beyond the budget
+returns `429 RATE_LIMITED` with deterministic remaining-window `Retry-After`
+on explicit resend; signup with the budget exhausted remains generic `202`.
+Success does not reset the window. Malformed email creates no entry. The
+login limiter (five failures per 15 minutes) is shared by login and the
+verification-password-proof fallback. Reset completion has no separate MVP
+limiter and rejects malformed, unknown, expired, revoked, replaced, or
+consumed tokens before Argon2. These are narrow application-level exceptions
+only: all distributed/IP/global/provider, proxy-trust, multi-instance,
+production DoS, and long-term telemetry behavior remains open under `OQ-020`.
+
+### Email verification (ADR-034) contract
+
+The accepted target replaces the 24-hour link-only verification token with a
+unified mailbox challenge carrying both a 6-digit code and a link, and makes
+completion require two independent proofs: the mailbox proof (code or link)
+and the password proof.
+
+- Challenge: one record per issuance binds `userId`, the immutable
+  `credentialVersion` at issuance, an OTP MAC, and a link hash. The code is 6
+  uniform ASCII digits with leading zeros allowed; its MAC is HMAC-SHA256
+  under an OTP-dedicated key of at least 32 bytes binding purpose, encoding,
+  user ID, challenge ID, version, and code, compared with
+  `timingSafeEqual`. The raw code is never persisted. The link is 32 random
+  bytes, base64url-encoded to 43 characters, stored only as its SHA-256 hash.
+  Both share one 10-minute expiry from issuance. Five durable wrong code
+  comparisons move the challenge to `LINK_ONLY` (the link survives); either
+  method consumes both. States are `OPEN`, `LINK_ONLY`, effective `EXPIRED`,
+  `CONSUMED`, `REPLACED`, and `REVOKED`. Exactly one non-terminal challenge
+  exists per user (partial unique index); expired open challenges are
+  terminalized when replaced.
+- Wrong well-formed code on an otherwise usable matching challenge increments
+  attempts even without proof. Unknown/stale/terminal requests cannot affect
+  successors. Valid OTP/link with unusable proof returns
+  `401 VERIFICATION_PASSWORD_PROOF_REQUIRED` without consumption; a correct
+  OTP in this case adds no failure. Invalid mailbox material always returns
+  `400 INVALID_VERIFICATION_CODE` or `400 INVALID_TOKEN` regardless of proof.
+  No public proof/account/challenge status endpoint exists.
+- Completion endpoints: `POST /auth/verify-email-code` with body exactly
+  `{ "email", "challengeId", "code" }`, and `POST /auth/verify-email` with
+  body exactly `{ "token" }`. Both require the proof cookie and return `200`
+  with `data.status = "verified"` on success, clearing the proof cookie.
+- Both proofs are mandatory and bound to the same issuance:
+  `proof.subject = challenge.userId = user.id` and
+  `proof.credentialVersion = challenge.credentialVersion = user.credentialVersion`, re-checked
+  under the user lock with fresh database time; the user must be `ACTIVE` and
+  unverified. An old-version proof against a newer challenge fails (accepted
+  scenario A), and a mailbox proof without a valid password proof fails
+  (accepted scenario B).
+- Verification password proof: AES-256-GCM under a dedicated 32-byte key,
+  separate environment, purpose, and all other keys; 12-byte random nonce and
+  16-byte tag. The fixed encrypted claims are purpose, usable (phantom) flag,
+  UUID subject, 64-bit version, and iat/exp. The envelope is 1 format byte +
+  4-byte key ID + 12-byte nonce + 42-byte ciphertext + 16-byte tag = 75
+  bytes, exactly 100 base64url characters. AAD binds the fixed purpose, the
+  configured origin, and the format/key header. Lifetime is 10 minutes
+  absolute with no sliding; the server rejects authentication, format, key,
+  purpose, origin, lifetime, and expiry failures, and future iat beyond 5
+  seconds. Current and previous keys are accepted; the previous key is
+  retained at least 605 seconds after its last issuance and is not
+  prematurely discarded by normal rotation; emergency removal invalidates
+  proofs under it. The per-key 2^24 encryption ceiling is enforced with fleet
+  accounting deferred to Phase 8.
+- Proof cookie: `__Host-stockwise_verification_proof`, `Secure` always,
+  `HttpOnly`, `SameSite=Strict`, `Path=/`, no `Domain`, `Max-Age` at most 600
+  seconds and bounded by proof expiry. Duplicate or malformed proof cookies
+  are rejected. The proof is never returned in JSON, URLs, web storage, or
+  bearer headers. Test localhost Secure-cookie support during implementation;
+  use local HTTPS if needed. Never downgrade this proof cookie in any environment.
+- Real proofs are minted only by registration that actually installed the
+  password and by correct-password login or fallback. Every generic accepted
+  registration sets a fresh same-size real/phantom cookie and same-format
+  challenge selector. Phantom encrypts `usable=false`, a random UUID subject, and
+  version 1, and grants no authority. Resend never creates, refreshes,
+  clears, or upgrades a proof. Successful verification, ordinary verified
+  login, and successful logout clear the proof; there is no global stateless
+  revocation. One cookie per browser means tabs use last-response-wins
+  availability; devices are independent.
+- Fallback: `POST /auth/verification-password-proof` with body exactly
+  `{ "email", "password" }`. It shares the login limiter object, verifies
+  real or dummy hashes, re-checks the version under the user lock, and returns
+  `202` with `data {status: "accepted"}`: a real proof cookie for a correct
+  pending account, a phantom proof cookie for a correct verified account, and
+  generic `401 INVALID_CREDENTIALS` for wrong, missing, or disabled. It never
+  creates a session, challenge, or mail. The inline fallback retains the
+  code/link in memory and retries completion; there is no second password in
+  normal register or login.
+- Origin/CSRF: proof-setting and proof-use requests (register, login,
+  fallback, resend, and completion) require the exact configured origin
+  (missing, null, or mismatched `Origin` is rejected), strict JSON, and
+  `Sec-Fetch-Site: cross-site` rejection before quota, mutation, or cookie
+  work, with no CORS. Existing logout CSRF protection is not weakened.
+- Link page: `GET /verify-email?token=opaque` never consumes the challenge
+  and never issues proof. Capture into memory and call `history.replaceState`
+  immediately before redirects/telemetry. Consumption requires the user's
+  explicit same-origin JSON POST, never scanner GET or automatic page load.
+  The page and API require `Referrer-Policy: no-referrer` and
+  `Cache-Control: no-store`. Redact sensitive query/cookie/body/header values
+  from logs, errors, traces, and analytics. Disable transactional click/open tracking
+  where applicable. The link has no fragment.
+- Email: contains the code and the link with the 10-minute expiry. The most
+  recent requested challenge invalidates older ones; users are told not to
+  share codes and to ignore unsolicited ones.
+- Client continuation: only `version`, `canonicalEmail`, `challengeId`, and
+  `savedAt` may use memory/sessionStorage for at most 30 minutes. Password,
+  OTP, and link exist only transiently for input/submission, never in storage;
+  proof remains HttpOnly and secrets never enter JavaScript. Normal register/
+  login reaches OTP without email/password re-entry. Only valid mailbox proof
+  with unusable password proof reveals inline fallback. Reopen recovers through
+  Login; refresh does not resend/renew. Preserve Light/Dark, EN/TH, accessibility,
+  and existing shadcn/ui direction.
+- Local/single-process limits only; cloud is not production readiness.
+  Fleet, IP/global, provider, proxy, secret-manager IAM, key-rotation
+  accounting, capacity, DoS, and outbox behavior are deferred to Phase 8.
 
 ## 7. Organization, branch, and membership endpoints
 
@@ -1288,28 +1515,36 @@ At minimum, define/test rate limits for:
 - Write/idempotency endpoints
 - Internal AI replays and provider-budget paths
 
-Except for the four narrow accepted MVP application limiters below, exact thresholds are configuration/production decisions under `OQ-020`. Rate-limit keys must not permit easy cross-tenant denial of service and must respect proxy/ingress trust configuration.
+Except for the narrow accepted MVP application limiters below, exact thresholds are configuration/production decisions under `OQ-020`. Rate-limit keys must not permit easy cross-tenant denial of service and must respect proxy/ingress trust configuration.
 
 P2-M2-T01 and P2-M2-T02 have accepted MVP exceptions to that deferral. Registration permits
 five attempts per 15 minutes per canonical email through a deterministic
-process-local in-memory limiter. It stores no database limiter state and logs
-neither email nor password. An exhausted limit returns `429 RATE_LIMITED` with
-`Retry-After`. Distributed/IP-aware limiting, cross-process coordination, and
+process-local in-memory limiter, evaluated before any hashing or lookup. It
+stores no database limiter state and logs neither email nor password. An
+exhausted limit returns `429 RATE_LIMITED` with `Retry-After`.
+Distributed/IP-aware limiting, cross-process coordination, and
 proxy/deployment trust remain open under `OQ-020`; this baseline does not close
 those questions.
 
 Login separately permits five failed credential attempts per fixed 15-minute
 window per canonical email through a SHA-256-derived process-local key. Only
 credential failures count and success does not reset the active window.
-Exhaustion returns `429 RATE_LIMITED` with `Retry-After`. This does not close the
-remaining distributed/IP-aware/global or proxy-trust decisions in `OQ-020`.
+Exhaustion returns `429 RATE_LIMITED` with `Retry-After`. The
+`POST /auth/verification-password-proof` fallback (planned `ADR-034`) shares
+this same limiter object. This does not close the remaining
+distributed/IP-aware/global or proxy-trust decisions in `OQ-020`.
 
-Verification resend and password-reset request each use an independent
-three-request fixed 15-minute process-local window per canonical email. Every
-syntactically valid request consumes before lookup; attempt four returns
-`429 RATE_LIMITED` plus deterministic `Retry-After`. Reset completion has no
-MVP limiter and rejects invalid token state before Argon2. These exceptions do
-not resolve `OQ-020`.
+The shared mail budget (planned `ADR-034`) allows three valid requests per
+canonical email per 15 minutes across signup and verification resend, keyed by
+a SHA-256 derivative. Every syntactically valid request consumes before lookup
+regardless of eligibility or provider; attempt beyond the budget returns
+`429 RATE_LIMITED` plus deterministic `Retry-After` on explicit resend, while
+signup with the budget exhausted remains generic `202`. Success does not reset
+the window. The implemented P2-M2-T03 baseline uses an independent
+three-request fixed 15-minute window for verification resend; the reset
+request keeps its own independent three-request window (unchanged). Reset
+completion has no MVP limiter and rejects invalid token state before Argon2.
+These exceptions do not resolve `OQ-020`.
 
 ## 16. API test contract
 
@@ -1333,7 +1568,7 @@ High-risk commands additionally require database-backed atomicity and idempotenc
 
 Canonical definitions live in `BUILD_SPEC.md`:
 
-- Auth/session: `ADR-013`; verification/reset token/provider behavior: `ADR-014`; onboarding: `ADR-015`; invitation/member access lifecycle: `ADR-021`
+- Auth/session: `ADR-013`; verification/reset token/provider behavior: `ADR-014`; unified verification challenge, verification password proof, and shared mail budget: `ADR-034`; onboarding: `ADR-015`; invitation/member access lifecycle: `ADR-021`
 - Role/permission exposure: `ADR-016`
 - Product payload: `ADR-022`; Product has no organization-wide cost/valuation field, Branch/Product cost state follows `ADR-026`, and Sales price/VAT/discount behavior follows `ADR-027`
 - Inventory adjustment: `ADR-024`; quantity representation is `ADR-022`; generic

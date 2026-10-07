@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | Architecture Freeze v1; application functionality implemented through Phase 7; final acceptance with explicit MT-L04 verification limitation; PRE-CLOUD READY YES; Phase 8 NOT STARTED |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-10-05 |
+| Last updated | 2026-10-08 |
 
 ## 1. Scope and authority
 
@@ -310,47 +310,91 @@ trusted state from PostgreSQL and call this policy before mutation or exposure.
 
 ### 6.1 Authentication and scope selection
 
-Registration and verification are separate task boundaries. P2-M2-T01 accepts
-only email and password, normalizes the email, applies the accepted per-email
-process-local limiter, stores a PHC-encoded Argon2id verifier, and creates an
-unverified platform user with no profile, organization, branch, session, or
-verification-token record. New and canonical-email duplicate attempts return
-the same generic `202 Accepted` public response. P2-M2-T03 later owns
-verification-token creation, resend, email-provider integration/delivery, and
-verification behavior.
+`ADR-034` is the accepted T02A verification target; schema/runtime implementation
+is pending. The implemented P2 baseline remains registration without delivery
+and link-only verification. Those historical task boundaries are not the target
+contract below. Ordinary application authentication, onboarding, authorization,
+invitations, and reset eligibility retain their existing boundaries.
 
-P2-M2-T03 implements verification issuance through the account-safe resend
-endpoint and password recovery through the same identity module. Use cases
-depend only on an `IdentityEmailProvider`; runtime selection binds production
-to Resend, development by default to non-delivery with an explicit Resend opt-in,
-and test to non-delivery/recording adapters. A provider
-call occurs only after the token transaction commits. Provider failure is
-non-disclosing and triggers a conditional revocation of the just-issued token;
-there is no outbox or generic messaging framework in this MVP boundary.
+Identity owns three distinct security concepts:
 
-Verification and reset replacement transactions lock the owning user row,
-replace every prior open token, and create one fresh hash-only token. This
-serializes concurrent application requests without changing the accepted
-schema. Verification consumption and email state update are atomic. Reset first
-performs a cheap active-token lookup, then Argon2, then conditionally consumes
-the token, updates the password, and revokes all sessions in one transaction.
+| Concept | Responsibility | Authority boundary |
+| --- | --- | --- |
+| Application session | Existing opaque `stockwise_session` plus hash-only PostgreSQL `Session` | Authenticates an ACTIVE verified actor; authorization separately resolves scope |
+| Verification password-proof context | Short-lived encrypted cookie proving installation/knowledge of one password version | No Session, `TrustedAuthenticationContext`, tenant, role, or protected-API access |
+| Mailbox verification challenge | Unified OTP/link proving mailbox possession | Never authenticates independently; requires matching password proof to verify |
 
-The implemented registration boundary is split into the Express/Zod transport,
-an application service, the centralized Argon2 password boundary, a deterministic
-process-local limiter, and Prisma persistence/error translation. The limiter
-stores only SHA-256-derived in-memory keys for canonical emails and runs before
-Argon2. Persistence performs no existence pre-read: valid permitted requests
-follow the same hash-and-create flow, PostgreSQL remains authoritative under
-races, and only the canonical-email uniqueness conflict is translated to the
-generic success outcome. No synthetic delay, login/session behavior, token
-generation, email provider, or onboarding behavior is part of this boundary.
+The API must require `proof.subject = challenge.userId = user.id` and
+`proof.credentialVersion = challenge.credentialVersion = user.credentialVersion`
+while locking an ACTIVE unverified user. `User.credentialVersion` is positive,
+monotonic, initially `1`, and advances with every committed password change.
+Mailbox possession alone must not activate an attacker-installed pending
+password. Verification consumes the shared challenge and sets `emailVerifiedAt`
+atomically, then directs the user to **Sign in**, never creating a session.
 
-1. The client sends credentials over TLS.
-2. The API validates the request and verifies the Argon2 password hash.
-3. The API creates a fresh 256-bit opaque session token, sends it only in the `stockwise_session` HttpOnly cookie, and stores only its SHA-256 hash in PostgreSQL. A currently valid same-user cookie session is revoked as `login_rotation` in the fresh-session transaction.
-4. Login returns only safe actor `id`, canonical `email`, and nullable `displayName`; it does not load or return membership, role, organization, branch, permission, or authorization state.
-5. For each protected request, authentication resolves the active, verified actor and session from the token hash. Sliding idle activity is persisted at most once per 15 minutes and never extends fixed absolute expiry.
-6. Access-management/policy wiring separately resolves current membership and branch assignment. If a branch is selected, it verifies organization ownership and actor permission before returning accessible scope.
+Registration preserves canonical email, exact password/Argon2id policy, its
+five-per-15-minute limiter, generic `202`, and database uniqueness. All permitted
+valid paths hash before eligibility lookup. Initial creation installs version
+`1`, a matching challenge, and real proof; admitted ACTIVE/unverified duplicate
+replacement atomically advances password/version/timestamp and replaces the
+challenge/proof. Known delivery quota/capacity rejection cannot partially replace
+a duplicate's credentials. Verified/disabled duplicates do not mutate them.
+All generic continuations carry same-shaped selectors and encrypted real/phantom
+proof cookies. Initial delivery suppression still commits the legitimate account
+with a bound revoked challenge and real installation proof; resend recovers it.
+
+Correct-password ACTIVE/unverified login revalidates the password snapshot under
+the user lock, returns `verification_required` and real proof, and issues no
+Session or `stockwise_session` change. It does not automatically send mail.
+Ordinary verified login revalidates the snapshot before existing session
+creation/rotation and returns the existing safe actor shape. Missing accounts
+retain fixed-dummy Argon2 verification; wrong/disabled outcomes stay generic.
+The dedicated password-proof fallback shares login's failure budget and cannot
+create sessions, challenges, or mail, even for a now-verified account.
+
+The challenge has six uniform ASCII digits and a separate 32-byte random link,
+one ten-minute expiry, and five durable wrong OTP comparisons. OTP uses a
+dedicated-secret HMAC with bound user/challenge/version and constant-time
+comparison; link storage remains SHA-256 only. OTP exhaustion becomes
+`LINK_ONLY`; link success still consumes both. Resend atomically replaces mailbox
+material only and never creates, clears, refreshes, or upgrades password proof.
+Validate mailbox material before exposing proof-required errors; wrong OTP
+comparisons count even when proof is absent. There is no status/proof oracle.
+
+The proof is stateless AES-256-GCM under its own key, absolute ten minutes with
+no sliding refresh, carried only in `__Host-stockwise_verification_proof`
+(`HttpOnly`, always `Secure`, `SameSite=Strict`, `Path=/`, no `Domain`).
+Encrypted real/phantom claims hide eligibility. No proof table, JWT, browser
+storage credential, or replay cache. Key/codec/rotation rules are owned by
+`ADR-034`; live user/version/challenge checks constrain replay. Cookie clearing
+is not global revocation of stateless copies. Tabs share one cookie; independent
+devices can prove the same version. Local compatibility must be browser-verified
+or use HTTPS, never weaken `Secure`.
+
+Use cases depend on `IdentityEmailProvider`, not a provider SDK. Preserve
+Resend/non-delivery/test adapter selection. Registration and resend share the
+three-per-15-minute delivery budget; bounded dispatch reservation precedes
+duplicate replacement. Verification delivery occurs after commit and response
+completion, with at most 32 outstanding process-local reservations, ten-second
+timeout, no queue/outbox/automatic retry, and exact-challenge compensation.
+Provider failure never rolls back the password or revives a predecessor.
+Crash-window mail loss is recoverable by resend, not a delivery guarantee.
+
+Password/verification/reset operations lock user first, challenge/token second,
+reread after locks with fresh database time, and never hold locks during Argon2
+or provider calls. Reset remains ACTIVE/verified-only, rejects invalid token
+state before Argon2, and atomically consumes its 30-minute token, updates
+password/timestamp/version, invalidates verification material, and revokes all
+sessions; it creates none.
+
+The API contract owns exact envelopes, mailbox-first errors, and strict
+same-origin JSON/Origin/Fetch Metadata protections. Frontend continuation stores
+only noncredential email/selector/version/time (at most 30 minutes); normal
+register/login reaches OTP without re-entry. Missing/stale proof offers current
+password inline; browser reopen recovers through Login. Query link tokens are
+captured only in memory and immediately scrubbed, with no-referrer/no-store
+and explicit POST consumption. Existing Light/Dark, EN/TH, and accessible
+shadcn/ui direction remain. Cloud-wide abuse/delivery guarantees are not implied.
 
 P2-M3-T01 adds one authenticated first-organization command at
 `POST /api/v1/organizations`. The Express boundary accepts only the six profile,
@@ -826,18 +870,16 @@ The final design must decide public/private subnets, ingress, Next.js hosting mo
   attempts per 15 minutes per canonical email, returns `429` plus `Retry-After`
   when exhausted, and logs neither email nor password. Distributed/IP-aware
   controls and proxy trust remain governed by `OQ-020`.
-- Login uses a separate deterministic process-local fixed-window limiter keyed
-  by a SHA-256 derivative of canonical email. Five failed credential attempts
-  per 15 minutes are processed; subsequent attempts receive `429` plus
-  `Retry-After`. Only credential failures count, success does not reset an
-  active window, and missing accounts use one fixed dummy Argon2 verifier.
-- Verification resend and password-reset request use independent process-local
-  fixed-window limiters: three syntactically valid requests per 15 minutes per
-  SHA-256-derived canonical-email key. Counting happens before account lookup
-  and does not vary by eligibility or provider outcome. Reset completion has no
-  MVP limiter and rejects invalid token state before Argon2. These are narrow
-  exceptions only; `OQ-020` remains open for distributed/IP/global/provider,
-  proxy, multi-instance, production DoS, and telemetry controls.
+- Login and the verification-password-proof fallback share one deterministic
+  process-local fixed-window failure limiter: five credential failures per
+  15 minutes per SHA-256-derived canonical-email key. Success does not reset
+  an active window; fixed-dummy verification for missing accounts is retained.
+- Under `ADR-034`, registration verification and resend share three valid
+  delivery requests per canonical email per 15 minutes, consumed before account
+  lookup regardless of eligibility/provider outcome. Forgot-password retains
+  an independent three-request budget. Reset completion has no MVP limiter.
+  Five OTP failures are durable per challenge, with `LINK_ONLY` exhaustion.
+  `OQ-020` retains fleet/IP/global/provider/proxy/DoS/telemetry controls.
 - Passwords contain 15–128 Unicode code points and are preserved exactly as
   supplied without trimming, normalization, truncation, or composition rules.
   `argon2@0.45.1` creates a PHC-encoded Argon2id verifier with a generated salt,
@@ -845,7 +887,11 @@ The final design must decide public/private subnets, ingress, Next.js hosting mo
   leaves the identity boundary.
 - Browser sessions are opaque, hash-only PostgreSQL records carried in HttpOnly cookies; no browser JWT or refresh-token flow exists.
 - Email verification, reset, and invitation delivery are routed through the email-provider abstraction; production uses Resend, development may explicitly select Resend for manual UAT, and test never delivers mail.
-- Verification, reset, and invitation tokens are opaque, hash-only, single-use, and expiry-bound. Successful reset revokes all sessions; authorization/session checks deny disabled or deauthorized users.
+- `ADR-034` separates version-bound verification password proof from the
+  mailbox challenge and from authenticated sessions. OTP is HMAC-protected;
+  link/reset/invitation tokens remain hash-only and single-use. Verification
+  requires both proofs and issues no session. Successful reset advances password
+  version, invalidates verification material, and revokes sessions.
 - Secrets stay in an approved secret mechanism and never in repository, images, logs, client bundles, or prompts.
 - RDS is not publicly exposed in the intended production design.
 - OpenRouter calls use the timeout, bounded retries, validation, and budget in `ADR-033`.

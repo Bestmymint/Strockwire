@@ -7,7 +7,7 @@
 | Repository | `stockwise` pnpm workspace monorepo |
 | Baseline | Architecture Freeze v1 |
 | Status | Application functionality implemented through Phase 7; P7-M4 COMPLETE with accepted MT-L04 verification limitation; PRE-CLOUD READY YES; Phase 8 NOT STARTED |
-| Last updated | 2026-09-24 |
+| Last updated | 2026-10-08 |
 
 ## 1. Purpose and source-of-truth map
 
@@ -163,7 +163,7 @@ The MVP permission baseline is:
 - Switch active branch without signing in again.
 - View an allowed organization-level aggregate when the role permits it.
 - Use opaque server-side sessions backed by PostgreSQL: a cryptographically random browser token is stored only in an HttpOnly cookie and only its cryptographic hash is stored in the database.
-- Verify email/password accounts, support safe password recovery, and deliver production mail through the Resend-backed email-provider abstraction.
+- Verify email/password accounts using the accepted, not-yet-implemented `ADR-034` OTP-first target in section 10.9; preserve safe password recovery and provider-abstracted production delivery.
 - Invite employees by email with an expiring, single-use invitation that establishes the accepted organization role and branch scope atomically.
 - Sign out by revoking the current session; support revoking all sessions for a user.
 
@@ -317,6 +317,60 @@ The accepted AWS building blocks are:
 
 SQS is not a mandatory MVP dependency. Exact frontend/backend hosting, ingress, secrets management, infrastructure-as-code tooling, regions, availability strategy, and cost targets remain open.
 
+### 10.9 Email verification and credential recovery (accepted `ADR-034` target)
+
+The `ADR-034` target below is accepted but not yet runtime-implemented. It
+replaces the historical delivery behavior labelled as historical in section 11
+and `OQ-004`. Cryptographic, key-management, and envelope details are owned by
+`ADR-034` and are not duplicated here.
+
+- **Dual proof.** Verification requires mailbox proof (valid OTP **or** link)
+  and current-version password proof, matching subject and version under lock.
+  Either proof alone is insufficient. An old browser proof must not verify
+  a successor challenge for an attacker-installed password. Version advancement
+  through reset or pending-account replacement invalidates older proof.
+- **Unified challenge.** Each verification challenge carries one 6-digit code
+  and one opaque link sharing a single 10-minute expiry. The most recently
+  requested challenge invalidates the older one. Five durable wrong code
+  comparisons downgrade the challenge to link-only (the link survives); either
+  method consumes both.
+- **Login behavior.** A correct password on an `ACTIVE` unverified account
+  returns a verification-required result with a real proof cookie and no
+  session. A verified account gets the existing session behavior with the
+  proof cleared. Wrong, missing, or disabled credentials return a generic
+  `401`.
+- **Fallback.** Only after valid mailbox proof, missing/expired/stale/invalid
+  password proof triggers inline current-password fallback. It shares login's
+  limiter and never creates a session, challenge, or email.
+- **Reset.** Password reset is `ACTIVE` verified-only, 30-minute, hash-only,
+  and single-use. Completion atomically replaces the password, increments the
+  credential version, invalidates open verification challenges, and revokes
+  all sessions.
+- **Mail budget.** Signup and resend share a budget of three valid requests
+  per canonical email per 15 minutes; reset has its own independent budget.
+  Signup budget exhaustion still returns the generic `202`; an explicit resend
+  returns `429` with `Retry-After`.
+- **Delivery and phantom behavior.** Admitted registration initiates best-effort
+  delivery only after commit and response completion. Initial suppression still
+  creates the account/version, bound revoked challenge, and real installation
+  proof. Suppressed pending duplicates and verified/disabled duplicates change
+  no password/version/challenge and receive same-shaped phantom continuation.
+  Provider failure cannot roll back a committed password. Resend never creates,
+  refreshes, clears, or upgrades proof.
+- **Browser and privacy.** Normal registration/login reaches OTP without email
+  or password re-entry; unusable proof offers inline fallback after valid
+  mailbox proof. Browser reopen recovers through Login. Only noncredential
+  continuation may use sessionStorage, never password, OTP, link, or proof.
+  The UI supports existing Light/Dark themes and English/Thai.
+  Sensitive verification data (codes, tokens,
+  proof cookies, and submitted passwords) is redacted from all logs, errors,
+  traces, and analytics; the verification page uses no-referrer and no-store,
+  and the link is captured before any redirect or telemetry.
+- **CSRF recovery.** Cross-site requests to the proof-setting and
+  proof-using endpoints (register, login, fallback, resend, completion) are
+  rejected before quota, mutation, or cookie changes; the existing logout
+  CSRF behavior is not weakened.
+
 ## 11. Functional requirements
 
 Identifiers below are stable references for plans, use cases, tests, and APIs.
@@ -330,9 +384,13 @@ Identifiers below are stable references for plans, use cases, tests, and APIs.
 - **FR-IAM-005:** A user shall not access a tenant, branch, or aggregate outside their authorization scope.
 - **FR-IAM-006:** Browser authentication shall use a cryptographically random opaque session token in an HttpOnly cookie; PostgreSQL stores only its hash and the API authorizes every protected request server-side.
 - **FR-IAM-007:** Sessions shall rotate on successful authentication, expire after configurable sliding 24-hour idle and fixed seven-day absolute baselines, and be revocable individually or for all user sessions. Valid authenticated activity persists a touch at most once per 15 minutes and never extends absolute expiry.
-- **FR-IAM-008:** Email/password accounts shall verify email before access; verification, reset, and invitation tokens shall be opaque, cryptographically random, hashed at rest, single-use, and expiry-bound.
+- **FR-IAM-008:** Email/password accounts shall verify before access. The accepted, not-yet-implemented `ADR-034` target requires mailbox proof (OTP or secure link) plus current-version password proof. OTP uses dedicated HMAC; link/reset/invitation credentials remain random, hash-only, single-use, and expiry-bound.
 - **FR-IAM-009:** New-organization onboarding shall require display name, organization name, and initial branch name, create the creator's `OWNER` membership atomically, and collect only the approved optional profile/branch phone and branch-address fields.
 - **FR-IAM-010:** Invitations shall be email-bound, require authentication and verified ownership of the invited email before acceptance, and create the organization membership and branch assignments atomically and idempotently.
+- **FR-IAM-011:** Each user shall maintain positive BIGINT `credentialVersion`, initially 1; every committed password replacement, including identical-password replacement, shall atomically increment it with `passwordHash` and `passwordChangedAt`. It is never client-authoritative. (Accepted `ADR-034` target; not runtime-implemented.)
+- **FR-IAM-012:** The system shall issue a stateless encrypted password-proof cookie for verification completion and the login fallback. The proof shall not create a session, grant tenant authority, or substitute for the opaque session; it shall be rejected unless its subject and version match the locked user's identity and current credential version. (Accepted `ADR-034` target; not runtime-implemented.)
+- **FR-IAM-013:** Correct-password ACTIVE/unverified login shall return `verification_required`, a usable selector or null, and real proof, without Session/application-cookie mutation or automatic mail. ACTIVE/verified login retains session behavior and clears proof. Both revalidate the password snapshot/version. (Accepted `ADR-034` target; not runtime-implemented.)
+- **FR-IAM-014:** Reset remains ACTIVE/verified-only, 30-minute hash-only, with invalid-token rejection before Argon2. Its atomic password/reset/session transition additionally advances credential version and invalidates open verification material without creating a session. (Accepted `ADR-034` delta; not runtime-implemented.)
 
 First-organization onboarding is a one-time, authenticated, verified-user flow.
 The initial branch code is the server-owned constant `MAIN` and is never an
@@ -351,16 +409,45 @@ the submitted string exactly: it does not trim, Unicode-normalize, silently
 truncate, or impose uppercase, lowercase, digit, or symbol composition rules.
 Whitespace and Unicode are allowed. Breached-password screening is deferred.
 
-P2-M2-T01 creates the platform user with `emailVerifiedAt = null` but creates no
-verification token and sends no email. P2-M2-T03 owns verification-token
-creation, resend, provider integration/delivery, and verification behavior.
+**Historical implementation (superseded by the accepted `ADR-034` target, which is
+not runtime-implemented):** P2-M2-T01 creates the platform user with
+`emailVerifiedAt = null` but creates no verification token and sends no email;
+the user first receives a verification email only on a manual resend, and
+verification completion consumed the link token alone. P2-M2-T03 owns
+verification-token creation, resend, provider integration/delivery, and
+verification behavior.
+
+The accepted `ADR-034` registration admission, duplicate replacement, phantom,
+and two-proof completion rules are defined in section 10.9. Mail delivery is
+after commit and response completion. Resend atomically replaces mailbox
+material only; it never creates, refreshes, clears, or upgrades password proof.
 
 P2-M2-T02 login permits five failed credential attempts per canonical email per
 fixed 15-minute process-local window. Only credential failures count; a success
 does not reset the active counter/window. After five failures, later attempts in
 the window return `429` with `Retry-After`. Missing-account login runs the same
-Argon2 verification path against one fixed valid dummy PHC hash. Distributed,
-IP-aware, global controls and proxy trust remain open under `OQ-020`.
+Argon2 verification path against one fixed valid dummy PHC hash. Disabled
+accounts return the same generic `401` without counting against the window.
+Distributed, IP-aware, global controls and proxy trust remain open under
+`OQ-020`.
+
+Under the accepted `ADR-034` target (accepted, not runtime-implemented), login
+checks the credential first for every account state. A correct password on an
+`ACTIVE` account with a pending verification returns `202`
+`verification_required` with the usable challenge identifier or `null` and sets
+the real password-proof cookie; it creates no session, no `stockwise_session`
+cookie, and no rotation or incoming-session revocation, and sends no automatic
+email. A correct password on a verified `ACTIVE` account returns `200` with the
+existing session behavior, revalidates the credential version before issuing
+authority, and clears the proof cookie. A wrong or missing credential, and a
+correct credential on a disabled account, return the same generic
+`401 INVALID_CREDENTIALS`. Concurrent credential-version changes fail closed
+with the generic invalid result. A same-limiter inline fallback endpoint
+accepts `{ email, password }` for the missing-proof case; it shares the login
+limiter object, never creates a session, challenge, or email, and returns a
+real proof cookie for a correct pending-verification password and a phantom
+proof cookie for a correct verified password.
+
 New and canonical-email duplicate registration attempts return the same generic
 `202 Accepted` public response; the database unique constraint remains the
 final race-safe email boundary. Registration permits five attempts per 15
@@ -368,18 +455,25 @@ minutes per canonical email through a deterministic process-local in-memory
 limiter. Exhaustion returns `429` with `Retry-After`; distributed and IP-aware
 controls remain part of `OQ-020`.
 
-P2-M2-T03 adds two narrow MVP abuse-control exceptions without resolving
-`OQ-020`: verification resend and password-reset request each permit three
-syntactically valid requests per canonical email per fixed 15-minute
-process-local window. Each valid request consumes an attempt before account
-lookup, regardless of account state or provider outcome; the SHA-256-derived
-limiter key contains no plaintext email. The fourth and later requests return
-`429` with deterministic `Retry-After`. Malformed email allocates no limiter
-entry. Reset completion has no process-local token-keyed limiter: malformed,
-unknown, expired, revoked, replaced, and consumed tokens are rejected before
-Argon2. Distributed, IP-aware, global/provider-wide, proxy-trust,
-multi-instance, production DoS, and long-term telemetry controls remain open in
-`OQ-020`.
+P2-M2-T03 adds narrow MVP abuse-control exceptions without resolving `OQ-020`.
+Under the accepted `ADR-034` target (accepted, not runtime-implemented), the
+shared mail budget is three syntactically valid requests per canonical email
+per fixed 15-minute process-local window across signup and verification
+resend (shared); each valid request consumes an attempt before account
+lookup, regardless of account state or provider outcome, and the SHA-256-
+derived limiter key contains no plaintext email. After three admitted delivery
+requests, signup remains generic `202`, while explicit resend returns `429`
+with deterministic `Retry-After`. Malformed email allocates no entry. Success
+does not reset the window. The password-reset
+request keeps its own independent three-per-15-minute canonical-email
+limiter, and reset completion has no process-local token-keyed limiter:
+malformed, unknown, expired, revoked, replaced, and consumed tokens are
+rejected before Argon2. The OTP wrong-comparison counter is independent of
+the mail budget; five durable wrong comparisons downgrade the challenge to
+link-only. Reset completion increments the credential version and
+invalidates any open verification challenge atomically. Distributed,
+IP-aware, global/provider-wide, proxy-trust, multi-instance, production DoS,
+and long-term telemetry controls remain open in `OQ-020`.
 
 ### Catalog and inventory
 
@@ -454,6 +548,8 @@ multi-instance, production DoS, and long-term telemetry controls remain open in
 - Minimize data sent to OpenRouter and prohibit personally identifiable customer or employee data.
 - Use least-privilege AWS identities, private database networking, encryption in transit, and managed encryption at rest.
 - Record security-sensitive and stock-affecting actor/context data; the full audit-log product scope is open.
+- OTP uses dedicated HMAC at rest; verification link/reset/invitation tokens remain random, hash-only, single-use, and expiry-bound. The separate `ADR-034` encrypted password-proof cookie is never application authentication or tenant authority.
+- Redact sensitive verification data (OTP codes, verification tokens, password-proof cookies, and submitted passwords) from all logs, errors, traces, and analytics.
 
 ### Data integrity
 
@@ -542,8 +638,8 @@ These decisions are mandatory gates before the affected domain implementation:
 
 | Affected domain | Required accepted decisions before implementation |
 | --- | --- |
-| Authentication and authenticated state | `ADR-013` (`OQ-003` resolved) |
-| Email verification, password reset, and invitations | `ADR-014`, `ADR-021` (`OQ-004`, `OQ-006` resolved) |
+| Authentication and authenticated state | `ADR-013` (`OQ-003` resolved), amended by `ADR-034` for the verification-only proof-cookie exception |
+| Email verification, password reset, and invitations | `ADR-014`, `ADR-021`, `ADR-034` (`OQ-004`, `OQ-006` resolved) |
 | Profile and organization/first-branch onboarding | `ADR-015` (`OQ-005` resolved) |
 | Authorization policies for accepted MVP roles | `ADR-016` (`OQ-022` resolved) |
 | Catalog schema and management API | `ADR-022` (`OQ-014`, `OQ-023`, `OQ-024` resolved); Product retains no organization-wide cost/valuation field; implemented Branch/Product cost state follows `ADR-026` |
@@ -571,7 +667,7 @@ This is the canonical list. Other documents reference these IDs and must not red
 | **OQ-001** | Use a native pnpm workspace on Node.js 24 LTS. Runtime applications use `apps/web` and `apps/api`; deliberately shared internal packages may use `packages/*` only when justified. Use one root lockfile and no monorepo orchestration framework until a measured need exists. | `ADR-011` |
 | **OQ-002** | Use the Next.js App Router with the `src/app` directory convention. React Server Components are the default; use Client Components only for required client-side behavior. Route Groups may be added later only for implemented routes. StockWise business REST APIs remain in Express and must not be implemented as Next.js Route Handlers. | `ADR-012` |
 | **OQ-003** | Use opaque PostgreSQL-backed server-side sessions. Send a cryptographically random session token only in the `stockwise_session` HttpOnly, host-only, `SameSite=Lax`, `Path=/` cookie (`Secure` in production, not local HTTP); store only its cryptographic hash. Do not use browser JWTs, `localStorage`/`sessionStorage`, or refresh tokens. Successful authentication creates a fresh token and atomically revokes a currently valid same-user cookie session as `login_rotation`. Enforce server-side authorization, configurable sliding 24-hour idle and fixed seven-day absolute expiry baselines, and at most one persisted activity touch per 15 minutes. | `ADR-013` |
-| **OQ-004** | Require email verification for email/password accounts. P2-M2-T01 creates an unverified account but no verification token and sends no email; P2-M2-T03 owns token creation, resend, provider integration/delivery, and verification. Verification and reset tokens are opaque, cryptographically random, hash-only, single-use tokens with 24-hour and 30-minute expiry respectively; resend replaces the active verification token; reset revokes all sessions; forgot-password responses are non-disclosing. | `ADR-014`, `ADR-017` |
+| **OQ-004** | Require email verification. Accepted `ADR-034` target (not runtime-implemented): admitted registration atomically establishes password/version, unified ten-minute OTP/link challenge, and proof; delivery follows commit and response completion. Verification requires valid OTP or link plus matching current-version password proof. Pending duplicate replacement is atomic and delivery-admission gated; verified/disabled duplicates never replace. Correct-password unverified login returns verification-required without Session or automatic mail. Resend replaces mailbox material, never proof. Reset remains ACTIVE/verified-only and 30-minute, with version advancement/session revocation. | `ADR-014`, `ADR-017`, superseded/extended by `ADR-034` |
 | **OQ-005** | Registration accepts only email and password. The platform profile later requires display name, so `User.displayName` remains nullable until profile/onboarding; no placeholder is derived from email. New-organization onboarding requires display name, organization name, and initial branch name. Phone is optional for the platform profile and initial branch; branch address is optional. The creator becomes `OWNER`; the server assigns initial branch code `MAIN`. One persisted per-user provenance row provides request-hash replay and concurrency identity; zero memberships are required when that row does not exist. User identity is platform-level; access derives from memberships. Invitations use their own flow. | `ADR-015`, `ADR-017`, `ADR-019` |
 | **OQ-006** | Use email-bound organization invitations carrying the intended role and branch scope. Their opaque, cryptographically random, hash-only token is single-use for access creation and expires in seven days; reissue invalidates the active invite. The invited email must authenticate and verify before transactional acceptance creates membership, branch assignments, source provenance, and a bounded access event. Same-actor replay returns the existing result without mutation. Existing membership of any status blocks invitation. Full-replacement edits/reactivation use exact optimistic versions; deactivation preserves assignment configuration but immediately removes effective access. No automatic account creation or naive cross-email linking. | `ADR-014`, `ADR-021` |
 | **OQ-007** | MVP forbids negative inventory for every stock-decreasing movement. Inside the same PostgreSQL transaction and authoritative branch/product balance serialization boundary, the service calculates `resultingQuantity = currentQuantity + signedDelta`; a result below zero returns `409 INSUFFICIENT_STOCK` with no ledger or balance mutation. No role has an override. Inventory uses immutable signed-delta ledger movements plus an atomically maintained lazy balance projection; manual adjustments use the accepted reason/note, idempotency, lifecycle, and permission rules in `ADR-024`. | `ADR-024` |

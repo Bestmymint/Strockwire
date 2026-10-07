@@ -6,7 +6,7 @@
 | Database | PostgreSQL |
 | ORM/migrations | Prisma |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-09-19 |
+| Last updated | 2026-10-08 |
 
 ## 1. Scope and authority
 
@@ -116,6 +116,16 @@ does not alter the initial migration. Reintroducing `NOT NULL` requires a later
 reviewed backfill and forward migration after all applicable accounts have a
 profile.
 
+`ADR-034` (planned, not yet migrated) changes this identity baseline. `User`
+gains a positive `credentialVersion` (initial 1) that the database increments
+on every password replacement, and the 24-hour `EmailVerificationToken` is
+replaced by the 10-minute `EmailVerificationChallenge` (OTP MAC plus link
+hash, one non-terminal challenge per user). A forward cutover migration
+terminalizes every open legacy verification token, preserves terminal history
+without inventing version values, adds the version column, and evolves/renames
+verification persistence into the challenge model; applied migrations are never edited.
+The verification password proof itself is a stateless encrypted cookie and has no table.
+
 ## 2. Database-wide invariants
 
 1. PostgreSQL is the only primary system of record.
@@ -135,7 +145,7 @@ profile.
 11. Retried creates and scheduled jobs use stable idempotency keys/uniqueness constraints.
 12. Application validation never substitutes for database constraints.
 13. No hard deletion of completed operational history or inventory ledger entries is allowed.
-14. Browser sessions and one-time identity tokens persist only cryptographic token hashes; raw session, verification, reset, and invitation tokens are never stored.
+14. Browser sessions and one-time identity tokens persist only cryptographic token hashes or MACs; raw session, verification, reset, and invitation tokens are never stored. Under `ADR-034` the verification challenge persists an OTP MAC (HMAC-SHA256) and a link hash (SHA-256) with no raw code or link, and the verification password proof is stateless and never persisted.
 15. Every organization has at least one active `OWNER`; one organization role belongs to each user/organization membership, while branch access for branch-only roles is represented by assignments.
 16. Purchase receiving uses THB only, exact Decimal values, `ROUND_HALF_UP` at an accepted persisted/display scale, and one atomic receipt/ledger/balance/cost/PO transition according to `ADR-026`.
 17. Sales follow `ADR-027`: a Sale exists only after atomic checkout completion, has
@@ -151,7 +161,7 @@ erDiagram
     ORGANIZATION_MEMBERSHIP ||--o{ BRANCH_ASSIGNMENT : grants
     BRANCH ||--o{ BRANCH_ASSIGNMENT : grants
     USER ||--o{ SESSION : has
-    USER ||--o{ EMAIL_VERIFICATION_TOKEN : verifies
+    USER ||--o{ EMAIL_VERIFICATION_CHALLENGE : verifies
     USER ||--o{ PASSWORD_RESET_TOKEN : resets
     ORGANIZATION ||--o{ INVITATION : issues
     INVITATION }o--o| USER : accepted_by
@@ -211,6 +221,9 @@ Required logical attributes:
 - Stable identifier
 - Normalized email
 - Argon2 password hash for MVP email/password identity
+- Credential version: positive `BIGINT`, initial 1, incremented by the
+  database on every password replacement (even to the same password); the
+  hash, `passwordChangedAt`, and version change together
 - Account status
 - Display name, nullable until the later required profile/onboarding flow, and optional phone
 - Created/updated timestamps
@@ -222,14 +235,23 @@ Constraints and indexes:
 - A non-null display name must contain non-whitespace content; registration must
   not synthesize a placeholder from the email.
 - Password hash is never selected into general user DTOs, logs, analytics, or AI data.
+- The credential version is positive and never decreases; the password hash,
+  `passwordChangedAt`, and version change together.
 - Index account status only if a proven query requires it.
 
 Lifecycle:
 
 - Registration creates an email/password account with `displayName` and
-  `emailVerifiedAt` set to `NULL`; it creates no verification-token record.
+  `emailVerifiedAt` set to `NULL` and `credentialVersion = 1`.
+- `ADR-034` (planned) makes registration atomically create the bound
+  verification challenge and prepare the real verification proof; the
+  implemented P2-M2-T01 baseline creates neither.
+- Every password replacement, reset, or any later accepted credential change
+  increments `credentialVersion` together with the hash and
+  `passwordChangedAt`.
 - P2-M2-T03 owns verification-token creation, resend, provider delivery, and
-  verification. Profile/onboarding later supplies the required display name.
+  verification in the implemented baseline. Profile/onboarding later supplies
+  the required display name.
 - Deactivation must preserve historical actor references.
 - Physical deletion/anonymization and retention require an accepted policy.
 
@@ -410,32 +432,82 @@ Constraints and lifecycle:
   logout is idempotent and no user-wide mutation may affect another user.
 - Index active-session lookup by token hash and user-wide revocation/query paths by user and expiry/revocation state.
 
-#### `EmailVerificationToken` and `PasswordResetToken`
+#### `EmailVerificationChallenge` and `PasswordResetToken`
 
-Purpose: single-use proof for email verification and password recovery.
+Purpose: persisted unified email-verification challenge (code plus link) and
+single-use password-recovery proof.
 
-Required logical attributes:
+The implemented `EmailVerificationToken` model (P2-M2-T03: 32-byte SHA-256
+hash, 24-hour expiry, link-only) remains the implemented baseline until the
+`ADR-034` cutover migration; its open rows are terminalized at cutover. The
+`ADR-034` target model is:
 
-- User identifier
-- Cryptographic token hash, unique for lookup
-- Issued, expiry, consumed, and replacement/revocation timestamps
+Required logical attributes (`EmailVerificationChallenge`):
+
+- Stable challenge UUID `id` and `userId`, restrictively referencing platform
+  `User`; no organization/tenant ownership column or authority
+- Immutable issuance `credentialVersion`, not an FK to the mutable user version
+- `otpMac`: HMAC-SHA256 over purpose/encoding, user ID, challenge ID, version,
+  and the six-digit code, keyed by an OTP-dedicated key of at least 32 bytes;
+  the raw code is never persisted
+- `linkTokenHash`: SHA-256 of the 32-random-byte base64url (43-character) link; the
+  raw link is never persisted
+- `otpKeyId` identifying the dedicated OTP key
+- `failedOtpAttempts` constrained to integers 0 through 5
+- `issuedAt`, `expiresAt`, `consumedAt`, `consumedVia` (OTP/link),
+  `replacedAt`, `revokedAt`, and narrow `revocationReason`
 - Created/updated timestamps
 
 Constraints and lifecycle:
 
-- Raw tokens are never persisted. Verification tokens expire after 24 hours; reset tokens expire after 30 minutes.
-- Each token is single-use. Resending verification replaces and invalidates the prior active verification token. A successful reset revokes all sessions.
-- P2-M2-T03 generates 32 random bytes and persists only SHA-256. Verification
-  and reset issuance lock the owning user row before replacing every open token
-  and inserting the fresh record, which serializes concurrent replacement.
-  Provider failure conditionally marks only the just-issued still-open token
-  revoked; a later replacement is never overwritten by compensation.
-- Verification completion conditionally consumes the open, unexpired token and
-  sets the active user's `emailVerifiedAt` in one transaction. Password reset
-  performs a read-only validity check before Argon2, then conditionally consumes
-  the still-valid token, updates `passwordHash`/`passwordChangedAt`, and revokes
-  all open sessions in one transaction. Any failed write rolls the entire reset
-  transaction back; no new session is created.
+- The code is 6 uniform ASCII digits with leading zeros allowed; the link is
+  32 random bytes base64url-encoded to 43 characters. Both share one
+  10-minute expiry from issuance.
+- `OPEN` permits both methods; `LINK_ONLY` disables OTP. Expiry is an
+  effective unusable state. `CONSUMED`, `REPLACED`, and `REVOKED` are terminal.
+  Unique `linkTokenHash` supports lookup; partial unique `userId` where all
+  terminal timestamps are null enforces one nonterminal challenge per user.
+  Index `(userId, expiresAt)` supports lifecycle lookup.
+- Checks enforce digest sizes for new rows, positive version, attempt bounds,
+  expiry after issuance, mutually exclusive terminal timestamps, valid terminal
+  time ordering, and consumption strictly before expiry.
+- Five durable wrong code comparisons move the challenge to `LINK_ONLY`; the
+  link survives. Either method consumes both.
+- Replacement locks the user row first, terminalizes the prior non-terminal
+  challenge as `REPLACED` (terminalizing expired open challenges), and
+  inserts the fresh challenge bound to the current `credentialVersion` in one
+  transaction.
+- Completion requires the current credential proof:
+  `proof.subject = challenge.userId = user.id` and
+  `proof.credentialVersion = challenge.credentialVersion = user.credentialVersion`, re-checked
+  under the user lock with fresh database time; the user must be `ACTIVE` and
+  unverified. Wrong well-formed code on an otherwise usable, matching challenge
+  increments attempts even without proof. Unknown/stale/terminal requests cannot
+  affect successors. Correct OTP without usable proof adds no failure; valid OTP
+  or link with unusable proof leaves the challenge unconsumed.
+- The verification password proof itself is stateless: an AES-256-GCM
+  encrypted cookie with a dedicated 32-byte key. No proof-specific persistence
+  or revocation row; live user status/version still invalidates its authority.
+- Cutover evolves existing verification persistence through a forward migration
+  and initializes current user versions to 1, without inventing prior generations.
+  Invalidate every legacy open link; preserve terminal history with absent
+  legacy-only version/OTP fields allowed only for terminal historical rows.
+  New nonterminal rows require complete version/OTP fields. No mixed old/new
+  live-token runtime or compatibility shim; never edit applied migrations.
+
+Required logical attributes (`PasswordResetToken`):
+
+- User identifier; unique cryptographic token hash.
+- Issued, expiry, consumed, replacement/revocation, and created/updated times.
+- Raw token is never persisted; retain the 32-byte CSPRNG/SHA-256 boundary,
+  single use, 30-minute expiry, and ACTIVE/verified-only eligibility.
+- Issuance locks user before replacing open reset material. Exact-token delivery
+  compensation cannot overwrite a successor.
+- Completion rejects invalid token state before Argon2 outside locks, then
+  locks user before token and rereads state. Atomically consume, update
+  `passwordHash`/`passwordChangedAt`/`credentialVersion`, invalidate open
+  verification material, and revoke all sessions. Failure rolls everything back;
+  completion never creates a session.
 
 #### `Invitation`
 
@@ -1227,9 +1299,10 @@ queries must still begin from authenticated organization membership.
 
 PostgreSQL directly enforces identity uniqueness, one membership per
 organization/user, one assignment per branch/user, branch-code uniqueness per
-organization, token-hash uniqueness, normalized email storage, the composite
-same-tenant relationships above, lifecycle/temporal checks, and restrictive
-foreign-key deletion.
+organization, token-hash uniqueness, one open verification challenge per user
+(partial unique), normalized email storage, the composite same-tenant
+relationships above, lifecycle/temporal checks, and restrictive foreign-key
+deletion.
 
 The application transaction/policy layer enforces invariants that
 cannot be represented safely by ordinary row constraints without duplicating
@@ -1237,8 +1310,9 @@ role state or adding fragile cross-row triggers: every organization retains at
 least one active `OWNER`; branch-only active memberships have at least one
 active assignment; organization-wide roles do not derive access from assignment
 rows; membership deactivation/role changes update affected access atomically;
-organization onboarding creates its first branch and OWNER atomically; token
-expiry durations use the accepted 24-hour, 30-minute, and seven-day values; and
+organization onboarding creates its first branch and OWNER atomically; verification
+challenges expire in ten minutes, reset tokens in 30 minutes, and invitations
+in seven days; and
 invitation acceptance creates membership/assignments/source/event state and
 consumes the invitation atomically. Same-actor replay is read-only and
 idempotent. Exact membership versions plus organization locks serialize full
@@ -1358,6 +1432,35 @@ lock before that Sale lock.
 Stock transfer is **DEFERRED FROM MVP** by `ADR-025`; no transfer transaction contract,
 record, or ledger source is defined. Do not infer it from example movement names.
 
+### 6.5 Verification and credential lifecycle (ADR-034, planned)
+
+Verification and credential mutations follow a fixed lock order and keep
+expensive work out of the lock:
+
+1. Lock order is USER first, then the challenge/token row. A preliminary
+   lookup is never treated as proof; the row is re-read after the lock with
+   fresh database time.
+2. Argon2 and provider calls stay outside locks. Verification dispatch runs
+   after commit and response completion, with ten-second timeout, no automatic
+   retry/outbox. Reset's existing provider lifecycle is unchanged; its narrowly
+   added transition is credential-version advancement and verification invalidation.
+3. All completion and attempt mutations are atomic in one transaction:
+   replacement terminalizes the prior non-terminal challenge as `REPLACED`
+   (terminalizing expired open challenges) and inserts the fresh challenge
+   bound to the current `credentialVersion`; completion conditionally consumes
+   the current challenge and sets `emailVerifiedAt`; wrong-code attempts
+   increment `failedOtpAttempts` and move the challenge to `LINK_ONLY` after five
+   durable wrong comparisons.
+4. Admitted pending-registration replacement atomically updates hash/timestamp/
+   version, supersedes open verification material, and creates matching successor
+   challenge and prepared proof; known delivery rejection changes none of them.
+   Reset updates hash/timestamp/version, invalidates verification material,
+   consumes its token, and revokes sessions atomically. No additional
+   application-session lifecycle is introduced by pending registration.
+5. Crypto preparation failure before commit rolls back; the proof cookie is
+   set only after commit. Provider failure conditionally revokes the exact
+   issued row, never a new successor or the previous password.
+
 ## 7. Concurrency strategy requirements
 
 The implementation may choose row locking, conditional/versioned updates, atomic SQL updates with affected-row checks, or another PostgreSQL-safe method. It must prove through integration tests that:
@@ -1413,6 +1516,7 @@ Indexes must be validated against actual queries and PostgreSQL plans; do not ad
 | Analytics aggregation | branch/organization and occurred-at fields on accepted completed facts |
 | Scheduled snapshots | scope key, period type/start, definition version |
 | AI report lookup | organization/branch scope, cadence/period, status |
+| Verification challenge lookup | `userId`, expiry/terminal state; partial unique index on one non-terminal challenge per user |
 
 Every unique constraint required for correctness is mandatory even if no direct UI query uses it.
 
@@ -1489,5 +1593,9 @@ The canonical definitions live in `BUILD_SPEC.md`:
   and persisted-snapshot timezone/boundary retention.
 - `OQ-017`/`OQ-018` are resolved for V1 by `ADR-033`: bounded schedule/catch-up,
   logical job identity, free-only provider retries/budget, provenance, and retention.
+- `ADR-034` (planned, not yet migrated) accepts the unified verification
+  challenge, the stateless verification password proof, the `credentialVersion`
+  increment, and the legacy open-link cutover; its schema, lock order, and
+  transaction behavior are defined above and remain unimplemented.
 - `OQ-019` audit scope affects operational support records.
 - `OQ-020` retention/recovery targets affect lifecycle.

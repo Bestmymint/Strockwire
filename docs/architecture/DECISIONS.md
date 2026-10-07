@@ -2300,6 +2300,316 @@ schema/store; P7-M2 owns provider, prompt, and idempotent job implementation;
 P7-M3 owns orchestration and persisted API/UI. `STOCKOUT_RISK` remains
 deferred/unassigned, and P0-M2-T05 remains unchecked.
 
+## ADR-034 — Require version-bound password and mailbox proof for OTP-first verification
+
+- **Date:** 2026-10-08
+- **Status:** Accepted; documentation contract only, schema/runtime implementation pending
+- **Authority:** Accepted `T02A-AUTH-VERIFICATION-ARCHITECTURE-03`
+
+### Context
+
+The implemented P2 authentication baseline separates registration from email
+issuance and verifies through a 24-hour link. T02A requires automatic initiation,
+OTP-first completion, and recovery without a durable preverification session.
+Credential-version binding alone cannot prevent pending-account pre-hijacking:
+a victim could receive the latest challenge for an attacker-installed password.
+Mailbox possession must therefore be paired with proof of the same current
+password generation. Normal same-browser registration must not ask twice for
+that password.
+
+### Superseded and extended clauses
+
+Historical ADR text remains unchanged. This ADR governs the accepted target;
+it does not claim that the current implementation already implements it.
+
+| Prior decision | Superseded or extended clause | Preserved boundary |
+| --- | --- | --- |
+| `ADR-013` Decision/Consequences | Extend cookie credential vocabulary with a verification-only encrypted proof; require current password-snapshot/version revalidation before issuing authenticated or verification authority | Application authentication remains opaque PostgreSQL-backed `Session`/`stockwise_session`, with existing rotation, expiry, logout, and no browser JWT/refresh-token/web-storage authentication |
+| `ADR-014` Decision/task ownership | Supersede verification's link-only 24-hour token and registration-without-delivery boundary with a unified ten-minute OTP/link challenge, automatic registration initiation, and two-proof completion | Provider abstraction, Resend/non-delivery selection, reset's 30 minutes, invitation's seven days, and their hash-only single-use boundaries |
+| `ADR-017` Decision/Consequences | Supersede verification issuance being absent from registration; extend pending duplicates with atomic password replacement/version advancement and matching challenge/proof | Email/password-only registration, nullable profile, exact password/Argon2 policy, generic public response, canonical-email uniqueness, five-per-15-minute registration limit |
+| `ADR-018` Decision/Consequences | Extend verification delivery budgeting to registration plus resend; add durable OTP attempts and share login's failure budget with the dedicated password-proof endpoint | Independent password-reset request budget, no reset-completion limiter, eligibility-independent charging, generic responses, and unresolved `OQ-020` |
+
+`ADR-015`, `ADR-016`, `ADR-019`, `ADR-020`, and `ADR-021` keep their verified-user,
+tenant, onboarding, invitation, and authorization boundaries. Reset eligibility
+remains ACTIVE and verified only. No unverified-reset or magic-link login is added.
+
+### Decision: three separate security concepts
+
+1. **Authenticated application session:** ordinary verified-user login creates
+   the existing hash-only PostgreSQL session and application cookie. Only this
+   concept establishes authentication for protected APIs.
+2. **Verification password-proof context:** installation/knowledge of one exact
+   password generation, scoped only to verification. No `Session` row,
+   `TrustedAuthenticationContext`, organization, membership, branch, role,
+   permission, or authenticated API authority.
+3. **Mailbox verification challenge:** OTP or link proves mailbox possession,
+   not identity authentication or password knowledge.
+
+Email verification requires both latter concepts while the user is ACTIVE and
+unverified, revalidated under the transaction lock:
+
+```text
+proof.subject = challenge.userId = user.id
+proof.credentialVersion = challenge.credentialVersion = user.credentialVersion
+```
+
+Mailbox possession alone MUST NOT activate an unproven current password.
+Verification never creates or rotates an authenticated application session.
+The post-verification destination is **Sign in**.
+
+### Credential version and unified challenge
+
+`User.credentialVersion` is the authoritative positive monotonic BIGINT,
+initially `1`. Every committed password replacement, even identical-password
+replacement, increments it together with `passwordHash`/`passwordChangedAt`.
+No client value is authority; no wrap/reset is permitted. Challenge issuance
+stores an immutable version; proof installation/verification establishes that
+same version. Resend/verification never advance or upgrade it.
+
+One challenge contains:
+
+- Six uniformly generated ASCII decimal digits, including leading zeros.
+- OTP HMAC-SHA-256 under a dedicated server-only key of at least 32 bytes;
+  unambiguous input binds purpose/encoding version, user ID, challenge ID,
+  credential version, and the exact code. Compare fixed-length MACs in constant
+  time. Raw OTP is never persisted; plain SHA-256 is insufficient for its small
+  search space under database-only compromise.
+- A separate existing 32-byte CSPRNG/base64url secure-link credential, persisted
+  only as SHA-256.
+- One absolute ten-minute expiry and five durable wrong OTP comparisons.
+
+Lifecycle: `OPEN` permits both methods; the fifth failed comparison transitions
+to `LINK_ONLY`, preserving the link until expiry. Expiry is unusable regardless
+of cleanup. Success consumes the whole challenge; `CONSUMED`, `REPLACED`, and
+`REVOKED` are terminal. Nothing revives. One nonterminal challenge per user is
+enforced by a partial unique index; issuance terminates expired open predecessors
+too. OTP requests bind email and challenge ID so old digits cannot select a
+successor. Either method's success invalidates both credentials.
+
+Wrong usable-challenge OTP comparisons count even without password proof.
+Invalid mailbox material returns generic invalid-code/token outcomes regardless
+of cookie validity. Only valid mailbox material may reveal
+`VERIFICATION_PASSWORD_PROOF_REQUIRED`; correct mailbox material with missing,
+invalid, phantom, expired, mismatched, or stale proof is not consumed and does
+not increment the failed-code count. This ordering avoids a real/phantom-cookie
+account oracle.
+
+### Stateless verification password proof
+
+Use **AES-256-GCM authenticated encryption**, not a readable signed claim set,
+JWT, opaque stored proof, or authenticated preverification session:
+
+- Dedicated 32-byte encryption key, isolated from OTP, session, reset, link,
+  analytics, and provider material and from other environments.
+- Fresh 12-byte CSPRNG nonce and full 16-byte authentication tag per issuance.
+- Versioned fixed-format encrypted claims: purpose, real/non-authorizing phantom
+  marker, subject UUID, credential version, issued-at, and expiry.
+- Absolute ten-minute lifetime; no sliding refresh or renewal from presenting
+  the cookie. No proof table or replay database/cache.
+- Associated data authenticates fixed purpose, configured public web origin,
+  and format/key-ID header; no algorithm negotiation.
+
+The fixed encoding is:
+
+```text
+base64url(format[1] | keyId[4] | nonce[12] | ciphertext[42] | tag[16])
+```
+
+The 42-byte payload is purpose[1], usable[1], UUID[16], version[8], issued-at[8],
+and expiry[8], with integer claims encoded unsigned big-endian (version must
+remain within positive signed BIGINT range). Total 75 bytes gives 100 unpadded
+base64url characters. Timestamps are epoch milliseconds. Encryption prevents
+stable subject/version claims from distinguishing real from phantom registration.
+The nonce supplies per-issuance randomness; no additional replay nonce claim
+or persisted replay counter is required.
+
+Reject unsupported/malformed encoding, unknown/retired-invalid key, wrong
+purpose/origin, authentication failure, invalid claim ranges/lifetime, issuance
+over five seconds in the future, or `now >= expiresAt`. Lifetime is exactly
+600,000 milliseconds for issuance and cannot exceed that on validation.
+Use fresh server/database time at completion, not client time.
+
+Keep current and previous proof keys. Retain a non-compromised previous key at
+least 605 seconds after its last issuance; do not rotate again so as to discard
+it early. Emergency removal deliberately invalidates proofs. Rotate before
+2^24 encryptions under a key, counting phantom issuance too. Fleet accounting
+and coordinated rotation are Phase 8 gates. Local/test isolated ephemeral keys
+may invalidate proofs on restart; login/password fallback recovers safely.
+Do not fall back to application-session or other credentials on key failure.
+
+### Cookie, transport, and client continuation
+
+`__Host-stockwise_verification_proof` is cookie-only: `HttpOnly`, **always**
+`Secure`, `SameSite=Strict`, `Path=/`, no `Domain`, absolute lifetime at most
+600 seconds with aligned `Max-Age`/`Expires`. Reject malformed or duplicate
+matching cookie values. Clear using the same attributes and expired lifetime.
+Never expose proof in JSON, URLs, local/session storage, or bearer headers.
+Test actual localhost Secure-cookie compatibility; use local HTTPS if needed,
+never remove `Secure`. This does not change the application-cookie development
+exception. The initial email GET needs no proof cookie; the same-origin POST does.
+
+Successful verification, ordinary verified login, and successful/idempotent
+current logout or successful authenticated logout-all clear the browser proof.
+Application revocation semantics remain unchanged; preserve multiple
+`Set-Cookie` headers. Clearing does not globally revoke stolen stateless copies:
+short expiry, live eligibility, version advancement, consumption, and key
+invalidation bound them. Replay within the lifetime is accepted narrowly.
+Tabs share one proof account per cookie jar; last response wins and may require
+password recovery. Devices can hold independent proofs for the same version.
+
+All proof-setting/using registration, login, fallback, resend, and completion
+POSTs require JSON, an exact configured public `Origin` (missing/null/mismatched
+is rejected), and rejection of cross-site Fetch Metadata before mutation,
+limiter charging, or cookies. No alternate CORS authority. Preserve existing
+logout protections; forbid cross-origin framing of the verification surface.
+
+Keep `/verify-email?token=<opaque-token>`. GET/scanners never consume or issue
+proof. Capture into component memory and scrub the URL immediately before
+unrelated redirects/telemetry; consume only through explicit JSON POST.
+Use `Referrer-Policy: no-referrer` and `Cache-Control: no-store` on the page/API.
+Redact sensitive URLs, bodies, Cookie/Set-Cookie headers, credentials, and
+provider payloads from logs, traces, analytics, and errors at every layer.
+Disable transactional click/open tracking where applicable. Initial URL
+exposure to mail/web infrastructure remains a residual; fragments require
+later real provider/client compatibility evidence before adoption.
+
+Only noncredential continuation `{version, canonicalEmail, challengeId, savedAt}`
+may use memory/sessionStorage, with a 30-minute UI retention limit. No password,
+OTP, raw link, proof, session token, or key. Normal register/login goes directly
+to OTP without email or password re-entry. Valid mailbox proof with absent
+password context offers inline current-password fallback; retain mailbox
+material only in memory. Browser reopen/lost state recovers through Login.
+Refresh does not resend or renew proof. Preserve shadcn/ui, Light/Dark, EN/TH,
+keyboard/accessibility, and responsive behavior.
+
+### Registration, login, resend, and reset
+
+Preserve email `.trim().toLowerCase()` and existing validation, exact 15–128
+Unicode-code-point passwords, and accepted Argon2id policy. All valid permitted
+registration paths perform the expensive hash before eligibility lookup.
+No existence pre-read before hashing or synthetic delay. Generic `202` always
+has the same body structure, same-format selector, and fresh same-shaped real
+or encrypted phantom proof cookie. Phantom claims have usable=false, a fresh
+random UUID subject, version `1`, and the same timestamp/encoding/key family;
+they cannot complete verification. Neither outcome asserts account creation,
+password change, or delivery.
+
+- **Initial admitted registration:** atomically create pending user/password,
+  version `1`, matching challenge, and prepare real proof. Emit cookie after
+  commit and initiate mail after response completion.
+- **Initial admission suppressed:** still create pending user/password/version,
+  matching challenge immediately `REVOKED / DELIVERY_SUPPRESSED`, and real proof
+  of the installed password. Send nothing; discard transient mailbox credentials.
+  Later login/resend recovers.
+- **ACTIVE/unverified duplicate admitted:** under user lock atomically replace
+  password, advance version/timestamp, supersede open material, create matching
+  successor, and prepare real proof.
+- **Duplicate admission suppressed:** no password/version/challenge change;
+  generic phantom continuation. Verified/disabled duplicates likewise never
+  mutate pending credentials or deliver.
+
+Prepare required cryptography before commit; failure rolls back credential
+mutation. Provider failure after commit never rolls back the password/version.
+
+Login and `POST /auth/verification-password-proof` share the existing five
+credential failures per canonical email per fixed 15-minute process-local
+window, using the same limiter instance. Wrong/missing credentials are generic
+`INVALID_CREDENTIALS` and count; correct disabled/ineligible credentials remain
+generic and non-counting. Missing accounts use the fixed dummy verifier.
+Success does not reset the window.
+
+Correct ACTIVE/unverified login returns `verification_required`, a real proof,
+and current usable selector or null; no Session, `stockwise_session` issuance/
+rotation/revocation, or automatic email. Correct ACTIVE/verified login retains
+ordinary authentication. Revalidate the password snapshot/version under the
+user lock before either authority; concurrent change fails closed.
+
+The dedicated password-proof fallback accepts only `{email,password}`, never
+creates an application session/challenge/mail, and uses real/dummy verification
+plus locked version revalidation. Correct pending credentials return accepted
+with real proof; correct verified credentials return the same accepted shape
+with phantom proof. It cannot turn cross-device completion into ordinary login.
+No public proof/status endpoint is introduced.
+
+Resend charges the shared verification-delivery budget and, if admitted,
+atomically issues against the current version after supersession. It never
+creates, refreshes, clears, or upgrades password proof. A stale proof stays stale.
+Known-flow email comes from continuation data; ineligible outcomes stay generic.
+
+Reset remains ACTIVE/verified-only, hash-only 30-minute single-use, with cheap
+token rejection before Argon2 and no authenticated session on completion.
+Its transaction additionally advances version and invalidates open verification
+material with password update, reset consumption, and all-session revocation.
+
+### Delivery, locking, and admission
+
+Registration retains five attempts per canonical email per 15 minutes.
+Registration-triggered verification and resend share three syntactically valid
+delivery requests per canonical email per fixed 15 minutes, charged before
+eligibility/provider work, storing only SHA-256-derived keys. Registration
+delivery-budget exhaustion remains generic `202`; explicit resend exhaustion
+returns `429`/`Retry-After`. Forgot-password keeps its independent three-request
+budget, and reset completion adds no limiter. OTP's five failures are durable,
+not reset by process restart; random/stale selectors cannot affect successors.
+
+Reserve capacity before pending duplicate replacement: at most 32 outstanding
+verification dispatch reservations per API process, no waiting queue. Known
+capacity rejection leaves existing material unchanged and stays generic.
+Delivery is after commit and response finish, ten-second timeout, no automatic
+retry/outbox. Track/catch promises, release reservations on every exit/abort,
+bound shutdown draining, and skip known stale/expired jobs before sending.
+Exact-challenge failure compensation cannot revoke successors or resurrect
+predecessors. Crash-window loss is accepted best effort; resend is recovery.
+Emails contain OTP plus secure link, ten-minute expiry, latest-request
+supersession wording, do-not-share guidance, and ignore-unsolicited guidance;
+never send password proof. Out-of-order arrivals do not change database authority.
+
+Canonical password/verification/reset lock order is **user first, challenge/
+token second**. Preliminary lookups prove nothing; reread after locking using
+fresh database time. No Argon2 or provider call under locks. Attempt transitions,
+completion plus `emailVerifiedAt`, duplicate replacement, and reset transitions
+are atomic. Competing OTP/link/registration/resend operations either serialize
+or fail closed; at most one verification success.
+
+### Alternatives and accepted consequences
+
+- Version-only mailbox completion was rejected: latest attacker-generated mail
+  can activate an attacker-known password. Both current-version proofs are needed.
+- A second password prompt on every verification was rejected for normal UX.
+  Short-lived installation/knowledge proof supplies the same requirement.
+- Stored opaque proof was rejected: adds lifecycle/cleanup state without a
+  demonstrated revocation need beyond current version/eligibility.
+- Readable signed claims were rejected for enumeration leakage; authenticated
+  encryption keeps real/phantom contents indistinguishable in public encoding.
+- OTP plain hashing was rejected for offline enumeration; HMAC separates
+  database-only compromise from the server key. Joint key/database compromise
+  remains outside that protection.
+- Fragment links remain unselected without delivery/client evidence.
+- External email atomicity, durable queue, and indefinite proof renewal are
+  unnecessary for the accepted pre-cloud best-effort scope.
+
+Proof-cookie theft alone is insufficient; combined mailbox/proof theft can
+verify within the window. HttpOnly does not neutralize same-origin XSS.
+Duplicate registration deliberately accepts request-bounded disruption over
+takeover, without a guaranteed maximum disruption duration. Mailbox controllers
+can legitimately re-register their own pending password; this is not MFA or
+protection against full mailbox/browser compromise.
+
+Required implementation acceptance includes pre-hijacking scenarios (old proof/
+latest challenge fails; mailbox-only fails; legitimate replacement succeeds;
+cross-device requires current password), phantom/error-ordering tests, crypto/
+cookie/Origin negatives, version/supersession/attempt/reset/compensation races,
+secret-safe telemetry, measured timing distributions, real browser transport/
+refresh/reopen/multiple-tab behavior, and localized accessible UX. No such runtime
+verification is claimed by recording this ADR.
+
+Fleet-wide rate limits, IP/network/global/provider controls, trusted proxy
+policy, production secret-manager/IAM integration, distributed key rotation/
+usage accounting, capacity/DoS targets, and reliable outbox remain Phase 8 under
+`OQ-015`/`OQ-020`. Single-process budgeting is not production-readiness approval.
+Schema/migration work is separately authorized next, before runtime cutover;
+legacy open links must be invalidated while preserving terminal history.
+
 ## 2. Explicitly superseded planning directions
 
 The current ADRs supersede these earlier, unimplemented ideas:

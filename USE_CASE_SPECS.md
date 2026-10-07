@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | Behavioral Source of Truth; Architecture Freeze v1 with explicit blockers |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-09-25 |
+| Last updated | 2026-10-08 |
 
 ## 1. How to use this document
 
@@ -30,7 +30,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-IAM-001 — Register with email and password
 
-- **Status:** Implemented by P2-M3-T01
+- **Status:** Historical implementation by P2-M2-T01; accepted `ADR-034` target (not runtime-implemented)
 - **Actor:** New user
 - **Preconditions:** The service is available; the submitted email may be new or already registered under the accepted normalization rule.
 - **Trigger:** The user submits the email/password registration form.
@@ -38,40 +38,63 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   1. The client validates basic form shape and submits over TLS.
   2. The API validates the required email and the 15–128 Unicode-code-point
      password without trimming, normalizing, truncating, or applying composition rules.
-  3. The API normalizes the email and checks uniqueness without leaking account details.
-  4. The API hashes the password with Argon2.
-  5. The API creates the user with `emailVerifiedAt = null` and
-     `displayName = null`; P2-M2-T01 creates no verification token and sends no email.
-  6. The API returns the same generic `202 Accepted` verification-next-step response for a new account and a canonical-email duplicate; registration alone does not create authenticated state, organization access, or branch access.
-- **Alternative flows:** Canonical-email duplicate and concurrent duplicate requests preserve exactly one account and receive the same public response as a new account. Verification-token creation, resend, provider integration/delivery, and verification are handled later by P2-M2-T03.
+  3. The API normalizes the email, consumes the shared signup/resend mail budget
+     before any account lookup, and hashes the password with Argon2 before the
+     eligibility lookup; no existence pre-read occurs before hashing.
+  4. Under the accepted `ADR-034` target (accepted, not runtime-implemented),
+     the API atomically creates the admitted user with credential version 1,
+     the bound unified mailbox challenge (6-digit code plus opaque link, one
+     10-minute expiry), and prepared real password proof. It sets the proof
+     cookie after commit; delivery begins after commit and response completion.
+     The historical implementation (superseded) created the user with
+     `emailVerifiedAt = null` and no verification token and sent no email; the
+     user first received a verification email only on a manual resend.
+  5. The API returns the same generic `202 Accepted` verification-next-step
+     response carrying the challenge identifier for a new account and a
+     canonical-email duplicate; registration alone does not create
+     authenticated state, organization access, or branch access.
+- **Alternative flows:** Canonical-email uniqueness preserves one account. An admitted ACTIVE/unverified duplicate installs the hash computed outside locks, advances password/version/timestamp, supersedes open material, and creates matching successor/proof atomically. Known quota/capacity suppression leaves duplicate credentials/challenge unchanged with phantom continuation. Verified/disabled duplicates never replace. Initial suppression still creates the user/version, bound revoked challenge, and real installation proof; later resend recovers.
 - **Error cases:** Invalid email/password; exhausted rate limit; database conflict or failure; hashing failure; request retry. Expected uniqueness conflicts are absorbed into the generic response. No plaintext password, email limiter key, raw database error, or internal error is logged/returned.
-- **Business rules:** Email/password is the only MVP sign-up method; Google login is future. Passwords allow whitespace and Unicode, have no character-class composition requirements, and are preserved exactly before Argon2id hashing. Breached-password screening is deferred. Five attempts per canonical email per 15 minutes are allowed by a deterministic process-local in-memory limiter; exhaustion returns `429` with `Retry-After`. Duplicate requests must not create multiple accounts.
+- **Business rules:** Email/password is the only MVP sign-up method; Google login is future. Passwords allow whitespace and Unicode, have no character-class composition requirements, and are preserved exactly before Argon2id hashing. Breached-password screening is deferred. Five registration attempts per canonical email per 15 minutes are allowed by a deterministic process-local in-memory limiter; exhaustion returns `429` with `Retry-After`. The shared mail budget is three valid requests per canonical email per 15 minutes across signup and verification resend; signup budget exhaustion still returns the generic `202`. Duplicate requests must not create multiple accounts.
 - **Authorization:** Public endpoint with abuse controls; creates no organization/branch privilege by itself.
-- **Expected result:** Exactly one unverified account exists for the canonical email and the public response does not reveal whether this request created it.
-- **Acceptance criteria:** PHC-encoded accepted Argon2id verifier stored; plaintext absent from storage/logs; duplicate and concurrent requests return the generic `202`; invalid input rejected; rate limiting and `Retry-After` tested; no verification token, email delivery, session, organization, or branch access created accidentally.
+- **Expected result:** A new canonical account is pending at version 1, or an eligible pending duplicate has a matching successor version; verified/disabled duplicates remain unchanged. The generic response reveals none of these distinctions.
+- **Acceptance criteria:** Exact Argon2/password policy, initial/suppressed creation, atomic eligible replacement, verified/disabled preservation, same-shaped real/phantom continuation, admission rollback, and concurrency are covered. No Argon2/provider call under locks; provider failure cannot roll back committed credentials. Normal continuation requires no email/password re-entry and creates no session or tenant access.
 
 ### UC-IAM-002 — Sign in with email and password
 
-- **Status:** Ready after identity foundation
+- **Status:** Existing P2-M2-T02 baseline; accepted `ADR-034` verification delta (not runtime-implemented)
 - **Actor:** Registered user
 - **Preconditions:** An account exists and is permitted to authenticate under verification/status policy.
 - **Trigger:** The user submits email and password.
 - **Main flow:**
   1. The API validates and normalizes input.
-  2. It locates the account using non-disclosing behavior.
-  3. It verifies the Argon2 password hash.
-  4. It checks account status/verification rules.
-  5. It atomically rotates a currently valid same-user session when present,
-     creates a fresh opaque server-side session, and sets its HttpOnly cookie.
-  6. It returns only the safe authenticated actor fields `id`, canonical `email`,
-     and nullable `displayName`. Organization/branch options are resolved by
-     later onboarding and access-management work.
-- **Alternative flows:** A verified account with incomplete profile/onboarding can authenticate but is limited to the next required setup route. Disabled or deauthorized users lose access when authorization is evaluated.
-- **Error cases:** Wrong email/password; unverified/disabled account; rate limit; expired/revoked state; database unavailable. Credential failure must not disclose whether an email exists.
-- **Business rules:** Branch selection is not embedded as permanent user ownership. The browser never receives a JWT/refresh token or writes auth state to web storage; only the session hash is stored server-side. Login permits five failed credential attempts per canonical email per fixed 15-minute process-local window. Only credential failures count; success does not reset an active window. After five failures, subsequent attempts receive `429` and `Retry-After`. Sessions have sliding 24-hour idle and fixed seven-day absolute expiry baselines; successful authenticated requests persist at most one activity touch per 15 minutes.
+  2. It reads the account's password hash and credential version as one
+     snapshot; missing accounts use the fixed dummy verifier.
+  3. It verifies the snapshot hash with Argon2 outside locks.
+  4. Under the accepted `ADR-034` target (accepted, not runtime-implemented),
+     it branches on account state: a correct password on an `ACTIVE`
+     unverified account rechecks the demonstrated snapshot version under
+     the user lock, and returns `202 verification_required` with the usable
+     challenge identifier or `null` and a real password-proof cookie; it
+     creates no session, no `stockwise_session` cookie, and no rotation or
+     incoming-session revocation, and sends no automatic email. A correct
+     password on a verified `ACTIVE` account revalidates the credential
+     version, atomically rotates a currently valid same-user session when
+     present, creates a fresh opaque server-side session, sets its HttpOnly
+     cookie, and clears the proof cookie. A wrong or missing credential, and
+     a correct credential on a disabled account, return the same generic
+     `401 INVALID_CREDENTIALS`; disabled-account failures do not count
+     against the window.
+  5. For a verified account it returns only the safe authenticated actor
+     fields `id`, canonical `email`, and nullable `displayName`.
+     Organization/branch options are resolved by later onboarding and
+     access-management work.
+- **Alternative flows:** A verified account with incomplete profile/onboarding can authenticate but is limited to the next required setup route. Disabled or deauthorized users lose access when authorization is evaluated. When the proof cookie is missing on a pending-verification account, the user re-proves the current password inline through the password-proof fallback, which shares the login limiter object, never creates a session, challenge, or email, and returns a real proof cookie for a correct pending-verification password and a phantom proof cookie for a correct verified password.
+- **Error cases:** Wrong email/password; disabled account with a correct credential; rate limit; expired/revoked state; database unavailable. A correct credential on an `ACTIVE` unverified account is not an error; it returns the `202 verification_required` result from the main flow. Credential failure must not disclose whether an email exists. Concurrent credential-version changes fail closed with the generic invalid result.
+- **Business rules:** Branch selection is not embedded as permanent user ownership. The browser never receives a JWT/refresh token or writes auth state to web storage; only the session hash is stored server-side. The password proof is a separate stateless mechanism: it is never a session, never tenant authority, and is cleared on verified-login success and sign-out. Login permits five failed credential attempts per canonical email per fixed 15-minute process-local window. Only credential failures count; success does not reset an active window. After five failures, subsequent attempts receive `429` and `Retry-After`. Sessions have sliding 24-hour idle and fixed seven-day absolute expiry baselines; successful authenticated requests persist at most one activity touch per 15 minutes.
 - **Authorization:** Public endpoint with the accepted login abuse control. Login establishes authentication only and returns no membership, role, organization, branch, permission, or authorization state.
-- **Expected result:** A valid user obtains authenticated state; invalid attempts have no side effect beyond safe security telemetry.
-- **Acceptance criteria:** Generic credential error; fixed-window rate-limit tests; secret-safe logs; hash-only session persistence; secure cookie/rotation/expiry/touch behavior; safe actor-only response; strategy-specific security tests pass.
+- **Expected result:** A verified user obtains authenticated state with the proof cleared; an unverified user obtains a verification-required result with a proof cookie and no session; invalid attempts have no side effect beyond safe security telemetry.
+- **Acceptance criteria:** Generic credential error for wrong, missing, and disabled credentials; fixed-window rate-limit tests; secret-safe logs; hash-only session persistence; secure cookie/rotation/expiry/touch behavior; safe actor-only response; pending-verification login returns `202` with a real proof cookie and no session; verified login rotates the session and clears the proof; fallback shares the login limiter and never creates a session, challenge, or email; strategy-specific security tests pass.
 
 ### UC-IAM-003 — Sign out
 
@@ -83,13 +106,14 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   1. The API validates the current authenticated state.
   2. It revokes the current opaque session.
   3. The client receives the cleared session cookie; an explicit all-session action revokes every session for the user.
-  4. Protected requests with the invalidated state fail.
+  4. Under the accepted `ADR-034` target (accepted, not runtime-implemented), a successful sign-out also clears the verification password-proof cookie; there is no global stateless revocation.
+  5. Protected requests with the invalidated state fail.
 - **Alternative flows:** An already expired/revoked session returns an idempotent successful result where safe.
 - **Error cases:** Network interruption; session store unavailable; replayed logout; malformed credential. The client must not claim server-side revocation if it did not occur.
-- **Business rules:** Ordinary sign-out revokes the current session only. User-wide session revocation is separately supported; password reset also revokes every user session.
+- **Business rules:** Ordinary sign-out revokes the current session only. User-wide session revocation is separately supported; password reset also revokes every user session. Clearing the proof cookie on successful sign-out is a bounded side effect of the sign-out response and does not weaken the existing logout CSRF behavior.
 - **Authorization:** Authenticated or safely idempotent for an already invalid session.
-- **Expected result:** The revoked opaque session can no longer access protected resources.
-- **Acceptance criteria:** Current/all-session revocation, expiry, and cookie cleanup are tested; repeated logout is safe; no other user's sessions are affected.
+- **Expected result:** The revoked opaque session can no longer access protected resources, and the proof cookie is cleared on success.
+- **Acceptance criteria:** Current/all-session revocation, expiry, and cookie cleanup are tested; repeated logout is safe; no other user's sessions are affected; the proof cookie is cleared on successful sign-out.
 
 ### UC-IAM-004 — Complete profile and organization onboarding
 
@@ -145,31 +169,87 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-IAM-007 — Verify an email/password account
 
-- **Status:** Implemented by P2-M2-T03
+- **Status:** Historical implementation by P2-M2-T03; accepted `ADR-034` target (not runtime-implemented)
 - **Actor:** Registered email/password user
-- **Preconditions:** Registration may have created an active unverified account; account existence is not public information.
-- **Trigger:** The user requests/resends verification or submits the opaque token from the delivered link.
-- **Main flow:** A syntactically valid resend consumes the independent per-email limiter before lookup. For an eligible active unverified account, the API locks the user, replaces the prior open token, stores only the fresh 32-byte token's SHA-256 hash with 24-hour expiry, and asks the provider abstraction to deliver it. Completion hashes the submitted token and atomically consumes it while setting `emailVerifiedAt`.
-- **Alternative flows:** The resend endpoint is also initial issuance. Missing, verified, or disabled accounts and provider failure return the same generic `202`; provider failure conditionally revokes the just-issued token. Concurrent resend leaves one open token, and concurrent completion succeeds at most once.
-- **Error cases:** Malformed email/token; expired, consumed, revoked, replaced, or random token; provider/database failure; exhausted limiter. Raw token/hash/provider details never enter public errors or logs.
-- **Business rules:** Three syntactically valid resend requests per canonical email per fixed 15-minute process-local window; attempt four returns `429` and deterministic `Retry-After`. Counting is eligibility/provider independent and uses a SHA-256-derived key. This does not resolve `OQ-020`.
+- **Preconditions:** Registration may have created an active unverified account with a bound unified mailbox challenge; account existence is not public information.
+- **Trigger:** The user requests/resends verification, submits the 6-digit code with the password proof, or submits the opaque link token.
+- **Main flow:** The accepted, not-yet-implemented `ADR-034` target requires mailbox proof (valid OTP OR link) AND password proof. Under user-first/challenge-second locks, require `proof.subject = challenge.userId = user.id` and `proof.credentialVersion = challenge.credentialVersion = user.credentialVersion`, ACTIVE unverified eligibility, and fresh expiry checks. Atomically consume the shared challenge and set `emailVerifiedAt`, then clear proof/continuation and offer Sign in; never create a session. `/verify-email?token=opaque` GET captures the token in memory and immediately scrubs history before redirect/telemetry, never consumes or issues proof; completion requires explicit same-origin JSON POST. Resend replaces mailbox material only after admission and never modifies proof.
+- **Alternative flows:** A valid OTP or link with missing/invalid/expired/phantom/stale/mismatched proof returns `401 VERIFICATION_PASSWORD_PROOF_REQUIRED` without consumption; establish current password inline and retry while mailbox material remains usable. Correct OTP in this case adds no failure. Wrong comparisons count even without proof; the fifth transitions to `LINK_ONLY`, leaving link usable until expiry. Concurrent completion succeeds at most once. The historical P2 implementation used a 24-hour link-only token; that is not the target.
+- **Error cases:** Malformed email/code/token returns `400` (`INVALID_VERIFICATION_CODE`/`INVALID_TOKEN`) regardless of proof state; expired, consumed, revoked, replaced, or random code/token; missing/phantom/stale password proof on a valid mail returns `401` without consumption; provider/database failure; exhausted mail budget. Raw code/token/hash/provider details never enter public errors or logs. There is no proof/status endpoint.
+- **Business rules:** The shared mail budget is three syntactically valid requests per canonical email per fixed 15-minute process-local window across signup and resend (shared); attempt four on explicit resend returns `429` with deterministic `Retry-After`, while a signup whose budget is exhausted still returns the generic `202`. Counting is eligibility/provider independent and uses a SHA-256-derived key. The OTP wrong-comparison counter is independent of the mail budget. Both code and link share one 10-minute one-expiry. This does not resolve `OQ-020`.
 - **Authorization:** Public, account-safe endpoints with no organization/branch privilege.
-- **Expected result:** An eligible account becomes verified exactly once, or the public response remains non-disclosing.
-- **Acceptance criteria:** Hash-only storage, 24-hour expiry, replacement, provider compensation, replay/expiry/random/concurrency, limiter, and leakage tests pass.
+- **Expected result:** An eligible account becomes verified exactly once when both proofs are valid, or the public response remains non-disclosing.
+- **Acceptance criteria:** OTP HMAC/link hash-only storage, ten-minute expiry, current subject/version matching, mailbox-first error ordering, durable five-attempt `LINK_ONLY`, single-use/replacement/compensation, and pre-hijacking scenarios A–D are covered. Exercise duplicate/resend/OTP/link/reset races; public resend cannot upgrade proof, and no session results from completion.
 
 ### UC-IAM-008 — Recover an email/password credential
 
-- **Status:** Implemented by P2-M2-T03
+- **Status:** Implemented by P2-M2-T03; reset narrow behavior updated to the accepted `ADR-034` target (not runtime-implemented)
 - **Actor:** Email/password user who cannot use the current password
-- **Preconditions:** Account may or may not exist; only an active verified account is eligible for delivery.
+- **Preconditions:** Account may or may not exist; only an `ACTIVE` verified account is eligible for delivery.
 - **Trigger:** The user requests recovery and later submits the opaque token with an exact-policy new password.
-- **Main flow:** A syntactically valid request consumes its independent per-email limiter before lookup. An eligible account receives a fresh hash-only 30-minute token after row-serialized replacement. Completion rejects invalid token state before Argon2, hashes the exact 15–128-code-point password with the centralized hasher, then atomically consumes the token, updates the password, and revokes all user sessions.
-- **Alternative flows:** Existing, missing, unverified, disabled, non-delivered, and provider-failed requests return the same generic `202`; provider failure conditionally revokes the issued token. Completion creates no session and does not log the user in.
-- **Error cases:** Malformed email/token/password; expired, consumed, revoked, replaced, or random token; provider/database/Argon2 failure; exhausted request limiter. Transaction failure preserves prior password, token, and sessions.
-- **Business rules:** Recovery request uses the same three-per-15-minute SHA-256-derived canonical-email contract as resend. Reset completion has no MVP limiter; distributed/IP/global/provider controls remain in `OQ-020`.
+- **Main flow:** A syntactically valid request consumes its own independent per-email limiter before lookup. An eligible `ACTIVE` verified account receives a fresh hash-only 30-minute token after row-serialized replacement. Completion rejects invalid token state before Argon2, hashes the exact 15–128-code-point password with the centralized hasher, then atomically consumes the token, updates the password, increments the credential version, invalidates any open verification challenge, and revokes all user sessions.
+- **Alternative flows:** Existing, missing, unverified, disabled, non-delivered, and provider-failed requests return the same generic `202`; provider failure conditionally revokes the issued token. Completion creates no session and does not log the user in. A reset of a verified account invalidates any open verification challenge and, because it increments the credential version, any password proof bound to the prior version is rejected (pre-hijacking).
+- **Error cases:** Malformed email/token/password; expired, consumed, revoked, replaced, or random token; provider/database/Argon2 failure; exhausted request limiter. Transaction failure preserves prior password, version, token, and sessions.
+- **Business rules:** Recovery request keeps its own independent three-per-15-minute SHA-256-derived canonical-email limiter (it is not part of the shared signup/resend mail budget). Reset completion has no MVP limiter; distributed/IP/global/provider controls remain in `OQ-020`.
 - **Authorization:** Public account-safe request/completion endpoints.
-- **Expected result:** One valid token changes the password and invalidates every prior session, without revealing account existence.
-- **Acceptance criteria:** Generic responses, hash-only 30-minute token, exact password policy, pre-Argon2 rejection, atomic reset/session revocation, replay/concurrency/provider/rollback/leakage tests pass.
+- **Expected result:** One valid token changes the password, increments the credential version, invalidates any open verification challenge, and invalidates every prior session, without revealing account existence.
+- **Acceptance criteria:** Generic responses, hash-only 30-minute token, exact password policy, pre-Argon2 rejection, `ACTIVE` verified-only eligibility, atomic reset with credential-version increment and open-challenge invalidation, session revocation, replay/concurrency/provider/rollback/leakage tests pass.
+
+### ADR-034 verification and recovery target (accepted, not runtime-implemented)
+
+The accepted `ADR-034` target defines the verification and recovery behavior
+for the use cases above. It is accepted but not yet runtime-implemented.
+Cryptographic, key-management, and envelope details are owned by `ADR-034` and
+are referenced, not duplicated, here.
+
+- **Three concepts.** (1) The ordinary opaque PostgreSQL-backed
+  `stockwise_session` application authentication is unchanged. (2) A stateless
+  verification password proof: it creates no session row, no
+  `TrustedAuthenticationContext`, and grants no tenant authority. (3) A
+  persisted unified mailbox challenge bound to the user's credential version.
+- **Dual proof.** Valid OTP or secure link plus current-version password proof
+  must match both subject and issuance/current credential version under lock.
+  Mailbox-only and older-version proof cannot verify an attacker-installed
+  successor password. Current-password fallback is required across devices.
+- **Credential version.** Positive BIGINT `User.credentialVersion` starts at 1.
+  Every committed password replacement atomically increments it with
+  `passwordHash` and `passwordChangedAt`; no client version is authoritative.
+- **Unified challenge.** One 6-digit code and one opaque link per challenge
+  share a single 10-minute expiry. The most recently requested challenge
+  invalidates the older one. Five durable wrong code comparisons downgrade the
+  challenge to link-only (the link survives); either method consumes both.
+- **Password proof cookie.** The proof is a stateless encrypted cookie with a
+  dedicated key, a 10-minute absolute lifetime (no sliding), and no JSON,
+  URL, web-storage, or bearer transport. It is set only by registration that
+  actually installs a password and by a correct password login or fallback; a
+  suppressed duplicate receives a same-sized phantom proof with no authority.
+  Resend never creates, refreshes, clears, or upgrades the proof. A successful
+  verification, an ordinary verified login, and a successful sign-out clear
+  the proof; there is no global stateless revocation.
+- **Frontend smooth flow.** After registration or login the user proceeds
+  directly to OTP without email/password re-entry. Valid mailbox proof with
+  unusable password proof offers inline fallback.
+  Reopening Login and supplying the correct password on an unverified account
+  returns the verification flow with
+  no session. A page refresh does not auto-issue a proof. The flow supports
+  the existing Light/Dark themes and English/Thai with the existing accessible
+  shadcn direction.
+- **Privacy and delivery.** Sensitive verification data (codes, tokens, proof
+  cookies, and submitted passwords) is redacted from all logs, errors, traces,
+  and analytics. The verification page uses no-referrer and no-store, and the
+  link token is captured into memory with a history replacement before any
+  redirect or telemetry; the link URL carries no fragment. Transactional
+  tracking is disabled where applicable. The provider is contacted only after
+  commit and response finish with a 10-second timeout, no automatic retry, and
+  no outbox; crash loss is best-effort resend recovery.
+- **CSRF recovery.** Proof-setting and proof-using endpoints (register,
+  login, fallback, resend, completion) require the exact configured origin and
+  reject cross-site requests before quota, mutation, or cookie changes, with
+  no CORS. The existing logout CSRF behavior is not weakened.
+- **Scope.** The local, single-process limits described in these use cases
+  remain the MVP boundary; distributed, IP-aware, global, provider-wide,
+  proxy-trust, multi-instance, production-DoS, and long-term telemetry
+  controls remain open under `OQ-020` and Phase 8.
 
 ### UC-BR-001 — Manage branches
 
