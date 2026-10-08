@@ -310,11 +310,12 @@ trusted state from PostgreSQL and call this policy before mutation or exposure.
 
 ### 6.1 Authentication and scope selection
 
-`ADR-034` is the accepted T02A verification target; schema/runtime implementation
-is pending. The implemented P2 baseline remains registration without delivery
-and link-only verification. Those historical task boundaries are not the target
-contract below. Ordinary application authentication, onboarding, authorization,
-invitations, and reset eligibility retain their existing boundaries.
+`ADR-034` is implemented by T02A's synchronized schema/backend/security
+cutover. The final web OTP/continuation flow remains a separate task.
+Historical P2 registration-without-delivery and link-only verification are
+no longer backend compatibility paths. Ordinary application authentication,
+onboarding, authorization, invitations, and reset eligibility retain their
+existing boundaries.
 
 Identity owns three distinct security concepts:
 

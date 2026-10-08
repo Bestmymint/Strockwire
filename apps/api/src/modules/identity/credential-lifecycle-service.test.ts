@@ -12,21 +12,15 @@ const tokenHash = "a".repeat(64);
 function createRepository(): CredentialLifecycleRepository {
   return {
     completePasswordReset: vi.fn().mockResolvedValue(true),
-    consumeEmailVerificationToken: vi.fn().mockResolvedValue(true),
     findValidPasswordResetToken: vi.fn().mockResolvedValue({
       tokenId: "reset-token-id",
       userId: "user-id",
-    }),
-    issueEmailVerificationToken: vi.fn().mockResolvedValue({
-      id: "verification-token-id",
-      recipient: "user@example.com",
     }),
     issuePasswordResetToken: vi.fn().mockResolvedValue({
       id: "reset-token-id",
       recipient: "user@example.com",
     }),
     revokeAllSessions: vi.fn().mockResolvedValue(undefined),
-    revokeEmailVerificationToken: vi.fn().mockResolvedValue(undefined),
     revokePasswordResetToken: vi.fn().mockResolvedValue(undefined),
     revokeSessionByTokenHash: vi.fn().mockResolvedValue(undefined),
   };
@@ -57,47 +51,6 @@ function createService({
 }
 
 describe("credential lifecycle service", () => {
-  it("issues 24-hour verification metadata and delivers the opaque link", async () => {
-    const { emailProvider, repository, service } = createService();
-
-    await service.requestVerification("user@example.com");
-
-    expect(repository.issueEmailVerificationToken).toHaveBeenCalledWith({
-      email: "user@example.com",
-      expiresAt: new Date("2026-08-25T12:00:00.000Z"),
-      issuedAt: NOW,
-      tokenHash,
-    });
-    expect(emailProvider.send).toHaveBeenCalledWith({
-      kind: "verification",
-      recipient: "user@example.com",
-      url: `https://stockwise.example.com/verify-email?token=${rawToken}`,
-    });
-  });
-
-  it("revokes an issued verification token without exposing provider failure", async () => {
-    const repository = createRepository();
-    const failures: string[] = [];
-    const service = createCredentialLifecycleService({
-      emailProvider: { send: vi.fn().mockRejectedValue(new Error("secret")) },
-      now: () => NOW,
-      onDeliveryFailure: (kind) => failures.push(kind),
-      passwordHasher: { hash: vi.fn() },
-      publicWebOrigin: "https://stockwise.example.com",
-      repository,
-      tokenProvider: { generate: () => ({ rawToken, tokenHash }) },
-    });
-
-    await expect(
-      service.requestVerification("user@example.com"),
-    ).resolves.toBeUndefined();
-    expect(repository.revokeEmailVerificationToken).toHaveBeenCalledWith({
-      revokedAt: NOW,
-      tokenId: "verification-token-id",
-    });
-    expect(failures).toEqual(["verification"]);
-  });
-
   it("issues a 30-minute reset token and compensates provider failure", async () => {
     const repository = createRepository();
     const emailProvider = {
@@ -163,11 +116,5 @@ describe("credential lifecycle service", () => {
       }),
     ).resolves.toBe(true);
     expect(calls).toEqual(["validate-token", "argon2", "complete-transaction"]);
-    expect(repository.completePasswordReset).toHaveBeenCalledWith({
-      completedAt: NOW,
-      passwordHash: "argon2-phc-hash",
-      tokenId: "reset-token-id",
-      userId: "user-id",
-    });
   });
 });

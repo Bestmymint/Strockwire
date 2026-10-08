@@ -10,25 +10,18 @@ import {
 } from "./one-time-token.ts";
 
 const MAX_TOKEN_GENERATION_ATTEMPTS = 3;
-const VERIFICATION_LIFETIME_MILLISECONDS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_LIFETIME_MILLISECONDS = 30 * 60 * 1000;
 
-type DeliveryFailureKind =
-  | "password_reset"
-  | "password_reset_compensation"
-  | "verification"
-  | "verification_compensation";
+type DeliveryFailureKind = "password_reset" | "password_reset_compensation";
 
 export interface CredentialLifecycleService {
   logoutAll(userId: string): Promise<void>;
   logoutCurrent(tokenHash: string): Promise<void>;
   requestPasswordReset(email: string): Promise<void>;
-  requestVerification(email: string): Promise<void>;
   resetPassword(input: {
     newPassword: string;
     rawToken: string;
   }): Promise<boolean>;
-  verifyEmail(rawToken: string): Promise<boolean>;
 }
 
 function tokenUrl(origin: string, path: string, rawToken: string): string {
@@ -55,67 +48,6 @@ export function createCredentialLifecycleService({
   tokenProvider: OneTimeTokenProvider;
 }): CredentialLifecycleService {
   return {
-    async requestVerification(email) {
-      const issuedAt = now();
-      const expiresAt = new Date(
-        issuedAt.getTime() + VERIFICATION_LIFETIME_MILLISECONDS,
-      );
-
-      for (
-        let attempt = 0;
-        attempt < MAX_TOKEN_GENERATION_ATTEMPTS;
-        attempt += 1
-      ) {
-        const token = tokenProvider.generate();
-
-        try {
-          const issued = await repository.issueEmailVerificationToken({
-            email,
-            expiresAt,
-            issuedAt,
-            tokenHash: token.tokenHash,
-          });
-          if (issued === null) {
-            return;
-          }
-
-          try {
-            await emailProvider.send({
-              kind: "verification",
-              recipient: issued.recipient,
-              url: tokenUrl(publicWebOrigin, "/verify-email", token.rawToken),
-            });
-          } catch {
-            onDeliveryFailure("verification");
-            try {
-              await repository.revokeEmailVerificationToken({
-                revokedAt: now(),
-                tokenId: issued.id,
-              });
-            } catch {
-              onDeliveryFailure("verification_compensation");
-            }
-          }
-          return;
-        } catch (error: unknown) {
-          if (
-            error instanceof OneTimeTokenCollisionError &&
-            attempt < MAX_TOKEN_GENERATION_ATTEMPTS - 1
-          ) {
-            continue;
-          }
-          throw error;
-        }
-      }
-    },
-
-    async verifyEmail(rawToken) {
-      return repository.consumeEmailVerificationToken({
-        consumedAt: now(),
-        tokenHash: hashOneTimeToken(rawToken),
-      });
-    },
-
     async requestPasswordReset(email) {
       const issuedAt = now();
       const expiresAt = new Date(

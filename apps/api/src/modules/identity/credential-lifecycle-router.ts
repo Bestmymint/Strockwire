@@ -12,14 +12,26 @@ import {
   serializeClearedSessionCookie,
 } from "./session-cookie.ts";
 import { hashSessionToken } from "./session-token.ts";
+import type { VerificationService } from "./verification-service.ts";
+import { serializeClearedVerificationProofCookie } from "./verification-security.ts";
+import type { VerificationResponseDelivery } from "./verification-delivery.ts";
 
 const REQUEST_ID_HEADER = "X-Request-Id";
+// Check media type independently of body presence; payload validation stays separate.
+const JSON_CONTENT_TYPE = /^application\/json(?:\s*;|$)/i;
 
 const emailRequestSchema = z.object({ email: canonicalEmailSchema }).strict();
 const tokenSchema = z.string().refine(isOneTimeToken);
 const tokenRequestSchema = z.object({ token: tokenSchema }).strict();
 const resetPasswordRequestSchema = z
   .object({ newPassword: passwordSchema, token: tokenSchema })
+  .strict();
+const verificationCodeRequestSchema = z
+  .object({
+    email: canonicalEmailSchema,
+    challengeId: z.uuid(),
+    code: z.string().regex(/^[0-9]{6}$/),
+  })
   .strict();
 
 function requestId(response: Response): string {
@@ -64,16 +76,75 @@ function accepted(response: Response): void {
     meta: { requestId: requestId(response) },
   });
 }
+export function attachVerificationDelivery(
+  response: Response,
+  delivery: VerificationResponseDelivery | null,
+): void {
+  if (delivery === null) return;
+  if (response.destroyed) {
+    delivery.abort();
+    return;
+  }
+  response.once("finish", () => delivery.finish());
+  response.once("close", () => {
+    if (!response.writableFinished) delivery.abort();
+  });
+}
+
+function verificationCompletion(
+  response: Response,
+  result: "verified" | "invalid" | "proof_required",
+  invalidCode: boolean,
+): void {
+  if (result === "invalid") {
+    if (!invalidCode) {
+      invalidToken(response);
+      return;
+    }
+    response.status(400).json({
+      error: {
+        code: "INVALID_VERIFICATION_CODE",
+        message: "The verification code is invalid or expired.",
+        requestId: requestId(response),
+      },
+    });
+    return;
+  }
+  if (result === "proof_required") {
+    response.status(401).json({
+      error: {
+        code: "VERIFICATION_PASSWORD_PROOF_REQUIRED",
+        message: "Current password proof is required.",
+        requestId: requestId(response),
+      },
+    });
+    return;
+  }
+  response.append("Set-Cookie", serializeClearedVerificationProofCookie());
+  response.status(200).json({
+    data: { status: "verified" },
+    meta: { requestId: requestId(response) },
+  });
+}
 
 export function createCrossSiteRequestProtection(
   publicWebOrigin: string,
+  strict = false,
 ): RequestHandler {
   return (request, response, next) => {
+    if (strict) {
+      response.setHeader("Cache-Control", "no-store");
+      response.setHeader("Referrer-Policy", "no-referrer");
+    }
     const fetchSite = request.get("Sec-Fetch-Site");
     const origin = request.get("Origin");
     let originMatches = true;
 
-    if (origin !== undefined) {
+    if (strict) {
+      originMatches =
+        origin === publicWebOrigin &&
+        JSON_CONTENT_TYPE.test(request.get("Content-Type")?.trim() ?? "");
+    } else if (origin !== undefined) {
       try {
         originMatches = new URL(origin).origin === publicWebOrigin;
       } catch {
@@ -102,18 +173,22 @@ export function createCredentialLifecycleRouter({
   lifecycleService,
   passwordResetLimiter,
   publicWebOrigin,
-  verificationResendLimiter,
+  verificationService,
 }: {
   authenticationMiddleware: RequestHandler;
   configuration: SessionConfiguration;
   lifecycleService: CredentialLifecycleService;
   passwordResetLimiter: EmailRequestLimiter;
   publicWebOrigin: string;
-  verificationResendLimiter: EmailRequestLimiter;
+  verificationService: VerificationService;
 }): Router {
   const router = Router();
   const crossSiteRequestProtection =
     createCrossSiteRequestProtection(publicWebOrigin);
+  const strictProtection = createCrossSiteRequestProtection(
+    publicWebOrigin,
+    true,
+  );
 
   router.post(
     "/auth/logout",
@@ -128,6 +203,10 @@ export function createCredentialLifecycleRouter({
         response.setHeader(
           "Set-Cookie",
           serializeClearedSessionCookie(configuration.secureCookie),
+        );
+        response.append(
+          "Set-Cookie",
+          serializeClearedVerificationProofCookie(),
         );
         response.status(204).end();
       } catch (error: unknown) {
@@ -159,6 +238,10 @@ export function createCredentialLifecycleRouter({
           "Set-Cookie",
           serializeClearedSessionCookie(configuration.secureCookie),
         );
+        response.append(
+          "Set-Cookie",
+          serializeClearedVerificationProofCookie(),
+        );
         response.status(204).end();
       } catch (error: unknown) {
         next(error);
@@ -166,48 +249,76 @@ export function createCredentialLifecycleRouter({
     },
   );
 
-  router.post("/auth/verification-resend", async (request, response, next) => {
-    const parsed = emailRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      validationError(response);
-      return;
-    }
+  router.post(
+    "/auth/verification-resend",
+    strictProtection,
+    async (request, response, next) => {
+      const parsed = emailRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        validationError(response);
+        return;
+      }
+      try {
+        const result = await verificationService.resend(parsed.data.email);
+        if (result.outcome === "limited") {
+          rateLimited(response, result.retryAfterSeconds);
+          return;
+        }
+        attachVerificationDelivery(response, result.delivery);
+        response.status(202).json({
+          data: {
+            status: "accepted",
+            verification: { challengeId: result.challengeId },
+          },
+          meta: { requestId: requestId(response) },
+        });
+      } catch (error: unknown) {
+        next(error);
+      }
+    },
+  );
 
-    const limit = verificationResendLimiter.consume(parsed.data.email);
-    if (!limit.allowed) {
-      rateLimited(response, limit.retryAfterSeconds);
-      return;
-    }
+  router.post(
+    "/auth/verify-email-code",
+    strictProtection,
+    async (request, response, next) => {
+      const parsed = verificationCodeRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        verificationCompletion(response, "invalid", true);
+        return;
+      }
+      try {
+        const result = await verificationService.completeCode({
+          ...parsed.data,
+          cookieHeader: request.headers.cookie,
+        });
+        verificationCompletion(response, result, true);
+      } catch (error: unknown) {
+        next(error);
+      }
+    },
+  );
 
-    try {
-      await lifecycleService.requestVerification(parsed.data.email);
-      accepted(response);
-    } catch (error: unknown) {
-      next(error);
-    }
-  });
-
-  router.post("/auth/verify-email", async (request, response, next) => {
-    const parsed = tokenRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      invalidToken(response);
-      return;
-    }
-
-    try {
-      if (!(await lifecycleService.verifyEmail(parsed.data.token))) {
+  router.post(
+    "/auth/verify-email",
+    strictProtection,
+    async (request, response, next) => {
+      const parsed = tokenRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
         invalidToken(response);
         return;
       }
-
-      response.status(200).json({
-        data: { status: "verified" },
-        meta: { requestId: requestId(response) },
-      });
-    } catch (error: unknown) {
-      next(error);
-    }
-  });
+      try {
+        const result = await verificationService.completeLink({
+          token: parsed.data.token,
+          cookieHeader: request.headers.cookie,
+        });
+        verificationCompletion(response, result, false);
+      } catch (error: unknown) {
+        next(error);
+      }
+    },
+  );
 
   router.post("/auth/forgot-password", async (request, response, next) => {
     const parsed = emailRequestSchema.safeParse(request.body);

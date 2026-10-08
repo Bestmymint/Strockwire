@@ -1,4 +1,3 @@
-import { Router } from "express";
 import {
   afterAll,
   afterEach,
@@ -9,7 +8,6 @@ import {
   vi,
 } from "vitest";
 
-import { createApp } from "../../app.ts";
 import type { ApiLogger } from "../../logger.ts";
 import { startApiServer, type RunningApiServer } from "../../server.ts";
 import { loadTestDatabaseEnvironment } from "../../test/database-environment.ts";
@@ -17,16 +15,15 @@ import {
   createTestPrismaClient,
   resetTestDatabase,
 } from "../../test/database-harness.ts";
-import { createPrismaAuthenticationSessionRepository } from "./authentication-repository.ts";
-import { createAuthenticationMiddleware } from "./authentication-context.ts";
-import { createPrismaCredentialLifecycleRepository } from "./credential-lifecycle-repository.ts";
-import { createCredentialLifecycleRouter } from "./credential-lifecycle-router.ts";
-import { createCredentialLifecycleService } from "./credential-lifecycle-service.ts";
-import { createEmailRequestLimiter } from "./email-request-limiter.ts";
 import {
   createRecordingEmailProvider,
   type IdentityEmailProvider,
 } from "./email-provider.ts";
+import type { RecordingIdentityEmailProvider } from "./email-provider.ts";
+import {
+  createIdentityBackendTestFixture,
+  type IdentityBackendTestFixture,
+} from "../../test/identity-backend-fixture.ts";
 import {
   argon2PasswordHasher,
   hashPassword,
@@ -36,14 +33,11 @@ import {
 import type { SessionConfiguration } from "./session-configuration.ts";
 import { SESSION_COOKIE_NAME } from "./session-cookie.ts";
 import { hashSessionToken } from "./session-token.ts";
-import {
-  hashOneTimeToken,
-  secureOneTimeTokenProvider,
-} from "./one-time-token.ts";
+import { hashOneTimeToken } from "./one-time-token.ts";
 
 const environment = loadTestDatabaseEnvironment();
 const prisma = createTestPrismaClient(environment);
-const NOW = new Date("2026-08-24T12:00:00.000Z");
+const NOW = new Date();
 const DAY_MILLISECONDS = 24 * 60 * 60 * 1000;
 const configuration: SessionConfiguration = {
   absoluteTimeoutMilliseconds: 7 * DAY_MILLISECONDS,
@@ -65,6 +59,7 @@ afterAll(async () => {
 
 describe("credential lifecycle with PostgreSQL", () => {
   let runningServer: RunningApiServer | undefined;
+  let fixture: IdentityBackendTestFixture | undefined;
 
   beforeEach(async () => {
     await resetTestDatabase(environment);
@@ -72,6 +67,8 @@ describe("credential lifecycle with PostgreSQL", () => {
 
   afterEach(async () => {
     await runningServer?.stop();
+    await fixture?.delivery.drain();
+    fixture = undefined;
     runningServer = undefined;
   });
 
@@ -123,50 +120,17 @@ describe("credential lifecycle with PostgreSQL", () => {
         entries.push({ bindings, level: "info", message });
       },
     };
-    const repository = createPrismaCredentialLifecycleRepository(prisma);
-    const authenticationMiddleware = createAuthenticationMiddleware({
-      configuration,
-      now,
-      repository: createPrismaAuthenticationSessionRepository(prisma),
-    });
-    const lifecycleService = createCredentialLifecycleService({
+    fixture = createIdentityBackendTestFixture(prisma, {
       emailProvider,
+      logger,
       now,
-      onDeliveryFailure(kind) {
-        entries.push({
-          bindings: { deliveryType: kind },
-          level: "error",
-          message: "identity email delivery failed",
-        });
-      },
       passwordHasher,
-      publicWebOrigin: "http://localhost:3000",
-      repository,
-      tokenProvider: secureOneTimeTokenProvider,
+      configuration,
     });
-    const apiRouter = Router();
-    apiRouter.use(
-      createCredentialLifecycleRouter({
-        authenticationMiddleware,
-        configuration,
-        lifecycleService,
-        passwordResetLimiter: createEmailRequestLimiter(),
-        publicWebOrigin: "http://localhost:3000",
-        verificationResendLimiter: createEmailRequestLimiter(),
-      }),
-    );
-    apiRouter.get(
-      "/protected",
-      authenticationMiddleware,
-      (_request, response) => {
-        response.status(200).json({ status: "authenticated" });
-      },
-    );
-    runningServer = await startApiServer(createApp({ apiRouter, logger }), {
+    runningServer = await startApiServer(fixture.app, {
       host: "127.0.0.1",
       port: 0,
     });
-
     return {
       emailProvider,
       entries,
@@ -179,6 +143,7 @@ describe("credential lifecycle with PostgreSQL", () => {
       body: JSON.stringify(body),
       headers: {
         "content-type": "application/json",
+        Origin: "http://localhost:3000",
         ...(cookie === undefined ? {} : { cookie }),
       },
       method: "POST",
@@ -186,7 +151,7 @@ describe("credential lifecycle with PostgreSQL", () => {
   }
 
   function deliveredToken(
-    provider: ReturnType<typeof createRecordingEmailProvider>,
+    provider: RecordingIdentityEmailProvider,
     index = -1,
   ) {
     const message = provider.messages.at(index);
@@ -200,84 +165,7 @@ describe("credential lifecycle with PostgreSQL", () => {
     return token;
   }
 
-  it("issues, replaces, consumes, and rejects replayed verification tokens", async () => {
-    const user = await seedUser({ verified: false });
-    const provider = createRecordingEmailProvider();
-    const { url } = await startApplication({ emailProvider: provider });
-
-    expect(
-      (await post(url, "/auth/verification-resend", { email: user.email }))
-        .status,
-    ).toBe(202);
-    const firstRawToken = deliveredToken(provider);
-    expect(
-      (await post(url, "/auth/verification-resend", { email: user.email }))
-        .status,
-    ).toBe(202);
-    const secondRawToken = deliveredToken(provider);
-    const records = await prisma.emailVerificationToken.findMany({
-      orderBy: { createdAt: "asc" },
-    });
-
-    expect(records).toHaveLength(2);
-    expect(records[0]).toMatchObject({ replacedAt: NOW, userId: user.id });
-    expect(records[1]).toMatchObject({
-      expiresAt: new Date(NOW.getTime() + DAY_MILLISECONDS),
-      replacedAt: null,
-      userId: user.id,
-    });
-    expect(records[0]?.tokenHash).toBe(hashOneTimeToken(firstRawToken));
-    expect(records[1]?.tokenHash).toBe(hashOneTimeToken(secondRawToken));
-    expect(JSON.stringify(records)).not.toContain(firstRawToken);
-    expect(
-      (await post(url, "/auth/verify-email", { token: firstRawToken })).status,
-    ).toBe(400);
-    expect(
-      (await post(url, "/auth/verify-email", { token: secondRawToken })).status,
-    ).toBe(200);
-    expect(
-      (await post(url, "/auth/verify-email", { token: secondRawToken })).status,
-    ).toBe(400);
-    expect(
-      await prisma.user.findUnique({ where: { id: user.id } }),
-    ).toMatchObject({ emailVerifiedAt: NOW });
-  });
-
-  it("rejects expired, revoked, and random verification tokens", async () => {
-    const user = await seedUser({ verified: false });
-    const expired = "E".repeat(43);
-    const revoked = "V".repeat(43);
-    await prisma.emailVerificationToken.createMany({
-      data: [
-        {
-          expiresAt: new Date(NOW.getTime() - 1),
-          issuedAt: new Date(NOW.getTime() - DAY_MILLISECONDS),
-          tokenHash: hashOneTimeToken(expired),
-          userId: user.id,
-        },
-        {
-          expiresAt: new Date(NOW.getTime() + DAY_MILLISECONDS),
-          issuedAt: new Date(NOW.getTime() - 1_000),
-          revokedAt: NOW,
-          tokenHash: hashOneTimeToken(revoked),
-          userId: user.id,
-        },
-      ],
-    });
-    const { url } = await startApplication();
-
-    for (const token of [expired, revoked, "R".repeat(43)]) {
-      expect((await post(url, "/auth/verify-email", { token })).status).toBe(
-        400,
-      );
-    }
-    expect(
-      await prisma.user.findUnique({ where: { id: user.id } }),
-    ).toMatchObject({ emailVerifiedAt: null });
-  });
-
-  it("keeps provider failures generic while consuming all resend attempts", async () => {
-    await seedUser({ verified: false });
+  it("keeps reset-provider failures generic while consuming every independent request attempt", async () => {
     await seedUser({ email: "reset@example.com" });
     const provider: IdentityEmailProvider = {
       send: vi.fn().mockRejectedValue(new Error("raw provider detail")),
@@ -285,25 +173,6 @@ describe("credential lifecycle with PostgreSQL", () => {
     const { entries, url } = await startApplication({
       emailProvider: provider,
     });
-
-    const responses = [];
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-      responses.push(
-        await post(url, "/auth/verification-resend", {
-          email: "user@example.com",
-        }),
-      );
-    }
-    expect(responses.map((response) => response.status)).toEqual([
-      202, 202, 202, 429,
-    ]);
-    expect(responses[3]?.headers.get("retry-after")).toBe("900");
-    expect(provider.send).toHaveBeenCalledTimes(3);
-    expect(
-      await prisma.emailVerificationToken.count({
-        where: { revokedAt: { not: null } },
-      }),
-    ).toBe(3);
 
     const resetResponses = [];
     for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -317,7 +186,7 @@ describe("credential lifecycle with PostgreSQL", () => {
       202, 202, 202, 429,
     ]);
     expect(resetResponses[3]?.headers.get("retry-after")).toBe("900");
-    expect(provider.send).toHaveBeenCalledTimes(6);
+    expect(provider.send).toHaveBeenCalledTimes(3);
     expect(
       await prisma.passwordResetToken.count({
         where: { revokedAt: { not: null } },
@@ -349,9 +218,13 @@ describe("credential lifecycle with PostgreSQL", () => {
       }
       expect(statuses).toEqual([202, 202, 202, 429]);
     }
+    await fixture!.delivery.drain();
     expect(
-      provider.messages.filter((message) => message.kind === "verification"),
-    ).toHaveLength(3);
+      provider.messages
+        .filter((message) => message.kind === "verification")
+        .every((message) => message.recipient === "unverified@example.com"),
+    ).toBe(true);
+    expect(await prisma.emailVerificationChallenge.count()).toBe(3);
 
     for (const email of ["verified@example.com", "missing-reset@example.com"]) {
       const statuses = [];
@@ -424,6 +297,14 @@ describe("credential lifecycle with PostgreSQL", () => {
     const { entries, url } = await startApplication({
       emailProvider: provider,
     });
+    const preparedChallenge = fixture!.security.prepare(
+      user.id,
+      user.credentialVersion,
+      new Date(),
+    );
+    await prisma.emailVerificationChallenge.create({
+      data: { ...preparedChallenge.challenge, failedOtpAttempts: 0 },
+    });
     await post(url, "/auth/forgot-password", { email: user.email });
     const rawResetToken = deliveredToken(provider);
     const newPassword = "  new Unicode password 🔒  ";
@@ -440,9 +321,20 @@ describe("credential lifecycle with PostgreSQL", () => {
       true,
     );
     expect(updatedUser.passwordHash).not.toBe(newPassword);
-    expect(updatedUser.passwordChangedAt).toEqual(NOW);
+    expect(updatedUser.credentialVersion).toBe(user.credentialVersion + 1n);
+    expect(updatedUser.passwordChangedAt.getTime()).toBeGreaterThanOrEqual(
+      NOW.getTime(),
+    );
     expect(await prisma.passwordResetToken.findFirst()).toMatchObject({
-      consumedAt: NOW,
+      consumedAt: updatedUser.passwordChangedAt,
+    });
+    expect(
+      await prisma.emailVerificationChallenge.findUniqueOrThrow({
+        where: { id: preparedChallenge.challenge.id },
+      }),
+    ).toMatchObject({
+      revocationReason: "PASSWORD_RESET",
+      revokedAt: updatedUser.passwordChangedAt,
     });
     expect(
       await prisma.session.findMany({
@@ -453,11 +345,11 @@ describe("credential lifecycle with PostgreSQL", () => {
       expect.arrayContaining([
         expect.objectContaining({
           revocationReason: "password_reset",
-          revokedAt: NOW,
+          revokedAt: updatedUser.passwordChangedAt,
         }),
         expect.objectContaining({
           revocationReason: "password_reset",
-          revokedAt: NOW,
+          revokedAt: updatedUser.passwordChangedAt,
         }),
       ]),
     );
@@ -484,6 +376,38 @@ describe("credential lifecycle with PostgreSQL", () => {
     ).toBe(400);
     expect(JSON.stringify(entries)).not.toContain(newPassword);
     expect(JSON.stringify(entries)).not.toContain(rawResetToken);
+  });
+
+  it("advances the version on a successful reset to the same plaintext password", async () => {
+    const user = await seedUser();
+    const provider = createRecordingEmailProvider();
+    const { url } = await startApplication({ emailProvider: provider });
+    await post(url, "/auth/forgot-password", { email: user.email });
+    const token = deliveredToken(provider);
+    const response = await post(url, "/auth/reset-password", {
+      token,
+      newPassword: "current-password-long-enough",
+    });
+    expect(response.status).toBe(200);
+    const after = await prisma.user.findUniqueOrThrow({
+      where: { id: user.id },
+    });
+    expect(after.credentialVersion).toBe(user.credentialVersion + 1n);
+    expect(
+      await verifyPassword(after.passwordHash, "current-password-long-enough"),
+    ).toBe(true);
+    expect(
+      (
+        await post(url, "/auth/reset-password", {
+          token,
+          newPassword: "current-password-long-enough",
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (await prisma.user.findUniqueOrThrow({ where: { id: user.id } }))
+        .credentialVersion,
+    ).toBe(2n);
   });
 
   it("rejects invalid reset states before Argon2 and rolls back transaction failure", async () => {
@@ -535,6 +459,14 @@ describe("credential lifecycle with PostgreSQL", () => {
       ).status,
     ).toBe(400);
     expect(passwordHasher.hash).not.toHaveBeenCalled();
+    const challenge = fixture!.security.prepareChallenge(
+      user.id,
+      user.credentialVersion,
+      new Date(),
+    );
+    await prisma.emailVerificationChallenge.create({
+      data: { ...challenge.challenge, failedOtpAttempts: 0 },
+    });
 
     const originalUser = await prisma.user.findUniqueOrThrow({
       where: { id: user.id },
@@ -552,50 +484,27 @@ describe("credential lifecycle with PostgreSQL", () => {
     expect(failure.status).toBe(500);
     expect(
       await prisma.user.findUnique({ where: { id: user.id } }),
-    ).toMatchObject({ passwordHash: originalUser.passwordHash });
+    ).toMatchObject({
+      passwordHash: originalUser.passwordHash,
+      credentialVersion: originalUser.credentialVersion,
+    });
     expect(
       await prisma.passwordResetToken.findUnique({
         where: { tokenHash: hashOneTimeToken(active) },
       }),
     ).toMatchObject({ consumedAt: null });
     expect(
+      await prisma.emailVerificationChallenge.findUniqueOrThrow({
+        where: { id: challenge.challenge.id },
+      }),
+    ).toMatchObject({ revokedAt: null, revocationReason: null });
+    expect(
       await prisma.session.findUnique({ where: { id: futureSession.id } }),
     ).toMatchObject({ revokedAt: null });
   });
 
   it("serializes concurrent token replacement and permits one reset completion", async () => {
-    const user = await seedUser({ verified: false });
-    const provider = createRecordingEmailProvider();
-    const { url } = await startApplication({ emailProvider: provider });
-    const resends = await Promise.all([
-      post(url, "/auth/verification-resend", { email: user.email }),
-      post(url, "/auth/verification-resend", { email: user.email }),
-    ]);
-    expect(resends.map((response) => response.status)).toEqual([202, 202]);
-    expect(
-      await prisma.emailVerificationToken.count({
-        where: { consumedAt: null, replacedAt: null, revokedAt: null },
-      }),
-    ).toBe(1);
-
-    const activeVerification = provider.messages.at(-1);
-    if (activeVerification === undefined) {
-      throw new Error("Expected a verification message.");
-    }
-    const verificationToken = new URL(activeVerification.url).searchParams.get(
-      "token",
-    );
-    if (verificationToken === null) {
-      throw new Error("Expected a verification token.");
-    }
-    const verifications = await Promise.all([
-      post(url, "/auth/verify-email", { token: verificationToken }),
-      post(url, "/auth/verify-email", { token: verificationToken }),
-    ]);
-    expect(verifications.map((response) => response.status).sort()).toEqual([
-      200, 400,
-    ]);
-
+    const user = await seedUser();
     const resetProvider = createRecordingEmailProvider();
     await runningServer?.stop();
     runningServer = undefined;

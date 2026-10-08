@@ -5,6 +5,7 @@ import {
   createRecordingEmailProvider,
   type IdentityEmailProvider,
 } from "./email-provider.ts";
+import type { RecordingIdentityEmailProvider } from "./email-provider.ts";
 import { createPrismaMembershipAccessRepository } from "./membership-access-repository.ts";
 import { createMembershipAccessService } from "./membership-access-service.ts";
 import { secureOneTimeTokenProvider } from "./one-time-token.ts";
@@ -74,9 +75,7 @@ function service(
   };
 }
 
-function invitationToken(
-  provider: ReturnType<typeof createRecordingEmailProvider>,
-): string {
+function invitationToken(provider: RecordingIdentityEmailProvider): string {
   const message = provider.messages.at(-1);
   if (message === undefined) throw new Error("Invitation message missing.");
   const token = new URL(message.url).searchParams.get("token");

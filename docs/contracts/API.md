@@ -108,7 +108,7 @@ The project must choose one consistent boundary between `409` and `422` during A
 
 Browser authentication uses opaque server-side PostgreSQL sessions. The API sets the cryptographically random session token only in the `stockwise_session` HttpOnly, host-only, `Path=/`, `SameSite=Lax` cookie (`Secure` in production, not local HTTP); PostgreSQL stores only its cryptographic hash. The browser does not receive a JWT or refresh token and must not use `localStorage` or `sessionStorage` for authentication. Session idle and absolute timeouts are configurable (sliding 24 hours and fixed seven days as the baseline), and valid activity persists at most one touch per 15 minutes. The API validates expiry, revocation, and active verified account state for authentication; membership and authorization remain a separate server-resolved boundary.
 
-`ADR-034` adds the following accepted, not-yet-implemented target:
+`ADR-034` implements the following backend contract:
 verification password proof, delivered only in the
 `__Host-stockwise_verification_proof` cookie. It is an AES-256-GCM encrypted,
 origin-bound, ten-minute absolute proof of password installation/knowledge for
@@ -264,16 +264,16 @@ requests.
 
 | Method/path | Auth | Request | Response | Key validation/errors | Status |
 | --- | --- | --- | --- | --- | --- |
-| `POST /auth/register` | Public | Email and password only | `202 Accepted` `data {status: "accepted", nextStep: "verify_email", verification: {challengeId}}`; sets the verification proof cookie (real or phantom); no session, organization, or branch created | Invalid input/rate limit/database or hashing failure; canonical-email duplicates receive the same public response as new accounts | Planned `ADR-034`; implemented baseline P2-M2-T01 |
-| `POST /auth/login` | Public | Email and password only | Verified account: `200`; sets a fresh opaque session cookie and returns only safe actor `id`, canonical `email`, and nullable `displayName`. Pending account: `202` `data {status: "verification_required", verification: {challengeId}}` with a real proof cookie and no session | Strict validation; generic `401 INVALID_CREDENTIALS` for wrong/missing/disabled accounts; accepted login rate limit; safe database/hashing failure | Planned `ADR-034`; implemented baseline P2-M2-T02 |
-| `POST /auth/logout` | Safely idempotent | None | `204`; revokes a valid current session, clears its cookie, and clears the proof cookie on success | Missing/malformed/unknown/expired/revoked state is idempotent; dependency failure does not clear cookie | Implemented by P2-M2-T03; `ADR-034` adds proof-cookie clearing |
-| `POST /auth/logout-all` | Authenticated | None | `204`; revokes all sessions for current user and clears current application/proof cookies on success | Authentication/dependency/cross-site-request failure | Implemented P2-M2-T03; proof cleanup planned `ADR-034` |
-| `POST /auth/verify-email-code` | Public | `{ "email", "challengeId", "code" }` plus a valid proof cookie | `200` `data {status: "verified"}`; clears the proof cookie | Generic `400 INVALID_VERIFICATION_CODE` for invalid mail regardless of proof; `401 VERIFICATION_PASSWORD_PROOF_REQUIRED` only for valid mail with missing/phantom/stale proof; both proofs mandatory | Planned `ADR-034` |
-| `POST /auth/verify-email` | Public | `{ "token" }` plus a valid proof cookie | `200` `data {status: "verified"}`; clears the proof cookie | Generic `400 INVALID_TOKEN` for invalid mail regardless of proof; `401 VERIFICATION_PASSWORD_PROOF_REQUIRED` only for valid mail with missing/phantom/stale proof; both proofs mandatory | Planned `ADR-034`; implemented baseline P2-M2-T03 |
-| `POST /auth/verification-resend` | Public | `{ "email": "account@example.com" }` | `202` `data {status: "accepted", verification: {challengeId}}`; never creates, refreshes, or clears a proof cookie | Validation; shared mail budget three per 15 minutes per canonical email; explicit `429` with `Retry-After`; provider failure remains non-disclosing | Planned `ADR-034`; implemented baseline P2-M2-T03 |
+| `POST /auth/register` | Public | Email and password only | `202 Accepted` `data {status: "accepted", nextStep: "verify_email", verification: {challengeId}}`; sets the verification proof cookie (real or phantom); no session, organization, or branch created | Invalid input/rate limit/database or hashing failure; canonical-email duplicates receive the same public response as new accounts | Implemented T02A `ADR-034` |
+| `POST /auth/login` | Public | Email and password only | Verified account: `200`; sets a fresh opaque session cookie and returns only safe actor `id`, canonical `email`, and nullable `displayName`. Pending account: `202` `data {status: "verification_required", nextStep: "verify_email", verification: {challengeId}}` with a real proof cookie and no session | Strict validation; generic `401 INVALID_CREDENTIALS` for wrong/missing/disabled accounts; accepted login rate limit; safe database/hashing failure | Implemented T02A `ADR-034`; verified-session behavior preserved |
+| `POST /auth/logout` | Safely idempotent | None | `204`; revokes a valid current session, clears its cookie, and clears the proof cookie on success | Missing/malformed/unknown/expired/revoked state is idempotent; dependency failure does not clear cookie | Implemented P2-M2-T03 with T02A `ADR-034` proof cleanup |
+| `POST /auth/logout-all` | Authenticated | None | `204`; revokes all sessions for current user and clears current application/proof cookies on success | Authentication/dependency/cross-site-request failure | Implemented P2-M2-T03 with T02A `ADR-034` proof cleanup |
+| `POST /auth/verify-email-code` | Public | `{ "email", "challengeId", "code" }` plus a valid proof cookie | `200` `data {status: "verified"}`; clears the proof cookie | Generic `400 INVALID_VERIFICATION_CODE` for invalid mail regardless of proof; `401 VERIFICATION_PASSWORD_PROOF_REQUIRED` only for valid mail with missing/phantom/stale proof; both proofs mandatory | Implemented T02A `ADR-034` |
+| `POST /auth/verify-email` | Public | `{ "token" }` plus a valid proof cookie | `200` `data {status: "verified"}`; clears the proof cookie | Generic `400 INVALID_TOKEN` for invalid mail regardless of proof; `401 VERIFICATION_PASSWORD_PROOF_REQUIRED` only for valid mail with missing/phantom/stale proof; both proofs mandatory | Implemented T02A `ADR-034`; no live legacy-link compatibility |
+| `POST /auth/verification-resend` | Public | `{ "email": "account@example.com" }` | `202` `data {status: "accepted", verification: {challengeId}}`; never creates, refreshes, or clears a proof cookie | Validation; shared mail budget three per 15 minutes per canonical email; explicit `429` with `Retry-After`; provider failure remains non-disclosing | Implemented T02A `ADR-034` |
 | `POST /auth/forgot-password` | Public | `{ "email": "account@example.com" }` | Generic `202`; creates/replaces and delivers only for an eligible account | Validation; accepted three-per-15-minute limit; provider failure remains non-disclosing | Implemented by P2-M2-T03 |
-| `POST /auth/reset-password` | Public | `{ "token": "opaque-token", "newPassword": "exact-value" }` | `200` reset result; atomically consumes token, updates password, increments credential version, invalidates open challenges, and revokes all sessions | Generic `400 INVALID_TOKEN`; password validation; safe dependency failure | Implemented by P2-M2-T03; `ADR-034` adds version increment and open-challenge invalidation |
-| `POST /auth/verification-password-proof` | Public | `{ "email", "password" }` | `202` `data {status: "accepted"}`; sets a real proof cookie for a correct pending account and a phantom proof cookie for a correct verified account; never creates a session, challenge, or mail | Same login limiter object; generic `401 INVALID_CREDENTIALS` for wrong/missing/disabled | Planned `ADR-034` |
+| `POST /auth/reset-password` | Public | `{ "token": "opaque-token", "newPassword": "exact-value" }` | `200` reset result; atomically consumes token, updates password, increments credential version, invalidates open challenges, and revokes all sessions | Generic `400 INVALID_TOKEN`; password validation; safe dependency failure | Implemented P2-M2-T03 with T02A `ADR-034` version/challenge invalidation |
+| `POST /auth/verification-password-proof` | Public | `{ "email", "password" }` | `202` `data {status: "accepted"}`; sets a real proof cookie for a correct pending account and a phantom proof cookie for a correct verified account; never creates a session, challenge, or mail | Same login limiter object; generic `401 INVALID_CREDENTIALS` for wrong/missing/disabled | Implemented T02A `ADR-034` |
 | `GET /me` | Authenticated | None | Safe profile and onboarding status | Authentication required | Planned after identity foundation |
 | `PATCH /me/profile` | Authenticated | Required display name; optional phone | Updated safe profile | Validation, stale/conflict | Planned after identity foundation |
 | `GET /me/organizations` | Authenticated | Pagination if needed | Accessible organization summaries | Authentication required | Planned |
@@ -529,9 +529,9 @@ options belong to later onboarding and access-management work.
   10 minutes, and serializes replacement by locking the user row first. Every
   prior non-terminal challenge is terminalized as `REPLACED` (expired open
   challenges are terminalized when replaced) before the new challenge is
-  created. Resend never creates, refreshes, clears, or upgrades a proof. The
-  implemented P2-M2-T03 baseline instead issues a 24-hour link-only token;
-  under `ADR-034` completion requires both proofs (valid mail plus a valid
+  created. Resend never creates, refreshes, clears, or upgrades a proof.
+  The synchronized T02A backend replaces historical 24-hour link-only
+  verification; completion requires both proofs (valid mail plus valid password
   proof) and
   conditionally consumes the challenge and sets `emailVerifiedAt` in one
   transaction; replay and concurrent duplicate completion produce one success
@@ -543,9 +543,9 @@ options belong to later onboarding and access-management work.
   accepted Argon2id PHC password hash/`passwordChangedAt`, increments
   `credentialVersion`, invalidates the user's open verification challenge, and
   revokes every open user session as `password_reset` in one transaction. It
-  does not create a session or log the user in. The implemented P2-M2-T03
-  baseline performs the same flow without the version increment or challenge
-  invalidation.
+  does not create a session or log the user in. The historical P2-M2-T03
+  implementation omitted the version increment and challenge invalidation;
+  the synchronized T02A backend now implements both.
 - Verification-resend successes use exactly `202` with
   `data {status: "accepted", verification: {challengeId}}` for eligible,
   missing, already verified, disabled, non-delivered, and provider-failed
@@ -664,7 +664,8 @@ and the password proof.
   immediately before redirects/telemetry. Consumption requires the user's
   explicit same-origin JSON POST, never scanner GET or automatic page load.
   The page and API require `Referrer-Policy: no-referrer` and
-  `Cache-Control: no-store`. Redact sensitive query/cookie/body/header values
+  `Cache-Control: no-store`, including malformed/oversized JSON errors handled
+  before authentication routers. Redact sensitive query/cookie/body/header values
   from logs, errors, traces, and analytics. Disable transactional click/open tracking
   where applicable. The link has no fragment.
 - Email: contains the code and the link with the 10-minute expiry. The most

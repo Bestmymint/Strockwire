@@ -23,6 +23,8 @@ import {
   hashSessionToken,
   secureSessionTokenProvider,
 } from "./session-token.ts";
+import { createPrismaVerificationRepository } from "./verification-repository.ts";
+import { testVerificationSecurity } from "../../test/identity-backend-fixture.ts";
 
 interface LogEntry {
   bindings: Record<string, unknown>;
@@ -96,11 +98,14 @@ describe("login and authenticated sessions with PostgreSQL", () => {
       passwordVerifier: argon2PasswordVerifier,
       repository,
       tokenProvider: secureSessionTokenProvider,
+      verificationRepository: createPrismaVerificationRepository(prisma),
+      security: testVerificationSecurity(),
     });
     const apiRouter = createLoginRouter({
       configuration,
       limiter: createLoginLimiter(),
       loginService,
+      publicWebOrigin: "http://localhost:3000",
     });
     const app = createApp({ apiRouter, logger });
     runningServer = await startApiServer(app, {
@@ -124,6 +129,7 @@ describe("login and authenticated sessions with PostgreSQL", () => {
       body: JSON.stringify({ email, password }),
       headers: {
         "content-type": "application/json",
+        Origin: "http://localhost:3000",
         ...(cookie === undefined ? {} : { cookie }),
       },
       method: "POST",
@@ -137,7 +143,10 @@ describe("login and authenticated sessions with PostgreSQL", () => {
 
     const response = await login(url, " USER@EXAMPLE.COM ", password);
     const responseText = await response.text();
-    const setCookie = response.headers.get("set-cookie") ?? "";
+    const setCookie =
+      response.headers
+        .getSetCookie()
+        .find((value) => value.startsWith(`${SESSION_COOKIE_NAME}=`)) ?? "";
     const rawToken = readSessionCookie(setCookie);
     const sessions = await prisma.session.findMany();
 
@@ -157,13 +166,17 @@ describe("login and authenticated sessions with PostgreSQL", () => {
     expect(rawToken).not.toBeNull();
     expect(sessions).toHaveLength(1);
     expect(sessions[0]).toMatchObject({
-      absoluteExpiresAt: new Date(NOW.getTime() + 7 * DAY_MILLISECONDS),
-      idleExpiresAt: new Date(NOW.getTime() + DAY_MILLISECONDS),
-      issuedAt: NOW,
-      lastUsedAt: NOW,
+      lastUsedAt: sessions[0]?.issuedAt,
       revokedAt: null,
       userId: user.id,
     });
+    const session = sessions[0]!;
+    expect(
+      session.absoluteExpiresAt.getTime() - session.issuedAt.getTime(),
+    ).toBe(7 * DAY_MILLISECONDS);
+    expect(session.idleExpiresAt.getTime() - session.issuedAt.getTime()).toBe(
+      DAY_MILLISECONDS,
+    );
     expect(sessions[0]?.tokenHash).toBe(hashSessionToken(rawToken ?? ""));
     expect(sessions[0]?.tokenHash).not.toBe(rawToken);
     expect(responseText).not.toContain(password);
@@ -173,7 +186,7 @@ describe("login and authenticated sessions with PostgreSQL", () => {
     expect(JSON.stringify(entries)).not.toContain(sessions[0]?.tokenHash);
   });
 
-  it("denies wrong, nonexistent, unverified, and disabled accounts without sessions", async () => {
+  it("denies wrong, nonexistent, and disabled accounts without sessions", async () => {
     const verified = await seedUser();
     await seedUser({ email: "unverified@example.com", verified: false });
     await prisma.user.create({
@@ -191,7 +204,6 @@ describe("login and authenticated sessions with PostgreSQL", () => {
     const responses = await Promise.all([
       login(url, verified.email, "wrong-password-long-enough"),
       login(url, "missing@example.com", "wrong-password-long-enough"),
-      login(url, "unverified@example.com", "password-long-enough"),
       login(url, "disabled@example.com", "password-long-enough"),
     ]);
     const bodies = await Promise.all(
@@ -204,7 +216,7 @@ describe("login and authenticated sessions with PostgreSQL", () => {
     );
 
     expect(responses.map((response) => response.status)).toEqual([
-      401, 401, 401, 401,
+      401, 401, 401,
     ]);
     expect(
       bodies.map((body) => ({
@@ -212,13 +224,13 @@ describe("login and authenticated sessions with PostgreSQL", () => {
         message: body.error.message,
       })),
     ).toEqual(
-      Array.from({ length: 4 }, () => ({
+      Array.from({ length: 3 }, () => ({
         code: "INVALID_CREDENTIALS",
         message: "The email or password is incorrect.",
       })),
     );
     expect(await prisma.session.count()).toBe(0);
-    expect(await prisma.emailVerificationToken.count()).toBe(0);
+    expect(await prisma.emailVerificationChallenge.count()).toBe(0);
   });
 
   it("rotates a valid same-user session and returns an independent fresh token", async () => {
@@ -248,7 +260,7 @@ describe("login and authenticated sessions with PostgreSQL", () => {
     expect(sessions).toHaveLength(2);
     expect(sessions[0]).toMatchObject({
       revocationReason: "login_rotation",
-      revokedAt: currentTime,
+      revokedAt: sessions[1]?.issuedAt,
     });
     expect(sessions[1]).toMatchObject({ revokedAt: null, userId: user.id });
   });
@@ -303,27 +315,42 @@ describe("login and authenticated sessions with PostgreSQL", () => {
 
   it("rolls back old-session revocation when fresh-session creation collides", async () => {
     const user = await seedUser();
+    const [clock] = await prisma.$queryRaw<Array<{ now: Date }>>`
+      SELECT clock_timestamp() AS now
+    `;
+    if (clock === undefined) throw new Error("Test database clock missing.");
     const oldTokenHash = hashSessionToken("A".repeat(43));
     const oldSession = await prisma.session.create({
       data: {
-        absoluteExpiresAt: new Date(NOW.getTime() + 7 * DAY_MILLISECONDS),
-        idleExpiresAt: new Date(NOW.getTime() + DAY_MILLISECONDS),
-        issuedAt: NOW,
-        lastUsedAt: NOW,
+        absoluteExpiresAt: new Date(clock.now.getTime() + 7 * DAY_MILLISECONDS),
+        idleExpiresAt: new Date(clock.now.getTime() + DAY_MILLISECONDS),
+        issuedAt: clock.now,
+        lastUsedAt: clock.now,
         tokenHash: oldTokenHash,
         userId: user.id,
       },
     });
+    const sessionRepository =
+      createPrismaAuthenticationSessionRepository(prisma);
+    await expect(
+      sessionRepository.resolveSession({
+        configuration,
+        now: clock.now,
+        tokenHash: oldTokenHash,
+      }),
+    ).resolves.toMatchObject({ sessionId: oldSession.id });
     const repository = createPrismaAuthenticationRepository(prisma);
 
     await expect(
       repository.establishSession({
-        absoluteExpiresAt: new Date(NOW.getTime() + 7 * DAY_MILLISECONDS),
+        absoluteExpiresAt: new Date(clock.now.getTime() + 7 * DAY_MILLISECONDS),
         existingTokenHash: oldTokenHash,
-        idleExpiresAt: new Date(NOW.getTime() + DAY_MILLISECONDS),
-        issuedAt: new Date(NOW.getTime() + 1_000),
+        idleExpiresAt: new Date(clock.now.getTime() + DAY_MILLISECONDS),
+        issuedAt: clock.now,
         tokenHash: oldTokenHash,
         userId: user.id,
+        passwordHash: user.passwordHash,
+        credentialVersion: user.credentialVersion,
       }),
     ).rejects.toBeInstanceOf(SessionTokenCollisionError);
 

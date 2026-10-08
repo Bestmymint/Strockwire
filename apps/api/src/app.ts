@@ -93,6 +93,13 @@ export function createApp({
     next();
   });
 
+  // Parser failures bypass routers, but authentication responses remain private.
+  app.use("/api/v1/auth", (_request, response, next) => {
+    response.setHeader("Cache-Control", "no-store");
+    response.setHeader("Referrer-Policy", "no-referrer");
+    next();
+  });
+
   app.use(express.json());
 
   app.get("/health", (_request, response) => {

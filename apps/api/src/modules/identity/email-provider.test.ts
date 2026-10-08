@@ -1,36 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  createRecordingEmailProvider,
   createResendEmailProvider,
   EmailDeliveryError,
-  nonDeliveryEmailProvider,
 } from "./email-provider.ts";
 
 describe("identity email providers", () => {
-  it("keeps local non-delivery deterministic and side-effect free", async () => {
-    await expect(
-      nonDeliveryEmailProvider.send({
-        kind: "verification",
-        recipient: "user@example.com",
-        url: "http://localhost:3000/verify-email?token=sensitive",
-      }),
-    ).resolves.toBeUndefined();
-  });
-
-  it("records deterministic delivery metadata only in the test adapter", async () => {
-    const provider = createRecordingEmailProvider();
-    const message = {
-      kind: "password_reset" as const,
-      recipient: "user@example.com",
-      url: "http://localhost:3000/reset-password?token=sensitive",
-    };
-
-    await provider.send(message);
-    expect(provider.messages).toEqual([message]);
-  });
-
-  it("sends the minimal Resend request without exposing response details", async () => {
+  it("preserves a leading-zero OTP and usable secure link in verification delivery", async () => {
     const fetchImplementation = vi
       .fn<typeof fetch>()
       .mockResolvedValue(
@@ -46,17 +22,19 @@ describe("identity email providers", () => {
       kind: "verification",
       recipient: "user@example.com",
       url: "https://app.example.com/verify-email?token=sensitive",
+      code: "001234",
     });
 
     expect(fetchImplementation).toHaveBeenCalledOnce();
     const [url, init] = fetchImplementation.mock.calls[0] ?? [];
     expect(url).toBe("https://api.resend.com/emails");
-    expect(init?.headers).toMatchObject({
-      Authorization: "Bearer secret-api-key",
-      "Content-Type": "application/json",
+    const payload: unknown = JSON.parse(String(init?.body));
+    expect(payload).toMatchObject({ text: expect.stringContaining("001234") });
+    expect(payload).toMatchObject({
+      text: expect.stringContaining(
+        "https://app.example.com/verify-email?token=sensitive",
+      ),
     });
-    expect(init?.body).toContain("user@example.com");
-    expect(init?.body).toContain("sensitive");
   });
 
   it("maps provider and network failures to one secret-free error", async () => {

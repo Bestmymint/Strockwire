@@ -1,14 +1,13 @@
 const RESEND_EMAIL_ENDPOINT = "https://api.resend.com/emails";
 const RESEND_TIMEOUT_MILLISECONDS = 10_000;
 
-export type IdentityEmailMessage = Readonly<{
-  kind: "invitation" | "password_reset" | "verification";
-  recipient: string;
-  url: string;
-}>;
+export type IdentityEmailMessage = Readonly<
+  | { kind: "verification"; recipient: string; url: string; code: string }
+  | { kind: "invitation" | "password_reset"; recipient: string; url: string }
+>;
 
 export interface IdentityEmailProvider {
-  send(message: IdentityEmailMessage): Promise<void>;
+  send(message: IdentityEmailMessage, signal?: AbortSignal): Promise<void>;
 }
 
 export class EmailDeliveryError extends Error {
@@ -24,9 +23,11 @@ export const nonDeliveryEmailProvider: IdentityEmailProvider = {
   },
 };
 
-export function createRecordingEmailProvider(): IdentityEmailProvider & {
+export interface RecordingIdentityEmailProvider extends IdentityEmailProvider {
   readonly messages: IdentityEmailMessage[];
-} {
+}
+
+export function createRecordingEmailProvider(): RecordingIdentityEmailProvider {
   const messages: IdentityEmailMessage[] = [];
 
   return {
@@ -47,7 +48,7 @@ export function createResendEmailProvider({
   from: string;
 }): IdentityEmailProvider {
   return {
-    async send(message) {
+    async send(message, signal) {
       const isVerification = message.kind === "verification";
       const isInvitation = message.kind === "invitation";
       const subject = isVerification
@@ -66,7 +67,10 @@ export function createResendEmailProvider({
           body: JSON.stringify({
             from,
             subject,
-            text: `Use this link to ${action}: ${message.url}`,
+            text:
+              message.kind === "verification"
+                ? `Your StockWise verification code is ${message.code}.\n\nOr use this secure link: ${message.url}\n\nBoth expire in 10 minutes. Only the latest requested code and link are valid. Do not share them. If you did not request this email, ignore it.`
+                : `Use this link to ${action}: ${message.url}`,
             to: [message.recipient],
           }),
           headers: {
@@ -75,7 +79,13 @@ export function createResendEmailProvider({
             "User-Agent": "stockwise-api/1.0",
           },
           method: "POST",
-          signal: AbortSignal.timeout(RESEND_TIMEOUT_MILLISECONDS),
+          signal:
+            signal === undefined
+              ? AbortSignal.timeout(RESEND_TIMEOUT_MILLISECONDS)
+              : AbortSignal.any([
+                  signal,
+                  AbortSignal.timeout(RESEND_TIMEOUT_MILLISECONDS),
+                ]),
         });
 
         if (!response.ok) {

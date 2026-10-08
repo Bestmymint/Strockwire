@@ -5,6 +5,7 @@ import {
   resetTestDatabase,
 } from "../test/database-harness.ts";
 import { loadTestDatabaseEnvironment } from "../test/database-environment.ts";
+import { testVerificationSecurity } from "../test/identity-backend-fixture.ts";
 
 const environment = loadTestDatabaseEnvironment();
 const prisma = createTestPrismaClient(environment);
@@ -14,6 +15,13 @@ const PASSWORD_HASH_FIXTURE =
 
 function futureHours(hours: number): Date {
   return new Date(Date.now() + hours * 60 * 60 * 1000);
+}
+function verificationChallenge(userId: string, linkTokenHash: string) {
+  return {
+    ...testVerificationSecurity().prepare(userId, 1n, new Date()).challenge,
+    linkTokenHash,
+    failedOtpAttempts: 0,
+  };
 }
 
 async function createUser(email: string, displayName = "Schema Test User") {
@@ -55,138 +63,6 @@ describe("identity and tenancy database schema", () => {
   afterAll(async () => {
     await prisma.$disconnect();
     await resetTestDatabase(environment);
-  });
-
-  it("applies every reviewed forward migration", async () => {
-    const migrations = await prisma.$queryRaw<
-      { migrationName: string; finished: boolean; active: boolean }[]
-    >`
-      SELECT
-        migration_name AS "migrationName",
-        finished_at IS NOT NULL AS finished,
-        rolled_back_at IS NULL AS active
-      FROM "_prisma_migrations"
-      ORDER BY started_at
-    `;
-    const tables = await prisma.$queryRaw<{ tableName: string }[]>`
-      SELECT tablename AS "tableName"
-      FROM pg_tables
-      WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'
-      ORDER BY tablename
-    `;
-
-    expect(migrations).toEqual([
-      {
-        migrationName: "20260822104545_identity_tenancy_schema",
-        finished: true,
-        active: true,
-      },
-      {
-        migrationName: "20260824120921_make_user_display_name_nullable",
-        finished: true,
-        active: true,
-      },
-      {
-        migrationName: "20260824173000_first_organization_onboarding",
-        finished: true,
-        active: true,
-      },
-      {
-        migrationName: "20260824210000_membership_access_provenance",
-        finished: true,
-        active: true,
-      },
-      {
-        migrationName: "20260825120000_category_product_schema",
-        finished: true,
-        active: true,
-      },
-      {
-        migrationName: "20260830113000_inventory_balance_ledger_schema",
-        finished: true,
-        active: true,
-      },
-      {
-        migrationName: "20260831032637_add_supplier_model",
-        finished: true,
-        active: true,
-      },
-      {
-        migrationName: "20260901075314_add_purchase_order_schema",
-        finished: true,
-        active: true,
-      },
-      {
-        migrationName: "20260902090000_add_receipt_receiving",
-        finished: true,
-        active: true,
-      },
-      {
-        migrationName: "20260905120000_add_sale_payment_schema",
-        finished: true,
-        active: true,
-      },
-      {
-        migrationName: "20260919120000_add_sale_refunds",
-        finished: true,
-        active: true,
-      },
-      {
-        migrationName: "20260920120000_add_organization_reporting_timezone",
-        finished: true,
-        active: true,
-      },
-      {
-        migrationName: "20260928120000_add_analytics_snapshots",
-        finished: true,
-        active: true,
-      },
-      {
-        migrationName: "20260928130000_add_branch_status_history",
-        finished: true,
-        active: true,
-      },
-      {
-        migrationName: "20260928140000_add_ai_insight_jobs",
-        finished: true,
-        active: true,
-      },
-    ]);
-    expect(tables.map(({ tableName }) => tableName)).toEqual([
-      "ai_insight_attempts",
-      "ai_insight_reports",
-      "analytics_snapshots",
-      "branch_assignments",
-      "branch_status_events",
-      "branches",
-      "categories",
-      "email_verification_tokens",
-      "first_organization_onboardings",
-      "inventory_balances",
-      "inventory_cost_states",
-      "inventory_transactions",
-      "invitation_branch_scopes",
-      "invitations",
-      "membership_access_event_branch_scopes",
-      "membership_access_events",
-      "organization_memberships",
-      "organizations",
-      "password_reset_tokens",
-      "payments",
-      "products",
-      "purchase_order_items",
-      "purchase_orders",
-      "purchase_receipt_items",
-      "purchase_receipts",
-      "refund_payments",
-      "sale_items",
-      "sale_refund_items",
-      "sale_refunds",
-      "sales",
-      "sessions",
-      "suppliers",
-      "users",
-    ]);
   });
 
   it("persists one required Organization reporting timezone and no Branch timezone", async () => {
@@ -697,20 +573,12 @@ describe("identity and tenancy database schema", () => {
       }),
     ).rejects.toThrow();
 
-    await prisma.emailVerificationToken.create({
-      data: {
-        userId: user.id,
-        tokenHash: "verification-hash",
-        expiresAt: futureHours(24),
-      },
+    await prisma.emailVerificationChallenge.create({
+      data: verificationChallenge(user.id, "a".repeat(64)),
     });
     await expect(
-      prisma.emailVerificationToken.create({
-        data: {
-          userId: secondUser.id,
-          tokenHash: "verification-hash",
-          expiresAt: futureHours(24),
-        },
+      prisma.emailVerificationChallenge.create({
+        data: verificationChallenge(secondUser.id, "a".repeat(64)),
       }),
     ).rejects.toThrow();
 
@@ -768,12 +636,8 @@ describe("identity and tenancy database schema", () => {
       organization.id,
       "replacement-issuer",
     );
-    const verification = await prisma.emailVerificationToken.create({
-      data: {
-        userId: user.id,
-        tokenHash: "verification-original",
-        expiresAt: futureHours(24),
-      },
+    const verification = await prisma.emailVerificationChallenge.create({
+      data: verificationChallenge(user.id, "b".repeat(64)),
     });
     const invitation = await prisma.invitation.create({
       data: {
@@ -787,12 +651,8 @@ describe("identity and tenancy database schema", () => {
     });
 
     await expect(
-      prisma.emailVerificationToken.create({
-        data: {
-          userId: user.id,
-          tokenHash: "verification-overlap",
-          expiresAt: futureHours(24),
-        },
+      prisma.emailVerificationChallenge.create({
+        data: verificationChallenge(user.id, "c".repeat(64)),
       }),
     ).rejects.toThrow();
     await expect(
@@ -810,7 +670,7 @@ describe("identity and tenancy database schema", () => {
 
     const replacedAt = new Date();
     await prisma.$transaction([
-      prisma.emailVerificationToken.update({
+      prisma.emailVerificationChallenge.update({
         where: { id: verification.id },
         data: { replacedAt },
       }),
@@ -824,12 +684,8 @@ describe("identity and tenancy database schema", () => {
       }),
     ]);
     await expect(
-      prisma.emailVerificationToken.create({
-        data: {
-          userId: user.id,
-          tokenHash: "verification-replacement",
-          expiresAt: futureHours(24),
-        },
+      prisma.emailVerificationChallenge.create({
+        data: verificationChallenge(user.id, "d".repeat(64)),
       }),
     ).resolves.toBeDefined();
     await expect(

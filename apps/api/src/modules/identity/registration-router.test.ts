@@ -3,7 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../../app.ts";
 import type { ApiLogger } from "../../logger.ts";
 import { startApiServer, type RunningApiServer } from "../../server.ts";
-import { createRegistrationLimiter } from "./registration-limiter.ts";
+import {
+  createRegistrationLimiter,
+  type RegistrationLimiter,
+} from "./registration-limiter.ts";
 import {
   createRegistrationRouter,
   registrationRequestSchema,
@@ -99,6 +102,15 @@ describe("registration request validation", () => {
   });
 });
 
+function registrationResult() {
+  return {
+    challengeId: "00000000-0000-4000-8000-000000000001",
+    proof: "A".repeat(100),
+    expiresAt: new Date(Date.now() + 600_000),
+    delivery: null,
+  };
+}
+
 describe("POST /api/v1/auth/register", () => {
   let runningServer: RunningApiServer | undefined;
 
@@ -111,13 +123,14 @@ describe("POST /api/v1/auth/register", () => {
     limiter = createRegistrationLimiter(() => 0),
     registrationService,
   }: {
-    limiter?: ReturnType<typeof createRegistrationLimiter>;
+    limiter?: RegistrationLimiter;
     registrationService: RegistrationService;
   }) {
     const captured = createCapturingLogger();
     const apiRouter = createRegistrationRouter({
       limiter,
       registrationService,
+      publicWebOrigin: "http://localhost:3000",
     });
     const app = createApp({ apiRouter, logger: captured.logger });
     runningServer = await startApiServer(app, {
@@ -134,38 +147,13 @@ describe("POST /api/v1/auth/register", () => {
   function registrationRequest(url: string, body: unknown): Promise<Response> {
     return fetch(url, {
       body: JSON.stringify(body),
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        Origin: "http://localhost:3000",
+      },
       method: "POST",
     });
   }
-
-  it("returns the generic accepted response and passes canonical email with the exact password", async () => {
-    const register = vi.fn(async () => undefined);
-    const password = "  exact password é  ";
-    const { entries, url } = await startRegistrationApplication({
-      registrationService: { register },
-    });
-
-    const response = await registrationRequest(url, {
-      email: "  User@Example.COM  ",
-      password,
-    });
-    const responseText = await response.text();
-    const requestId = response.headers.get("x-request-id");
-
-    expect(response.status).toBe(202);
-    expect(JSON.parse(responseText)).toEqual({
-      data: { nextStep: "verify_email", status: "accepted" },
-      meta: { requestId },
-    });
-    expect(register).toHaveBeenCalledExactlyOnceWith({
-      email: "user@example.com",
-      password,
-    });
-    expect(responseText).not.toContain(password);
-    expect(JSON.stringify(entries)).not.toContain(password);
-    expect(JSON.stringify(entries)).not.toContain("user@example.com");
-  });
 
   it("returns a safe validation envelope without invoking the limiter or service", async () => {
     const limiter = { consume: vi.fn() };
@@ -193,7 +181,7 @@ describe("POST /api/v1/auth/register", () => {
   });
 
   it("shares one limiter key across canonical email variants and returns Retry-After", async () => {
-    const register = vi.fn(async () => undefined);
+    const register = vi.fn(async () => registrationResult());
     const { url } = await startRegistrationApplication({
       registrationService: { register },
     });

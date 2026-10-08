@@ -65,12 +65,18 @@ import {
   argon2PasswordVerifier,
 } from "./modules/identity/password-hasher.ts";
 import { createRegistrationLimiter } from "./modules/identity/registration-limiter.ts";
-import { createPrismaRegistrationRepository } from "./modules/identity/registration-repository.ts";
 import { createRegistrationRouter } from "./modules/identity/registration-router.ts";
 import { createRegistrationService } from "./modules/identity/registration-service.ts";
 import { createSessionConfiguration } from "./modules/identity/session-configuration.ts";
 import { secureSessionTokenProvider } from "./modules/identity/session-token.ts";
 import { secureOneTimeTokenProvider } from "./modules/identity/one-time-token.ts";
+import { createPrismaVerificationRepository } from "./modules/identity/verification-repository.ts";
+import {
+  createVerificationSecurity,
+  verificationSecurityConfiguration,
+} from "./modules/identity/verification-security.ts";
+import { createVerificationDelivery } from "./modules/identity/verification-delivery.ts";
+import { createVerificationService } from "./modules/identity/verification-service.ts";
 import { createPrismaBranchRepository } from "./modules/organizations/branch-repository.ts";
 import { createBranchRouter } from "./modules/organizations/branch-router.ts";
 import { createBranchService } from "./modules/organizations/branch-service.ts";
@@ -86,17 +92,41 @@ async function main(): Promise<void> {
   const authenticationRepository = createPrismaAuthenticationRepository(prisma);
   const authenticationSessionRepository =
     createPrismaAuthenticationSessionRepository(prisma);
+  const verificationRepository = createPrismaVerificationRepository(prisma);
+  const verificationSecurity = createVerificationSecurity(
+    verificationSecurityConfiguration(environment),
+  );
+  const verificationDeliveryLimiter = createEmailRequestLimiter();
+  const emailProvider = createIdentityEmailProvider(environment);
+  const verificationDelivery = createVerificationDelivery({
+    emailProvider,
+    publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
+    repository: verificationRepository,
+    onFailure(kind) {
+      logger.error({ deliveryType: kind }, "identity email delivery failed");
+    },
+  });
+  const verificationService = createVerificationService({
+    repository: verificationRepository,
+    security: verificationSecurity,
+    delivery: verificationDelivery,
+    deliveryLimiter: verificationDeliveryLimiter,
+  });
   const loginService = createLoginService({
     configuration: sessionConfiguration,
     passwordVerifier: argon2PasswordVerifier,
     repository: authenticationRepository,
     tokenProvider: secureSessionTokenProvider,
+    verificationRepository,
+    security: verificationSecurity,
   });
   const registrationService = createRegistrationService({
     passwordHasher: argon2PasswordHasher,
-    repository: createPrismaRegistrationRepository(prisma),
+    repository: verificationRepository,
+    security: verificationSecurity,
+    delivery: verificationDelivery,
+    deliveryLimiter: verificationDeliveryLimiter,
   });
-  const emailProvider = createIdentityEmailProvider(environment);
   const credentialLifecycleService = createCredentialLifecycleService({
     emailProvider,
     onDeliveryFailure(kind) {
@@ -190,6 +220,7 @@ async function main(): Promise<void> {
     createRegistrationRouter({
       limiter: createRegistrationLimiter(),
       registrationService,
+      publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
     }),
   );
   apiRouter.use(
@@ -199,7 +230,7 @@ async function main(): Promise<void> {
       lifecycleService: credentialLifecycleService,
       passwordResetLimiter: createEmailRequestLimiter(),
       publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
-      verificationResendLimiter: createEmailRequestLimiter(),
+      verificationService,
     }),
   );
   apiRouter.use(
@@ -207,6 +238,7 @@ async function main(): Promise<void> {
       configuration: sessionConfiguration,
       limiter: createLoginLimiter(),
       loginService,
+      publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
     }),
   );
   apiRouter.use(
@@ -301,9 +333,10 @@ async function main(): Promise<void> {
     host: "127.0.0.1",
     port: environment.STOCKWISE_API_PORT,
   });
-  const shutdown = createShutdownHandler(runningServer, logger, () =>
-    prisma.$disconnect(),
-  );
+  const shutdown = createShutdownHandler(runningServer, logger, async () => {
+    await verificationDelivery.drain();
+    await prisma.$disconnect();
+  });
 
   logger.info(
     {

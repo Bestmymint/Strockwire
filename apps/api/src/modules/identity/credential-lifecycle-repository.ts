@@ -17,20 +17,10 @@ export interface CredentialLifecycleRepository {
     tokenId: string;
     userId: string;
   }): Promise<boolean>;
-  consumeEmailVerificationToken(input: {
-    consumedAt: Date;
-    tokenHash: string;
-  }): Promise<boolean>;
   findValidPasswordResetToken(input: {
     now: Date;
     tokenHash: string;
   }): Promise<ValidPasswordResetToken | null>;
-  issueEmailVerificationToken(input: {
-    email: string;
-    expiresAt: Date;
-    issuedAt: Date;
-    tokenHash: string;
-  }): Promise<IssuedIdentityToken | null>;
   issuePasswordResetToken(input: {
     email: string;
     expiresAt: Date;
@@ -41,10 +31,6 @@ export interface CredentialLifecycleRepository {
     reason: "logout_all";
     revokedAt: Date;
     userId: string;
-  }): Promise<void>;
-  revokeEmailVerificationToken(input: {
-    revokedAt: Date;
-    tokenId: string;
   }): Promise<void>;
   revokePasswordResetToken(input: {
     revokedAt: Date;
@@ -64,7 +50,6 @@ export class OneTimeTokenCollisionError extends Error {
 }
 
 class InvalidPasswordResetStateError extends Error {}
-class InvalidVerificationStateError extends Error {}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -114,117 +99,43 @@ async function lockUserByEmail(
   return rows[0]?.id ?? null;
 }
 
+async function lockUserById(
+  transaction: Prisma.TransactionClient,
+  userId: string,
+): Promise<string | null> {
+  const rows = await transaction.$queryRaw<Array<{ id: string }>>(
+    Prisma.sql`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`,
+  );
+  return rows[0]?.id ?? null;
+}
+
+async function lockPasswordResetTokenById(
+  transaction: Prisma.TransactionClient,
+  tokenId: string,
+): Promise<string | null> {
+  const rows = await transaction.$queryRaw<Array<{ id: string }>>(
+    Prisma.sql`SELECT id FROM password_reset_tokens WHERE id = ${tokenId} FOR UPDATE`,
+  );
+  return rows[0]?.id ?? null;
+}
+
+async function freshDbTime(
+  transaction: Prisma.TransactionClient,
+): Promise<Date> {
+  const rows = await transaction.$queryRaw<Array<{ now: Date }>>(
+    Prisma.sql`SELECT clock_timestamp() AS now`,
+  );
+  const now = rows[0]?.now;
+  if (now === undefined) {
+    throw new Error("Credential lifecycle clock query returned no row.");
+  }
+  return now;
+}
+
 export function createPrismaCredentialLifecycleRepository(
   prisma: PrismaClient,
 ): CredentialLifecycleRepository {
   return {
-    async issueEmailVerificationToken(input) {
-      try {
-        return await prisma.$transaction(async (transaction) => {
-          const userId = await lockUserByEmail(transaction, input.email);
-          if (userId === null) {
-            return null;
-          }
-
-          const user = await transaction.user.findUnique({
-            where: { id: userId },
-            select: { email: true, emailVerifiedAt: true, status: true },
-          });
-          if (
-            user === null ||
-            user.status !== "ACTIVE" ||
-            user.emailVerifiedAt !== null
-          ) {
-            return null;
-          }
-
-          await transaction.emailVerificationToken.updateMany({
-            where: {
-              consumedAt: null,
-              replacedAt: null,
-              revokedAt: null,
-              userId,
-            },
-            data: { replacedAt: input.issuedAt },
-          });
-          const token = await transaction.emailVerificationToken.create({
-            data: {
-              expiresAt: input.expiresAt,
-              issuedAt: input.issuedAt,
-              tokenHash: input.tokenHash,
-              userId,
-            },
-            select: { id: true },
-          });
-
-          return { id: token.id, recipient: user.email };
-        });
-      } catch (error: unknown) {
-        if (isTokenHashConflict(error)) {
-          throw new OneTimeTokenCollisionError();
-        }
-        throw error;
-      }
-    },
-
-    async revokeEmailVerificationToken({ revokedAt, tokenId }) {
-      await prisma.emailVerificationToken.updateMany({
-        where: {
-          consumedAt: null,
-          id: tokenId,
-          replacedAt: null,
-          revokedAt: null,
-        },
-        data: { revokedAt },
-      });
-    },
-
-    async consumeEmailVerificationToken({ consumedAt, tokenHash }) {
-      try {
-        await prisma.$transaction(async (transaction) => {
-          const token = await transaction.emailVerificationToken.findUnique({
-            where: { tokenHash },
-            select: { id: true, userId: true },
-          });
-          if (token === null) {
-            throw new InvalidVerificationStateError();
-          }
-
-          const consumed = await transaction.emailVerificationToken.updateMany({
-            where: {
-              consumedAt: null,
-              expiresAt: { gt: consumedAt },
-              id: token.id,
-              replacedAt: null,
-              revokedAt: null,
-            },
-            data: { consumedAt },
-          });
-          if (consumed.count !== 1) {
-            throw new InvalidVerificationStateError();
-          }
-
-          const verified = await transaction.user.updateMany({
-            where: {
-              emailVerifiedAt: null,
-              id: token.userId,
-              status: "ACTIVE",
-            },
-            data: { emailVerifiedAt: consumedAt },
-          });
-          if (verified.count !== 1) {
-            throw new InvalidVerificationStateError();
-          }
-        });
-        return true;
-      } catch (error: unknown) {
-        if (error instanceof InvalidVerificationStateError) {
-          return false;
-        }
-        throw error;
-      }
-    },
-
     async issuePasswordResetToken(input) {
       try {
         return await prisma.$transaction(async (transaction) => {
@@ -315,49 +226,89 @@ export function createPrismaCredentialLifecycleRepository(
       return { tokenId: token.id, userId: token.userId };
     },
 
-    async completePasswordReset({
-      completedAt,
-      passwordHash,
-      tokenId,
-      userId,
-    }) {
+    async completePasswordReset({ passwordHash, tokenId, userId }) {
       try {
         await prisma.$transaction(async (transaction) => {
-          const consumed = await transaction.passwordResetToken.updateMany({
+          const lockedUserId = await lockUserById(transaction, userId);
+          if (lockedUserId === null) {
+            throw new InvalidPasswordResetStateError();
+          }
+
+          const lockedTokenId = await lockPasswordResetTokenById(
+            transaction,
+            tokenId,
+          );
+          if (lockedTokenId === null) {
+            throw new InvalidPasswordResetStateError();
+          }
+
+          const now = await freshDbTime(transaction);
+
+          const user = await transaction.user.findUnique({
+            where: { id: userId },
+            select: { emailVerifiedAt: true, status: true },
+          });
+          if (
+            user === null ||
+            user.status !== "ACTIVE" ||
+            user.emailVerifiedAt === null
+          ) {
+            throw new InvalidPasswordResetStateError();
+          }
+
+          const token = await transaction.passwordResetToken.findUnique({
+            where: { id: tokenId },
+            select: {
+              consumedAt: true,
+              expiresAt: true,
+              replacedAt: true,
+              revokedAt: true,
+              userId: true,
+            },
+          });
+          if (
+            token === null ||
+            token.userId !== userId ||
+            token.consumedAt !== null ||
+            token.revokedAt !== null ||
+            token.replacedAt !== null ||
+            now >= token.expiresAt
+          ) {
+            throw new InvalidPasswordResetStateError();
+          }
+
+          await transaction.user.update({
+            where: { id: userId },
+            data: {
+              credentialVersion: { increment: 1 },
+              passwordChangedAt: now,
+              passwordHash,
+            },
+          });
+
+          await transaction.emailVerificationChallenge.updateMany({
             where: {
               consumedAt: null,
-              expiresAt: { gt: completedAt },
-              id: tokenId,
               replacedAt: null,
               revokedAt: null,
               userId,
             },
-            data: { consumedAt: completedAt },
-          });
-          if (consumed.count !== 1) {
-            throw new InvalidPasswordResetStateError();
-          }
-
-          const updated = await transaction.user.updateMany({
-            where: {
-              emailVerifiedAt: { not: null },
-              id: userId,
-              status: "ACTIVE",
-            },
             data: {
-              passwordChangedAt: completedAt,
-              passwordHash,
+              revocationReason: "PASSWORD_RESET",
+              revokedAt: now,
             },
           });
-          if (updated.count !== 1) {
-            throw new InvalidPasswordResetStateError();
-          }
+
+          await transaction.passwordResetToken.update({
+            where: { id: tokenId },
+            data: { consumedAt: now },
+          });
 
           await transaction.session.updateMany({
             where: { revokedAt: null, userId },
             data: {
               revocationReason: "password_reset",
-              revokedAt: completedAt,
+              revokedAt: now,
             },
           });
         });

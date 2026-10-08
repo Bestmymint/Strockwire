@@ -25,9 +25,7 @@ function createLifecycleService(): CredentialLifecycleService {
     logoutAll: vi.fn().mockResolvedValue(undefined),
     logoutCurrent: vi.fn().mockResolvedValue(undefined),
     requestPasswordReset: vi.fn().mockResolvedValue(undefined),
-    requestVerification: vi.fn().mockResolvedValue(undefined),
     resetPassword: vi.fn().mockResolvedValue(true),
-    verifyEmail: vi.fn().mockResolvedValue(true),
   };
 }
 
@@ -54,7 +52,15 @@ describe("credential lifecycle router", () => {
       lifecycleService,
       passwordResetLimiter: createEmailRequestLimiter(now),
       publicWebOrigin: "http://localhost:3000",
-      verificationResendLimiter: createEmailRequestLimiter(now),
+      verificationService: {
+        resend: async () => ({
+          outcome: "accepted",
+          challengeId: "00000000-0000-4000-8000-000000000001",
+          delivery: null,
+        }),
+        completeCode: async () => "invalid",
+        completeLink: async () => "invalid",
+      },
     });
     runningServer = await startApiServer(createApp({ apiRouter, logger }), {
       host: "127.0.0.1",
@@ -69,51 +75,14 @@ describe("credential lifecycle router", () => {
   function post(url: string, path: string, body: unknown, headers = {}) {
     return fetch(`${url}${path}`, {
       body: JSON.stringify(body),
-      headers: { "content-type": "application/json", ...headers },
+      headers: {
+        "content-type": "application/json",
+        Origin: "http://localhost:3000",
+        ...headers,
+      },
       method: "POST",
     });
   }
-
-  it("shares the verification limit across canonical variants", async () => {
-    const { lifecycleService, url } = await startRouter();
-    const responses = [];
-    for (const email of [
-      " User@Example.com ",
-      "user@example.com",
-      "USER@EXAMPLE.COM",
-      "user@example.com",
-    ]) {
-      responses.push(await post(url, "/auth/verification-resend", { email }));
-    }
-
-    expect(responses.map((response) => response.status)).toEqual([
-      202, 202, 202, 429,
-    ]);
-    expect(responses[3]?.headers.get("retry-after")).toBe("900");
-    expect(lifecycleService.requestVerification).toHaveBeenCalledTimes(3);
-    expect(lifecycleService.requestVerification).toHaveBeenNthCalledWith(
-      1,
-      "user@example.com",
-    );
-  });
-
-  it("does not allocate verification limiter state for malformed email", async () => {
-    const { url } = await startRouter();
-
-    expect(
-      (await post(url, "/auth/verification-resend", { email: "invalid" }))
-        .status,
-    ).toBe(400);
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      expect(
-        (
-          await post(url, "/auth/verification-resend", {
-            email: "user@example.com",
-          })
-        ).status,
-      ).toBe(202);
-    }
-  });
 
   it("applies an independent reset-request fixed window and restores it", async () => {
     let now = 5_000;

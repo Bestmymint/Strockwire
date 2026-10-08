@@ -8,13 +8,16 @@ export interface CredentialUser {
   id: string;
   passwordHash: string;
   status: "ACTIVE" | "DISABLED";
+  credentialVersion: bigint;
 }
 
 export interface SessionCreationInput {
   absoluteExpiresAt: Date;
+  credentialVersion: bigint;
   existingTokenHash: string | null;
   idleExpiresAt: Date;
   issuedAt: Date;
+  passwordHash: string;
   tokenHash: string;
   userId: string;
 }
@@ -29,7 +32,7 @@ export interface ResolvedAuthenticationSession {
 }
 
 export interface AuthenticationRepository {
-  establishSession(input: SessionCreationInput): Promise<void>;
+  establishSession(input: SessionCreationInput): Promise<boolean>;
   findCredentialUser(email: string): Promise<CredentialUser | null>;
 }
 
@@ -205,6 +208,7 @@ export function createPrismaAuthenticationRepository(
           emailVerifiedAt: true,
           id: true,
           passwordHash: true,
+          credentialVersion: true,
           status: true,
         },
       });
@@ -212,34 +216,72 @@ export function createPrismaAuthenticationRepository(
 
     async establishSession(input) {
       try {
-        await prisma.$transaction(async (transaction) => {
+        return await prisma.$transaction(async (transaction) => {
+          const locked = await transaction.$queryRaw<Array<{ id: string }>>(
+            Prisma.sql`SELECT id FROM users WHERE id = ${input.userId} FOR UPDATE`,
+          );
+          if (locked.length !== 1) return false;
+          const user = await transaction.user.findUnique({
+            where: { id: input.userId },
+            select: {
+              passwordHash: true,
+              credentialVersion: true,
+              status: true,
+              emailVerifiedAt: true,
+            },
+          });
+          if (
+            user === null ||
+            user.status !== "ACTIVE" ||
+            user.emailVerifiedAt === null ||
+            user.passwordHash !== input.passwordHash ||
+            user.credentialVersion !== input.credentialVersion
+          )
+            return false;
+          const clock = await transaction.$queryRaw<Array<{ now: Date }>>(
+            Prisma.sql`SELECT clock_timestamp() AS now`,
+          );
+          const issuedAt = clock[0]?.now;
+          if (issuedAt === undefined)
+            throw new Error("Authentication clock query returned no row.");
+          const absoluteExpiresAt = new Date(
+            issuedAt.getTime() +
+              input.absoluteExpiresAt.getTime() -
+              input.issuedAt.getTime(),
+          );
+          const idleExpiresAt = new Date(
+            issuedAt.getTime() +
+              input.idleExpiresAt.getTime() -
+              input.issuedAt.getTime(),
+          );
           if (input.existingTokenHash !== null) {
             await transaction.session.updateMany({
               where: {
-                absoluteExpiresAt: { gt: input.issuedAt },
-                idleExpiresAt: { gt: input.issuedAt },
+                absoluteExpiresAt: { gt: issuedAt },
+                idleExpiresAt: { gt: issuedAt },
                 revokedAt: null,
                 tokenHash: input.existingTokenHash,
                 userId: input.userId,
               },
               data: {
                 revocationReason: "login_rotation",
-                revokedAt: input.issuedAt,
+                revokedAt: issuedAt,
               },
             });
           }
 
           await transaction.session.create({
             data: {
-              absoluteExpiresAt: input.absoluteExpiresAt,
-              idleExpiresAt: input.idleExpiresAt,
-              issuedAt: input.issuedAt,
-              lastUsedAt: input.issuedAt,
+              absoluteExpiresAt,
+              idleExpiresAt,
+              issuedAt,
+              lastUsedAt: issuedAt,
               tokenHash: input.tokenHash,
               userId: input.userId,
             },
             select: { id: true },
           });
+          return true;
         });
       } catch (error: unknown) {
         if (isSessionTokenHashConflict(error)) {

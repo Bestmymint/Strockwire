@@ -30,7 +30,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-IAM-001 — Register with email and password
 
-- **Status:** Historical implementation by P2-M2-T01; accepted `ADR-034` target (not runtime-implemented)
+- **Status:** ADR-034 registration backend implemented by T02A; historical P2-M2-T01 behavior superseded; final web flow pending
 - **Actor:** New user
 - **Preconditions:** The service is available; the submitted email may be new or already registered under the accepted normalization rule.
 - **Trigger:** The user submits the email/password registration form.
@@ -41,7 +41,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   3. The API normalizes the email, consumes the shared signup/resend mail budget
      before any account lookup, and hashes the password with Argon2 before the
      eligibility lookup; no existence pre-read occurs before hashing.
-  4. Under the accepted `ADR-034` target (accepted, not runtime-implemented),
+  4. Under the implemented `ADR-034` backend contract,
      the API atomically creates the admitted user with credential version 1,
      the bound unified mailbox challenge (6-digit code plus opaque link, one
      10-minute expiry), and prepared real password proof. It sets the proof
@@ -62,7 +62,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-IAM-002 — Sign in with email and password
 
-- **Status:** Existing P2-M2-T02 baseline; accepted `ADR-034` verification delta (not runtime-implemented)
+- **Status:** P2-M2-T02 application authentication preserved; ADR-034 verification backend delta implemented by T02A; final web continuation pending
 - **Actor:** Registered user
 - **Preconditions:** An account exists and is permitted to authenticate under verification/status policy.
 - **Trigger:** The user submits email and password.
@@ -71,7 +71,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   2. It reads the account's password hash and credential version as one
      snapshot; missing accounts use the fixed dummy verifier.
   3. It verifies the snapshot hash with Argon2 outside locks.
-  4. Under the accepted `ADR-034` target (accepted, not runtime-implemented),
+  4. Under the implemented `ADR-034` backend contract,
      it branches on account state: a correct password on an `ACTIVE`
      unverified account rechecks the demonstrated snapshot version under
      the user lock, and returns `202 verification_required` with the usable
@@ -106,7 +106,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
   1. The API validates the current authenticated state.
   2. It revokes the current opaque session.
   3. The client receives the cleared session cookie; an explicit all-session action revokes every session for the user.
-  4. Under the accepted `ADR-034` target (accepted, not runtime-implemented), a successful sign-out also clears the verification password-proof cookie; there is no global stateless revocation.
+  4. Under the implemented `ADR-034` backend contract, a successful sign-out also clears the verification password-proof cookie; there is no global stateless revocation.
   5. Protected requests with the invalidated state fail.
 - **Alternative flows:** An already expired/revoked session returns an idempotent successful result where safe.
 - **Error cases:** Network interruption; session store unavailable; replayed logout; malformed credential. The client must not claim server-side revocation if it did not occur.
@@ -169,11 +169,11 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-IAM-007 — Verify an email/password account
 
-- **Status:** Historical implementation by P2-M2-T03; accepted `ADR-034` target (not runtime-implemented)
+- **Status:** ADR-034 schema/backend/security implemented by T02A; final OTP web flow pending
 - **Actor:** Registered email/password user
 - **Preconditions:** Registration may have created an active unverified account with a bound unified mailbox challenge; account existence is not public information.
 - **Trigger:** The user requests/resends verification, submits the 6-digit code with the password proof, or submits the opaque link token.
-- **Main flow:** The accepted, not-yet-implemented `ADR-034` target requires mailbox proof (valid OTP OR link) AND password proof. Under user-first/challenge-second locks, require `proof.subject = challenge.userId = user.id` and `proof.credentialVersion = challenge.credentialVersion = user.credentialVersion`, ACTIVE unverified eligibility, and fresh expiry checks. Atomically consume the shared challenge and set `emailVerifiedAt`, then clear proof/continuation and offer Sign in; never create a session. `/verify-email?token=opaque` GET captures the token in memory and immediately scrubs history before redirect/telemetry, never consumes or issues proof; completion requires explicit same-origin JSON POST. Resend replaces mailbox material only after admission and never modifies proof.
+- **Main flow:** `ADR-034` requires mailbox proof (valid OTP OR link) AND password proof. Under user-first/challenge-second locks, require `proof.subject = challenge.userId = user.id` and `proof.credentialVersion = challenge.credentialVersion = user.credentialVersion`, ACTIVE unverified eligibility, and fresh expiry checks. Atomically consume the shared challenge and set `emailVerifiedAt`, then clear proof/continuation and offer Sign in; never create a session. `/verify-email?token=opaque` GET captures the token in memory and immediately scrubs history before redirect/telemetry, never consumes or issues proof; completion requires explicit same-origin JSON POST. Resend replaces mailbox material only after admission and never modifies proof.
 - **Alternative flows:** A valid OTP or link with missing/invalid/expired/phantom/stale/mismatched proof returns `401 VERIFICATION_PASSWORD_PROOF_REQUIRED` without consumption; establish current password inline and retry while mailbox material remains usable. Correct OTP in this case adds no failure. Wrong comparisons count even without proof; the fifth transitions to `LINK_ONLY`, leaving link usable until expiry. Concurrent completion succeeds at most once. The historical P2 implementation used a 24-hour link-only token; that is not the target.
 - **Error cases:** Malformed email/code/token returns `400` (`INVALID_VERIFICATION_CODE`/`INVALID_TOKEN`) regardless of proof state; expired, consumed, revoked, replaced, or random code/token; missing/phantom/stale password proof on a valid mail returns `401` without consumption; provider/database failure; exhausted mail budget. Raw code/token/hash/provider details never enter public errors or logs. There is no proof/status endpoint.
 - **Business rules:** The shared mail budget is three syntactically valid requests per canonical email per fixed 15-minute process-local window across signup and resend (shared); attempt four on explicit resend returns `429` with deterministic `Retry-After`, while a signup whose budget is exhausted still returns the generic `202`. Counting is eligibility/provider independent and uses a SHA-256-derived key. The OTP wrong-comparison counter is independent of the mail budget. Both code and link share one 10-minute one-expiry. This does not resolve `OQ-020`.
@@ -183,7 +183,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-IAM-008 — Recover an email/password credential
 
-- **Status:** Implemented by P2-M2-T03; reset narrow behavior updated to the accepted `ADR-034` target (not runtime-implemented)
+- **Status:** Implemented by P2-M2-T03 with ADR-034 credential-version/challenge invalidation implemented by the T02A backend cutover
 - **Actor:** Email/password user who cannot use the current password
 - **Preconditions:** Account may or may not exist; only an `ACTIVE` verified account is eligible for delivery.
 - **Trigger:** The user requests recovery and later submits the opaque token with an exact-policy new password.
@@ -195,10 +195,11 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 - **Expected result:** One valid token changes the password, increments the credential version, invalidates any open verification challenge, and invalidates every prior session, without revealing account existence.
 - **Acceptance criteria:** Generic responses, hash-only 30-minute token, exact password policy, pre-Argon2 rejection, `ACTIVE` verified-only eligibility, atomic reset with credential-version increment and open-challenge invalidation, session revocation, replay/concurrency/provider/rollback/leakage tests pass.
 
-### ADR-034 verification and recovery target (accepted, not runtime-implemented)
+### ADR-034 verification and recovery contract (backend implemented; final web flow pending)
 
 The accepted `ADR-034` target defines the verification and recovery behavior
-for the use cases above. It is accepted but not yet runtime-implemented.
+for the use cases above. Its schema/backend/security cutover is implemented;
+the final web OTP/continuation flow remains assigned to its separate task.
 Cryptographic, key-management, and envelope details are owned by `ADR-034` and
 are referenced, not duplicated, here.
 

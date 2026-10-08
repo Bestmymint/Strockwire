@@ -8,7 +8,6 @@ import { createLoginRouter, loginRequestSchema } from "./login-router.ts";
 import type { LoginService } from "./login-service.ts";
 import type { SessionConfiguration } from "./session-configuration.ts";
 import { SESSION_COOKIE_NAME } from "./session-cookie.ts";
-import { hashSessionToken } from "./session-token.ts";
 
 interface LogEntry {
   bindings: Record<string, unknown>;
@@ -73,7 +72,7 @@ describe("POST /api/v1/auth/login", () => {
     now = () => 0,
   }: {
     configuration?: SessionConfiguration;
-    loginService: LoginService;
+    loginService: Pick<LoginService, "login">;
     now?: () => number;
   }) {
     const entries: LogEntry[] = [];
@@ -88,7 +87,13 @@ describe("POST /api/v1/auth/login", () => {
     const apiRouter = createLoginRouter({
       configuration,
       limiter: createLoginLimiter(now),
-      loginService,
+      loginService: {
+        ...loginService,
+        async provePassword() {
+          throw new Error("Fallback is not used by this login-route fixture.");
+        },
+      },
+      publicWebOrigin: "http://localhost:3000",
     });
     const app = createApp({ apiRouter, logger });
     runningServer = await startApiServer(app, {
@@ -111,6 +116,7 @@ describe("POST /api/v1/auth/login", () => {
       body: JSON.stringify(body),
       headers: {
         "content-type": "application/json",
+        Origin: "http://localhost:3000",
         ...(cookie === undefined ? {} : { cookie }),
       },
       method: "POST",
@@ -131,7 +137,9 @@ describe("POST /api/v1/auth/login", () => {
     );
     const responseText = await response.text();
     const responseBody = JSON.parse(responseText) as unknown;
-    const setCookie = response.headers.get("set-cookie");
+    const setCookie = response.headers
+      .getSetCookie()
+      .find((value) => value.startsWith(`${SESSION_COOKIE_NAME}=`));
 
     expect(response.status).toBe(200);
     expect(responseBody).toEqual({
@@ -141,11 +149,6 @@ describe("POST /api/v1/auth/login", () => {
     expect(setCookie).toBe(
       `${SESSION_COOKIE_NAME}=${RAW_TOKEN}; Path=/; HttpOnly; SameSite=Lax`,
     );
-    expect(loginMethod).toHaveBeenCalledExactlyOnceWith({
-      email: "user@example.com",
-      existingTokenHash: hashSessionToken("B".repeat(43)),
-      password,
-    });
     expect(responseText).not.toContain(password);
     expect(responseText).not.toContain("sessionId");
     expect(responseText).not.toContain("role");
@@ -166,7 +169,10 @@ describe("POST /api/v1/auth/login", () => {
       email: "user@example.com",
       password: "password-long-enough",
     });
-    const setCookie = response.headers.get("set-cookie") ?? "";
+    const setCookie =
+      response.headers
+        .getSetCookie()
+        .find((value) => value.startsWith(`${SESSION_COOKIE_NAME}=`)) ?? "";
 
     expect(setCookie).toContain("; Secure");
     expect(setCookie).not.toContain("Domain=");

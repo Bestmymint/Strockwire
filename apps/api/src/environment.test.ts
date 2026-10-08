@@ -8,6 +8,15 @@ import {
 
 const analyticsKey = Buffer.alloc(32, 7).toString("base64url");
 
+const verificationOtpKey = Buffer.alloc(32, 3).toString("base64url");
+const verificationProofKey = Buffer.alloc(32, 4).toString("base64url");
+const verificationKeys = {
+  STOCKWISE_VERIFICATION_OTP_KEY: verificationOtpKey,
+  STOCKWISE_VERIFICATION_OTP_KEY_ID: "1",
+  STOCKWISE_VERIFICATION_PROOF_KEY: verificationProofKey,
+  STOCKWISE_VERIFICATION_PROOF_KEY_ID: "2",
+};
+
 describe("API environment boundary", () => {
   it("loads the required local API and database configuration", () => {
     expect(
@@ -18,6 +27,7 @@ describe("API environment boundary", () => {
         STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY: analyticsKey,
         STOCKWISE_PUBLIC_WEB_ORIGIN: "http://localhost:3000/",
         STOCKWISE_RUNTIME_ENV: "development",
+        ...verificationKeys,
       }),
     ).toEqual({
       DATABASE_URL:
@@ -30,6 +40,13 @@ describe("API environment boundary", () => {
       STOCKWISE_SESSION_ABSOLUTE_TIMEOUT_MINUTES: 10_080,
       STOCKWISE_SESSION_IDLE_TIMEOUT_MINUTES: 1_440,
       STOCKWISE_SESSION_TOUCH_INTERVAL_MINUTES: 15,
+      STOCKWISE_VERIFICATION_OTP_KEY: verificationOtpKey,
+      STOCKWISE_VERIFICATION_OTP_KEY_ID: 1,
+      STOCKWISE_VERIFICATION_PROOF_KEY: verificationProofKey,
+      STOCKWISE_VERIFICATION_PROOF_KEY_ID: 2,
+      STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY: undefined,
+      STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY_ID: undefined,
+      STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY_LAST_ISSUED_AT: undefined,
     });
   });
 
@@ -47,6 +64,7 @@ describe("API environment boundary", () => {
         STOCKWISE_SESSION_ABSOLUTE_TIMEOUT_MINUTES: "20160",
         STOCKWISE_SESSION_IDLE_TIMEOUT_MINUTES: "2880",
         STOCKWISE_SESSION_TOUCH_INTERVAL_MINUTES: "30",
+        ...verificationKeys,
       }),
     ).toMatchObject({
       STOCKWISE_RUNTIME_ENV: "production",
@@ -112,6 +130,7 @@ describe("API environment boundary", () => {
       STOCKWISE_API_PORT: "3001",
       STOCKWISE_PUBLIC_WEB_ORIGIN: "http://localhost:3000",
       STOCKWISE_RUNTIME_ENV: "test",
+      ...verificationKeys,
     };
     expect(() => loadApiEnvironment(base)).toThrow();
     for (const key of [
@@ -156,6 +175,7 @@ describe("API environment boundary", () => {
       STOCKWISE_PUBLIC_WEB_ORIGIN: "http://localhost:3000",
       RESEND_API_KEY: "placeholder-key",
       STOCKWISE_EMAIL_FROM: "StockWise <no-reply@example.com>",
+      ...verificationKeys,
     };
     for (const runtime of ["development", "test"] as const) {
       expect(
@@ -243,6 +263,7 @@ describe("API environment boundary", () => {
       STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY: analyticsKey,
       STOCKWISE_PUBLIC_WEB_ORIGIN: "http://localhost:3000",
       STOCKWISE_RUNTIME_ENV: "development",
+      ...verificationKeys,
     };
     expect(loadApiEnvironment(base).OPENROUTER_API_KEY).toBeUndefined();
     expect(
@@ -262,5 +283,172 @@ describe("API environment boundary", () => {
     }
     expect(error).toBeDefined();
     expect(String(error)).not.toContain("secret\nvalue");
+  });
+
+  it("requires distinct dedicated canonical verification keys", () => {
+    const base = {
+      DATABASE_URL:
+        "postgresql://local-user:local-password@127.0.0.1:5432/local-database",
+      STOCKWISE_API_PORT: "3001",
+      STOCKWISE_ANALYTICS_CURSOR_HMAC_KEY: analyticsKey,
+      STOCKWISE_PUBLIC_WEB_ORIGIN: "http://localhost:3000",
+      STOCKWISE_RUNTIME_ENV: "development",
+      ...verificationKeys,
+    };
+    const parsed = loadApiEnvironment(base);
+    expect(parsed.STOCKWISE_VERIFICATION_OTP_KEY_ID).toBe(1);
+    expect(parsed.STOCKWISE_VERIFICATION_PROOF_KEY_ID).toBe(2);
+    expect(parsed.STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY).toBeUndefined();
+
+    for (const [field, value] of [
+      [
+        "STOCKWISE_VERIFICATION_OTP_KEY",
+        Buffer.alloc(31, 1).toString("base64url"),
+      ],
+      ["STOCKWISE_VERIFICATION_OTP_KEY", `${verificationOtpKey}=`],
+      ["STOCKWISE_VERIFICATION_OTP_KEY", "not-base64url!"],
+      [
+        "STOCKWISE_VERIFICATION_PROOF_KEY",
+        Buffer.alloc(31, 1).toString("base64url"),
+      ],
+      [
+        "STOCKWISE_VERIFICATION_PROOF_KEY",
+        Buffer.alloc(33, 1).toString("base64url"),
+      ],
+    ] as const) {
+      expect(() => loadApiEnvironment({ ...base, [field]: value })).toThrow();
+    }
+    for (const [field, value] of [
+      ["STOCKWISE_VERIFICATION_OTP_KEY_ID", "0"],
+      ["STOCKWISE_VERIFICATION_OTP_KEY_ID", "2147483648"],
+      ["STOCKWISE_VERIFICATION_OTP_KEY_ID", "1.5"],
+      ["STOCKWISE_VERIFICATION_PROOF_KEY_ID", "-1"],
+      ["STOCKWISE_VERIFICATION_PROOF_KEY_ID", "4294967296"],
+    ] as const) {
+      expect(() => loadApiEnvironment({ ...base, [field]: value })).toThrow();
+    }
+
+    // OTP and proof keys must be distinct dedicated keys.
+    expect(() =>
+      loadApiEnvironment({
+        ...base,
+        STOCKWISE_VERIFICATION_PROOF_KEY: verificationOtpKey,
+      }),
+    ).toThrow();
+
+    // A previous proof key must be complete, distinct, and ID-unique.
+    const previousKey = Buffer.alloc(32, 5).toString("base64url");
+    const previousBase = {
+      ...base,
+      STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY: previousKey,
+      STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY_ID: "3",
+      STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY_LAST_ISSUED_AT: new Date(
+        1_700_000_000_000,
+      ).toISOString(),
+    };
+    expect(
+      loadApiEnvironment(previousBase)
+        .STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY_ID,
+    ).toBe(3);
+    expect(() =>
+      loadApiEnvironment({
+        ...previousBase,
+        STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY_ID: "2",
+      }),
+    ).toThrow();
+    expect(() =>
+      loadApiEnvironment({
+        ...previousBase,
+        STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY: verificationProofKey,
+      }),
+    ).toThrow();
+    expect(() =>
+      loadApiEnvironment({
+        ...previousBase,
+        STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY: verificationOtpKey,
+      }),
+    ).toThrow();
+    expect(() =>
+      loadApiEnvironment({
+        ...previousBase,
+        STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY_ID: undefined,
+      }),
+    ).toThrow();
+    expect(() =>
+      loadApiEnvironment({
+        ...previousBase,
+        STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY_LAST_ISSUED_AT: undefined,
+      }),
+    ).toThrow();
+    expect(() =>
+      loadApiEnvironment({
+        ...previousBase,
+        STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY_LAST_ISSUED_AT: "not-a-time",
+      }),
+    ).toThrow();
+    for (const metadata of [
+      { STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY_ID: "3" },
+      {
+        STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY_LAST_ISSUED_AT: new Date(
+          1_700_000_000_000,
+        ).toISOString(),
+      },
+    ]) {
+      expect(() => loadApiEnvironment({ ...base, ...metadata })).toThrow();
+    }
+    expect(() =>
+      loadApiEnvironment({
+        ...previousBase,
+        STOCKWISE_VERIFICATION_PREVIOUS_PROOF_KEY_LAST_ISSUED_AT:
+          "2026-01-01 12:00:00",
+      }),
+    ).toThrow();
+
+    // Verification key material must be isolated from analytics and
+    // provider material as well as the other verification keys.
+    expect(() =>
+      loadApiEnvironment({
+        ...base,
+        STOCKWISE_VERIFICATION_OTP_KEY: analyticsKey,
+      }),
+    ).toThrow();
+    expect(() =>
+      loadApiEnvironment({
+        ...base,
+        STOCKWISE_VERIFICATION_PROOF_KEY: analyticsKey,
+      }),
+    ).toThrow();
+    expect(() =>
+      loadApiEnvironment({
+        ...base,
+        RESEND_API_KEY: verificationOtpKey,
+      }),
+    ).toThrow();
+    expect(() =>
+      loadApiEnvironment({
+        ...base,
+        OPENROUTER_API_KEY: verificationProofKey,
+      }),
+    ).toThrow();
+    expect(() =>
+      loadApiEnvironment({
+        ...base,
+        STOCKWISE_VERIFICATION_OTP_KEY: "sk-placeholder-key",
+        RESEND_API_KEY: "sk-placeholder-key",
+      }),
+    ).toThrow();
+
+    // Key material must never appear in validation errors.
+    let error: unknown;
+    try {
+      loadApiEnvironment({
+        ...base,
+        STOCKWISE_VERIFICATION_PROOF_KEY: verificationOtpKey,
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeDefined();
+    expect(String(error)).not.toContain(verificationOtpKey);
   });
 });

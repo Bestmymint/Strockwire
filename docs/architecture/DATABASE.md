@@ -116,14 +116,14 @@ does not alter the initial migration. Reintroducing `NOT NULL` requires a later
 reviewed backfill and forward migration after all applicable accounts have a
 profile.
 
-`ADR-034` (planned, not yet migrated) changes this identity baseline. `User`
-gains a positive `credentialVersion` (initial 1) that the database increments
-on every password replacement, and the 24-hour `EmailVerificationToken` is
-replaced by the 10-minute `EmailVerificationChallenge` (OTP MAC plus link
-hash, one non-terminal challenge per user). A forward cutover migration
-terminalizes every open legacy verification token, preserves terminal history
-without inventing version values, adds the version column, and evolves/renames
-verification persistence into the challenge model; applied migrations are never edited.
+`ADR-034` is implemented by the synchronized T02A schema/backend cutover.
+`User.credentialVersion` is PostgreSQL BIGINT, initially 1, with a positive
+check; password-replacement transactions atomically increment it with the hash
+and password-change timestamp. Migration
+`20261008000000_email_verification_challenge_cutover` renames/evolves the
+24-hour verification table into `EmailVerificationChallenge`, terminalizes
+every open legacy row, and preserves historical identity, ownership, hashes,
+and terminal timestamps without inventing credential versions or OTP material.
 The verification password proof itself is a stateless encrypted cookie and has no table.
 
 ## 2. Database-wide invariants
@@ -437,10 +437,9 @@ Constraints and lifecycle:
 Purpose: persisted unified email-verification challenge (code plus link) and
 single-use password-recovery proof.
 
-The implemented `EmailVerificationToken` model (P2-M2-T03: 32-byte SHA-256
-hash, 24-hour expiry, link-only) remains the implemented baseline until the
-`ADR-034` cutover migration; its open rows are terminalized at cutover. The
-`ADR-034` target model is:
+The historical P2-M2-T03 link-only table has been evolved and renamed to
+`email_verification_challenges`; no live legacy-link compatibility remains.
+The implemented `ADR-034` model is:
 
 Required logical attributes (`EmailVerificationChallenge`):
 
@@ -457,6 +456,30 @@ Required logical attributes (`EmailVerificationChallenge`):
 - `issuedAt`, `expiresAt`, `consumedAt`, `consumedVia` (OTP/link),
   `replacedAt`, `revokedAt`, and narrow `revocationReason`
 - Created/updated timestamps
+
+Physical cutover representation:
+
+- `isLegacy` marks only pre-cutover rows. An INSERT/UPDATE trigger rejects
+  newly forged legacy history and changes to this discriminator; every legacy
+  row must remain terminal with null version, OTP MAC/key ID, and attempt count.
+- Target rows require all security fields even when already terminal.
+  OTP MAC and link SHA-256 are 64 lowercase hex characters (32-byte digests).
+  The link column retains VARCHAR(128) to preserve arbitrary historical hashes.
+- Historically consumed rows are identified as `LINK`; their existing
+  `consumedAt = expiresAt` boundary remains valid. Target consumption requires
+  strict `< expiresAt`, and target expiry is exactly issuance plus ten minutes.
+- Narrow revocation reasons are `LEGACY_CUTOVER`, `DELIVERY_SUPPRESSED`,
+  `DELIVERY_FAILED`, `RESPONSE_ABORTED`, and `PASSWORD_RESET`. Legacy open rows
+  use `LEGACY_CUTOVER` with revocation no earlier than issuance, including
+  baseline-valid future-issued rows. No generic persisted status is added.
+
+Deployment is a synchronized cutover: stop legacy verification writers before
+applying the transactional migration and starting the matching backend with
+dedicated keys. Renames and column additions take table locks; legacy backfill
+and constraint validation scan verification history. The constant user default
+uses PostgreSQL's fast-default path rather than a user-table data rewrite.
+A failed migration transaction rolls back its DDL/backfill. After successful
+cutover, recover forward; do not restore old runtime or legacy live credentials.
 
 Constraints and lifecycle:
 
@@ -1593,9 +1616,8 @@ The canonical definitions live in `BUILD_SPEC.md`:
   and persisted-snapshot timezone/boundary retention.
 - `OQ-017`/`OQ-018` are resolved for V1 by `ADR-033`: bounded schedule/catch-up,
   logical job identity, free-only provider retries/budget, provenance, and retention.
-- `ADR-034` (planned, not yet migrated) accepts the unified verification
-  challenge, the stateless verification password proof, the `credentialVersion`
-  increment, and the legacy open-link cutover; its schema, lock order, and
-  transaction behavior are defined above and remain unimplemented.
+- `ADR-034` implements the unified verification challenge, stateless password
+  proof, credential-version increment, and legacy open-link cutover. The final
+  web OTP/continuation flow and Phase 8 operational hardening remain separate.
 - `OQ-019` audit scope affects operational support records.
 - `OQ-020` retention/recovery targets affect lifecycle.

@@ -40,6 +40,7 @@ describe("identity email provider selection", () => {
       kind: "verification",
       recipient: "user@example.com",
       url: "http://localhost:3000/verify-email?token=placeholder",
+      code: "001234",
     });
     expect(fetchImplementation).toHaveBeenCalledOnce();
     expect(fetchImplementation.mock.calls[0]?.[0]).toBe(

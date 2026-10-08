@@ -74,7 +74,7 @@ const tables = [
   "first_organization_onboardings",
   "branch_assignments",
   "sessions",
-  "email_verification_tokens",
+  "email_verification_challenges",
   "password_reset_tokens",
   "invitations",
   "invitation_branch_scopes",
@@ -226,7 +226,17 @@ async function verifyManifest(
     }),
   );
   const userRows = await tx.user.findMany();
-  equalRows("users", fixture.userRows, userRows);
+  equalRows(
+    "users",
+    fixture.userRows,
+    userRows.map(({ credentialVersion, ...user }) => {
+      if (credentialVersion !== 1n)
+        throw new Error(
+          "A demo user credential version differs from the initial generation.",
+        );
+      return user;
+    }),
+  );
   for (const user of userRows) {
     if (
       !/^\$argon2id\$v=19\$m=65536,p=4,t=3\$/.test(user.passwordHash) ||

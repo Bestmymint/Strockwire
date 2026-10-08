@@ -167,6 +167,41 @@ describe("Express API application", () => {
     expect(entries.some((entry) => entry.level === "error")).toBe(false);
   });
 
+  it.each([
+    { kind: "malformed JSON", body: '{"code":', status: 400 },
+    {
+      kind: "oversized JSON",
+      body: JSON.stringify({ value: "x".repeat(110 * 1024) }),
+      status: 413,
+    },
+  ])(
+    "protects authentication parser errors for $kind",
+    async ({ body, status }) => {
+      const { baseUrl } = await startApplication();
+      for (const path of [
+        "register",
+        "login",
+        "verification-password-proof",
+        "verification-resend",
+        "verify-email-code",
+        "verify-email",
+      ]) {
+        const response = await fetch(`${baseUrl}/api/v1/auth/${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body,
+        });
+        expect(response.status).toBe(status);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+        expect(response.headers.getSetCookie()).toEqual([]);
+        expect(await response.json()).toMatchObject({
+          error: { code: "VALIDATION_ERROR" },
+        });
+      }
+    },
+  );
+
   it("hides unexpected error details from responses and logs", async () => {
     const apiRouter = Router();
     apiRouter.get("/explode", () => {
