@@ -1,5 +1,6 @@
 import { Router } from "express";
 
+import { createAuthenticationRuntime } from "./modules/identity/authentication-runtime.ts";
 import { createApp } from "./app.ts";
 import { loadApiEnvironment } from "./environment.ts";
 import { createPrismaAnalyticsBranchRepository } from "./modules/analytics/analytics-branch-repository.ts";
@@ -43,40 +44,14 @@ import { createSalesApiService } from "./modules/sales/sales-api-service.ts";
 import { createSalesRouter } from "./modules/sales/sales-router.ts";
 import { createPrismaRefundRepository } from "./modules/sales/refund-repository.ts";
 import { createRefundService } from "./modules/sales/refund-service.ts";
-import { createPrismaAuthenticationRepository } from "./modules/identity/authentication-repository.ts";
-import { createPrismaAuthenticationSessionRepository } from "./modules/identity/authentication-repository.ts";
-import { createAuthenticationMiddleware } from "./modules/identity/authentication-context.ts";
-import { createPrismaCredentialLifecycleRepository } from "./modules/identity/credential-lifecycle-repository.ts";
-import { createCredentialLifecycleRouter } from "./modules/identity/credential-lifecycle-router.ts";
-import { createCredentialLifecycleService } from "./modules/identity/credential-lifecycle-service.ts";
 import { createIdentityEmailProvider } from "./modules/identity/email-provider-configuration.ts";
-import { createEmailRequestLimiter } from "./modules/identity/email-request-limiter.ts";
 import { createPrismaFirstOrganizationOnboardingRepository } from "./modules/identity/first-organization-onboarding-repository.ts";
 import { createFirstOrganizationOnboardingRouter } from "./modules/identity/first-organization-onboarding-router.ts";
 import { createFirstOrganizationOnboardingService } from "./modules/identity/first-organization-onboarding-service.ts";
-import { createLoginLimiter } from "./modules/identity/login-limiter.ts";
-import { createLoginRouter } from "./modules/identity/login-router.ts";
-import { createLoginService } from "./modules/identity/login-service.ts";
 import { createMembershipAccessRouter } from "./modules/identity/membership-access-router.ts";
 import { createPrismaMembershipAccessRepository } from "./modules/identity/membership-access-repository.ts";
 import { createMembershipAccessService } from "./modules/identity/membership-access-service.ts";
-import {
-  argon2PasswordHasher,
-  argon2PasswordVerifier,
-} from "./modules/identity/password-hasher.ts";
-import { createRegistrationLimiter } from "./modules/identity/registration-limiter.ts";
-import { createRegistrationRouter } from "./modules/identity/registration-router.ts";
-import { createRegistrationService } from "./modules/identity/registration-service.ts";
-import { createSessionConfiguration } from "./modules/identity/session-configuration.ts";
-import { secureSessionTokenProvider } from "./modules/identity/session-token.ts";
 import { secureOneTimeTokenProvider } from "./modules/identity/one-time-token.ts";
-import { createPrismaVerificationRepository } from "./modules/identity/verification-repository.ts";
-import {
-  createVerificationSecurity,
-  verificationSecurityConfiguration,
-} from "./modules/identity/verification-security.ts";
-import { createVerificationDelivery } from "./modules/identity/verification-delivery.ts";
-import { createVerificationService } from "./modules/identity/verification-service.ts";
 import { createPrismaBranchRepository } from "./modules/organizations/branch-repository.ts";
 import { createBranchRouter } from "./modules/organizations/branch-router.ts";
 import { createBranchService } from "./modules/organizations/branch-service.ts";
@@ -88,59 +63,16 @@ const logger = createApiLogger();
 async function main(): Promise<void> {
   const environment = loadApiEnvironment();
   const prisma = getPrismaClient(environment);
-  const sessionConfiguration = createSessionConfiguration(environment);
-  const authenticationRepository = createPrismaAuthenticationRepository(prisma);
-  const authenticationSessionRepository =
-    createPrismaAuthenticationSessionRepository(prisma);
-  const verificationRepository = createPrismaVerificationRepository(prisma);
-  const verificationSecurity = createVerificationSecurity(
-    verificationSecurityConfiguration(environment),
-  );
-  const verificationDeliveryLimiter = createEmailRequestLimiter();
   const emailProvider = createIdentityEmailProvider(environment);
-  const verificationDelivery = createVerificationDelivery({
-    emailProvider,
-    publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
-    repository: verificationRepository,
-    onFailure(kind) {
-      logger.error({ deliveryType: kind }, "identity email delivery failed");
-    },
-  });
-  const verificationService = createVerificationService({
-    repository: verificationRepository,
-    security: verificationSecurity,
-    delivery: verificationDelivery,
-    deliveryLimiter: verificationDeliveryLimiter,
-  });
-  const loginService = createLoginService({
-    configuration: sessionConfiguration,
-    passwordVerifier: argon2PasswordVerifier,
-    repository: authenticationRepository,
-    tokenProvider: secureSessionTokenProvider,
-    verificationRepository,
-    security: verificationSecurity,
-  });
-  const registrationService = createRegistrationService({
-    passwordHasher: argon2PasswordHasher,
-    repository: verificationRepository,
-    security: verificationSecurity,
-    delivery: verificationDelivery,
-    deliveryLimiter: verificationDeliveryLimiter,
-  });
-  const credentialLifecycleService = createCredentialLifecycleService({
+  const authentication = createAuthenticationRuntime({
+    environment,
+    prisma,
     emailProvider,
     onDeliveryFailure(kind) {
       logger.error({ deliveryType: kind }, "identity email delivery failed");
     },
-    passwordHasher: argon2PasswordHasher,
-    publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
-    repository: createPrismaCredentialLifecycleRepository(prisma),
-    tokenProvider: secureOneTimeTokenProvider,
   });
-  const authenticationMiddleware = createAuthenticationMiddleware({
-    configuration: sessionConfiguration,
-    repository: authenticationSessionRepository,
-  });
+  const { authenticationMiddleware } = authentication;
   const firstOrganizationOnboardingService =
     createFirstOrganizationOnboardingService({
       repository: createPrismaFirstOrganizationOnboardingRepository(prisma),
@@ -216,31 +148,7 @@ async function main(): Promise<void> {
     ),
   });
   const apiRouter = Router();
-  apiRouter.use(
-    createRegistrationRouter({
-      limiter: createRegistrationLimiter(),
-      registrationService,
-      publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
-    }),
-  );
-  apiRouter.use(
-    createCredentialLifecycleRouter({
-      authenticationMiddleware,
-      configuration: sessionConfiguration,
-      lifecycleService: credentialLifecycleService,
-      passwordResetLimiter: createEmailRequestLimiter(),
-      publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
-      verificationService,
-    }),
-  );
-  apiRouter.use(
-    createLoginRouter({
-      configuration: sessionConfiguration,
-      limiter: createLoginLimiter(),
-      loginService,
-      publicWebOrigin: environment.STOCKWISE_PUBLIC_WEB_ORIGIN,
-    }),
-  );
+  apiRouter.use(authentication.router);
   apiRouter.use(
     createFirstOrganizationOnboardingRouter({
       authenticationMiddleware,
@@ -334,7 +242,7 @@ async function main(): Promise<void> {
     port: environment.STOCKWISE_API_PORT,
   });
   const shutdown = createShutdownHandler(runningServer, logger, async () => {
-    await verificationDelivery.drain();
+    await authentication.drain();
     await prisma.$disconnect();
   });
 

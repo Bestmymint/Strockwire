@@ -117,6 +117,9 @@ reviewed backfill and forward migration after all applicable accounts have a
 profile.
 
 `ADR-034` is implemented by the synchronized T02A schema/backend cutover.
+Backend and frontend are ACCEPTED / COMMITTED. The integration harness is
+NOT ACCEPTED; real frontend/backend/PostgreSQL integration is NOT EXECUTED,
+real email delivery is NOT VERIFIED, and Phase 8 is NOT STARTED.
 `User.credentialVersion` is PostgreSQL BIGINT, initially 1, with a positive
 check; password-replacement transactions atomically increment it with the hash
 and password-change timestamp. Migration
@@ -243,14 +246,15 @@ Lifecycle:
 
 - Registration creates an email/password account with `displayName` and
   `emailVerifiedAt` set to `NULL` and `credentialVersion = 1`.
-- `ADR-034` (planned) makes registration atomically create the bound
-  verification challenge and prepare the real verification proof; the
-  implemented P2-M2-T01 baseline creates neither.
+- The implemented T02A `ADR-034` cutover makes registration atomically create
+  the bound verification challenge and prepare the real verification proof.
+  The historical P2-M2-T01 baseline created neither.
 - Every password replacement, reset, or any later accepted credential change
   increments `credentialVersion` together with the hash and
   `passwordChangedAt`.
-- P2-M2-T03 owns verification-token creation, resend, provider delivery, and
-  verification in the implemented baseline. Profile/onboarding later supplies
+- P2-M2-T03 originally owned verification-token creation, resend, provider delivery,
+  and verification; the T02A cutover now implements the superseding `ADR-034`
+  challenge/proof/delivery contract. Profile/onboarding later supplies
   the required display name.
 - Deactivation must preserve historical actor references.
 - Physical deletion/anonymization and retention require an accepted policy.
@@ -1455,7 +1459,7 @@ lock before that Sale lock.
 Stock transfer is **DEFERRED FROM MVP** by `ADR-025`; no transfer transaction contract,
 record, or ledger source is defined. Do not infer it from example movement names.
 
-### 6.5 Verification and credential lifecycle (ADR-034, planned)
+### 6.5 Verification and credential lifecycle (ADR-034, implemented)
 
 Verification and credential mutations follow a fixed lock order and keep
 expensive work out of the lock:

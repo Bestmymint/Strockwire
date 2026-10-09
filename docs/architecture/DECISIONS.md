@@ -2303,13 +2303,13 @@ deferred/unassigned, and P0-M2-T05 remains unchecked.
 ## ADR-034 — Require version-bound password and mailbox proof for OTP-first verification
 
 - **Date:** 2026-10-08
-- **Status:** Accepted; documentation contract only, schema/runtime implementation pending
+- **Status:** Accepted; backend/schema and frontend ACCEPTED / COMMITTED; independent frontend review accepted. Integration harness NOT ACCEPTED; real frontend/backend/PostgreSQL integration NOT EXECUTED; real email delivery NOT VERIFIED; Phase 8 NOT STARTED.
 - **Authority:** Accepted `T02A-AUTH-VERIFICATION-ARCHITECTURE-03`
 
 ### Context
 
-The implemented P2 authentication baseline separates registration from email
-issuance and verifies through a 24-hour link. T02A requires automatic initiation,
+At the decision checkpoint, the historical P2 authentication baseline separated
+registration from email issuance and verified through a 24-hour link. T02A requires automatic initiation,
 OTP-first completion, and recovery without a durable preverification session.
 Credential-version binding alone cannot prevent pending-account pre-hijacking:
 a victim could receive the latest challenge for an attacker-installed password.
@@ -2319,8 +2319,9 @@ that password.
 
 ### Superseded and extended clauses
 
-Historical ADR text remains unchanged. This ADR governs the accepted target;
-it does not claim that the current implementation already implements it.
+Historical ADR text remains unchanged. This ADR governs the accepted contract,
+now implemented by the synchronized T02A schema/backend cutover and frontend.
+Recording the decision itself did not establish implementation or runtime evidence.
 
 | Prior decision | Superseded or extended clause | Preserved boundary |
 | --- | --- | --- |
@@ -2607,8 +2608,10 @@ Fleet-wide rate limits, IP/network/global/provider controls, trusted proxy
 policy, production secret-manager/IAM integration, distributed key rotation/
 usage accounting, capacity/DoS targets, and reliable outbox remain Phase 8 under
 `OQ-015`/`OQ-020`. Single-process budgeting is not production-readiness approval.
-Schema/migration work is separately authorized next, before runtime cutover;
-legacy open links must be invalidated while preserving terminal history.
+At acceptance, schema/migration work required separate authorization before runtime
+cutover. The committed T02A forward migration now invalidates legacy open links
+while preserving terminal history. Deploy that migration with the matching backend
+and dedicated keys; deployment and real integration execution remain separate gates.
 
 ## 2. Explicitly superseded planning directions
 

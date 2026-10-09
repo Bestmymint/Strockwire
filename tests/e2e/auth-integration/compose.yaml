@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: postgres:16.15-alpine
+    container_name: ${STOCKWISE_T02A_PROJECT:?worker project required}-postgres
+    environment:
+      POSTGRES_USER: ${STOCKWISE_T02A_DB_USER:?worker-owned credential required}
+      POSTGRES_PASSWORD: ${STOCKWISE_T02A_DB_PASSWORD:?worker-owned credential required}
+      POSTGRES_DB: postgres
+    labels:
+      stockwise.t02a.owner: ${STOCKWISE_T02A_OWNER:?worker ownership required}
+    ports:
+      - "127.0.0.1:55439:5432"
+    volumes:
+      - auth-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d postgres"]
+      interval: 1s
+      timeout: 5s
+      retries: 60
+volumes:
+  auth-data:
+    name: ${STOCKWISE_T02A_PROJECT:?worker project required}-postgres-data
+    labels:
+      stockwise.t02a.owner: ${STOCKWISE_T02A_OWNER:?worker ownership required}
+networks:
+  default:
+    labels:
+      stockwise.t02a.owner: ${STOCKWISE_T02A_OWNER:?worker ownership required}

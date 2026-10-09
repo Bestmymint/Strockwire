@@ -374,9 +374,12 @@ eligibility transactionally.
   Accepted` response. PostgreSQL canonical-email uniqueness is the final
   concurrency boundary; Prisma/database uniqueness details are never returned
   or logged.
-- The implemented P2-M2-T01 baseline predates `ADR-034`: it creates no
-  verification challenge or proof cookie and returns the pre-`ADR-034`
-  envelope without a `verification` object.
+- The historical P2-M2-T01 baseline predated `ADR-034`: it created no
+  verification challenge or proof cookie and returned the pre-`ADR-034`
+  envelope without a `verification` object. The accepted and committed T02A
+  backend/frontend implement the current contract. The integration harness is
+  NOT ACCEPTED; real frontend/backend/PostgreSQL integration is NOT EXECUTED,
+  real email delivery is NOT VERIFIED, and Phase 8 is NOT STARTED.
 
 Accepted target success envelope (all accepted registrations, real or
 phantom):
@@ -707,7 +710,7 @@ and the password proof.
   Native OTP normalization maps both selection endpoints through ASCII-digit
   filtering and six-digit truncation; keyboard replacement and selection-aware
   paste preserve the resulting caret without changing focus.
-  Independent acceptance re-review remains pending; verification grants no session.
+  Independent frontend acceptance re-review is accepted; real frontend/backend/PostgreSQL integration and email delivery remain unverified. Verification grants no session.
 - Local/single-process limits only; cloud is not production readiness.
   Fleet, IP/global, provider, proxy, secret-manager IAM, key-rotation
   accounting, capacity, DoS, and outbox behavior are deferred to Phase 8.
@@ -1560,11 +1563,11 @@ Login separately permits five failed credential attempts per fixed 15-minute
 window per canonical email through a SHA-256-derived process-local key. Only
 credential failures count and success does not reset the active window.
 Exhaustion returns `429 RATE_LIMITED` with `Retry-After`. The
-`POST /auth/verification-password-proof` fallback (planned `ADR-034`) shares
+`POST /auth/verification-password-proof` fallback (implemented T02A `ADR-034`) shares
 this same limiter object. This does not close the remaining
 distributed/IP-aware/global or proxy-trust decisions in `OQ-020`.
 
-The shared mail budget (planned `ADR-034`) allows three valid requests per
+The shared mail budget (implemented T02A `ADR-034`) allows three valid requests per
 canonical email per 15 minutes across signup and verification resend, keyed by
 a SHA-256 derivative. Every syntactically valid request consumes before lookup
 regardless of eligibility or provider; attempt beyond the budget returns

@@ -24,6 +24,7 @@ Canonical documents each own one topic. Use the
 ## Development
 
 - [Fixed demo dataset](development/DEMO_DATA.md) — guarded local demo provisioning and validation.
+- [Authentication integration harness](development/AUTH_INTEGRATION_HARNESS.md) — private recording mail, disposable ownership guards, artifact boundaries, and separately authorized execution.
 
 Task, evidence, testing, audit, remediation, and acceptance records are maintained
 outside Git in the StockWise Obsidian project records. Follow the
