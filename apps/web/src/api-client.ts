@@ -31,18 +31,21 @@ const safeApiErrorCodes = new Set([
   "ALREADY_ONBOARDED",
   "INVALID_CREDENTIALS",
   "INVALID_TOKEN",
+  "INVALID_VERIFICATION_CODE",
   "RATE_LIMITED",
   "VALIDATION_ERROR",
+  "VERIFICATION_PASSWORD_PROOF_REQUIRED",
 ]);
-
 export type AuthApiErrorKind =
   | "already_has_organization_access"
   | "already_onboarded"
   | "invalid_credentials"
   | "invalid_token"
+  | "invalid_verification_code"
   | "rate_limited"
   | "validation"
-  | "unavailable";
+  | "unavailable"
+  | "verification_password_proof_required";
 
 export class AuthApiError extends Error {
   readonly kind: AuthApiErrorKind;
@@ -91,6 +94,17 @@ function authErrorFromResponse(
     return new AuthApiError("invalid_token");
   }
 
+  if (code === "INVALID_VERIFICATION_CODE") {
+    return new AuthApiError("invalid_verification_code");
+  }
+
+  if (
+    response.status === 401 &&
+    code === "VERIFICATION_PASSWORD_PROOF_REQUIRED"
+  ) {
+    return new AuthApiError("verification_password_proof_required");
+  }
+
   if (code === "ALREADY_ONBOARDED") {
     return new AuthApiError("already_onboarded");
   }
@@ -117,7 +131,8 @@ async function readResponseBody(response: Response): Promise<unknown> {
 async function postAuth(
   path: string,
   body: Record<string, string> | undefined = undefined,
-): Promise<unknown> {
+  signal?: AbortSignal,
+): Promise<{ status: number; body: unknown }> {
   let response: Response;
 
   try {
@@ -129,13 +144,14 @@ async function postAuth(
           : { accept: "application/json", "content-type": "application/json" },
       method: "POST",
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(signal === undefined ? {} : { signal }),
     });
   } catch {
     throw new AuthApiError("unavailable");
   }
 
   if (response.status === 204) {
-    return undefined;
+    return { status: 204, body: undefined };
   }
 
   const responseBody = await readResponseBody(response);
@@ -143,29 +159,58 @@ async function postAuth(
     throw authErrorFromResponse(response, responseBody);
   }
 
-  return responseBody;
+  return { status: response.status, body: responseBody };
+}
+
+async function postAuthBody(
+  path: string,
+  input: Record<string, string>,
+  status: number,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const response = await postAuth(path, input, signal);
+  if (response.status !== status) throw new AuthApiError("unavailable");
+  return response.body;
 }
 
 const acceptedResponseSchema = z.object({
   data: z.object({ status: z.literal("accepted") }),
 });
+const challengeSelectorSchema = z.object({
+  challengeId: z.uuid(),
+});
 const registrationResponseSchema = z.object({
   data: z.object({
     nextStep: z.literal("verify_email"),
     status: z.literal("accepted"),
+    verification: challengeSelectorSchema,
   }),
 });
-const loginResponseSchema = z.object({
-  data: z.object({
-    user: z.object({
-      displayName: z.string().nullable(),
-      email: z.string().email(),
-      id: z.string(),
-    }),
-  }),
+const loginUserSchema = z.object({
+  displayName: z.string().nullable(),
+  email: z.string().email(),
+  id: z.string(),
+});
+const loginVerifiedResponseSchema = z.object({
+  data: z.object({ user: loginUserSchema }).strict(),
+});
+const loginUnverifiedResponseSchema = z.object({
+  data: z
+    .object({
+      nextStep: z.literal("verify_email"),
+      status: z.literal("verification_required"),
+      verification: z.object({ challengeId: z.uuid().nullable() }),
+    })
+    .strict(),
 });
 const verificationResponseSchema = z.object({
   data: z.object({ status: z.literal("verified") }),
+});
+const resendVerificationResponseSchema = z.object({
+  data: z.object({
+    status: z.literal("accepted"),
+    verification: challengeSelectorSchema,
+  }),
 });
 const resetResponseSchema = z.object({
   data: z.object({ status: z.literal("password_reset") }),
@@ -199,35 +244,93 @@ function parseSuccess<T>(schema: z.ZodType<T>, value: unknown): T {
   return parsed.data;
 }
 
+export type LoginResult =
+  | ({ outcome: "authenticated" } & z.infer<
+      typeof loginVerifiedResponseSchema
+    >["data"])
+  | ({ outcome: "verification_required" } & z.infer<
+      typeof loginUnverifiedResponseSchema
+    >["data"]);
+
 export async function register(input: { email: string; password: string }) {
   return parseSuccess(
     registrationResponseSchema,
-    await postAuth("register", input),
+    await postAuthBody("register", input, 202),
   );
 }
 
-export async function login(input: { email: string; password: string }) {
-  return parseSuccess(loginResponseSchema, await postAuth("login", input));
+export async function login(input: {
+  email: string;
+  password: string;
+}): Promise<LoginResult> {
+  const response = await postAuth("login", input);
+  const verified = loginVerifiedResponseSchema.safeParse(response.body);
+  if (response.status === 200 && verified.success) {
+    return { outcome: "authenticated", ...verified.data.data };
+  }
+  const unverified = loginUnverifiedResponseSchema.safeParse(response.body);
+  if (response.status === 202 && unverified.success) {
+    return { outcome: "verification_required", ...unverified.data.data };
+  }
+  throw new AuthApiError("unavailable");
 }
 
-export async function resendVerification(input: { email: string }) {
+export async function resendVerification(
+  input: { email: string },
+  options?: { signal?: AbortSignal },
+) {
   return parseSuccess(
-    acceptedResponseSchema,
-    await postAuth("verification-resend", input),
+    resendVerificationResponseSchema,
+    await postAuthBody("verification-resend", input, 202, options?.signal),
   );
 }
 
-export async function verifyEmail(input: { token: string }) {
+export async function verifyEmail(
+  input: { token: string },
+  options?: { signal?: AbortSignal },
+) {
   return parseSuccess(
     verificationResponseSchema,
-    await postAuth("verify-email", input),
+    await postAuthBody("verify-email", input, 200, options?.signal),
+  );
+}
+
+export async function verifyEmailCode(
+  input: {
+    challengeId: string;
+    code: string;
+    email: string;
+  },
+  options?: { signal?: AbortSignal },
+) {
+  return parseSuccess(
+    verificationResponseSchema,
+    await postAuthBody("verify-email-code", input, 200, options?.signal),
+  );
+}
+
+export async function verificationPasswordProof(
+  input: {
+    email: string;
+    password: string;
+  },
+  options?: { signal?: AbortSignal },
+) {
+  return parseSuccess(
+    acceptedResponseSchema,
+    await postAuthBody(
+      "verification-password-proof",
+      input,
+      202,
+      options?.signal,
+    ),
   );
 }
 
 export async function forgotPassword(input: { email: string }) {
   return parseSuccess(
     acceptedResponseSchema,
-    await postAuth("forgot-password", input),
+    await postAuthBody("forgot-password", input, 202),
   );
 }
 
@@ -237,7 +340,7 @@ export async function resetPassword(input: {
 }) {
   return parseSuccess(
     resetResponseSchema,
-    await postAuth("reset-password", input),
+    await postAuthBody("reset-password", input, 200),
   );
 }
 

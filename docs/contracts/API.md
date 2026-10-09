@@ -660,9 +660,15 @@ and the password proof.
   `Sec-Fetch-Site: cross-site` rejection before quota, mutation, or cookie
   work, with no CORS. Existing logout CSRF protection is not weakened.
 - Link page: `GET /verify-email?token=opaque` never consumes the challenge
-  and never issues proof. Capture into memory and call `history.replaceState`
-  immediately before redirects/telemetry. Consumption requires the user's
-  explicit same-origin JSON POST, never scanner GET or automatic page load.
+  and never issues proof. A frontend request boundary returns token-free bootstrap
+  HTML without Next.js hydration for token-bearing entry requests. It captures
+  the credential in a one-use memory closure and replaces the current URL/history
+  before fetching and adopting the clean `/verify-email` document. Only that
+  clean request enters the App Router; its serialized URL/query and history tree
+  contain no credential. The component takes the handoff into transient memory;
+  reload, abandonment, and document pagehide discard it. No private router
+  structures are mutated. Consumption requires the user's explicit same-origin
+  JSON POST, never scanner GET or automatic page load.
   The page and API require `Referrer-Policy: no-referrer` and
   `Cache-Control: no-store`, including malformed/oversized JSON errors handled
   before authentication routers. Redact sensitive query/cookie/body/header values
@@ -679,6 +685,29 @@ and the password proof.
   with unusable password proof reveals inline fallback. Reopen recovers through
   Login; refresh does not resend/renew. Preserve Light/Dark, EN/TH, accessibility,
   and existing shadcn/ui direction.
+- Frontend boundary: T02A-AUTH-VERIFICATION-WEB-01 implements registration and
+  pending-login continuation at `/verify-email`, explicit link confirmation,
+  mailbox-first inline password proof, and continuation-aware `/verification-resend`.
+  The storage helper validates and allowlists the four continuation fields,
+  rejects future/expired timestamps, and never extends retention on refresh.
+  The production verification documents have no-store/no-referrer protection.
+  All web documents enforce `X-Frame-Options: DENY` and CSP
+  `frame-ancestors 'none'`: registration/login or other SPA entry documents
+  cannot be framed to bypass verification-route headers. Embedding StockWise
+  in frames is unsupported. Next.js development mode overrides the clean page's
+  Cache-Control to `no-cache, must-revalidate`; production is the no-store target.
+  Resend responses commit only for the mounted, unchanged continuation revision
+  and request identity; unmount cancels the request, and late resolution cannot
+  overwrite a cleared or superseded flow. Verification and password-proof work
+  likewise require the active mounted request and original continuation revision/
+  identity before retrying mailbox credentials or applying success/failure state.
+  SPA unmount and pagehide invalidate that work and discard transient credentials;
+  transport abort is best-effort, not the stale-response safety boundary. A cleared
+  and identically recreated continuation is a new revision, not the prior flow.
+  Native OTP normalization maps both selection endpoints through ASCII-digit
+  filtering and six-digit truncation; keyboard replacement and selection-aware
+  paste preserve the resulting caret without changing focus.
+  Independent acceptance re-review remains pending; verification grants no session.
 - Local/single-process limits only; cloud is not production readiness.
   Fleet, IP/global, provider, proxy, secret-manager IAM, key-rotation
   accounting, capacity, DoS, and outbox behavior are deferred to Phase 8.

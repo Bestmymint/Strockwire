@@ -5,50 +5,72 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
 import Link from "next/link";
-import { type FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { register } from "@/api-client";
-
 import {
-  authErrorMessage,
-  hasEmailShape,
-  passwordValidationMessage,
-} from "./auth-form-support";
+  clearContinuation,
+  saveContinuation,
+} from "@/verification-continuation-browser";
+import { useLanguage } from "@/providers/language-provider";
+
+import { hasEmailShape, passwordValidationMessage } from "./auth-form-support";
+import { verificationErrorMessage } from "./auth-copy";
 
 export function RegistrationForm() {
+  const router = useRouter();
+  const { t } = useLanguage();
+  const pending = useRef(false);
+  const errorMessage = useRef<HTMLDivElement>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAccepted, setIsAccepted] = useState(false);
+  useEffect(() => {
+    if (error !== null) errorMessage.current?.focus();
+  }, [error]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isSubmitting) {
+    if (pending.current || isAccepted) {
       return;
     }
 
     if (!hasEmailShape(email)) {
-      setError("Enter a valid email address.");
+      setError(t("authInvalidEmail"));
       return;
     }
 
     const passwordError = passwordValidationMessage(password);
     if (passwordError !== null) {
-      setError(passwordError);
+      setError(t("authPasswordLength"));
       return;
     }
 
     setError(null);
     setIsSubmitting(true);
+    pending.current = true;
+    clearContinuation();
 
     try {
-      await register({ email, password });
+      const result = await register({ email, password });
+      saveContinuation({
+        version: 1,
+        canonicalEmail: email.trim().toLowerCase(),
+        challengeId: result.data.verification.challengeId,
+        savedAt: Date.now(),
+      });
+      setPassword("");
+      setEmail("");
       setIsAccepted(true);
+      router.push("/verify-email");
     } catch (requestError: unknown) {
-      setError(authErrorMessage(requestError));
+      setError(verificationErrorMessage(requestError, t));
     } finally {
       setIsSubmitting(false);
+      pending.current = false;
     }
   }
 
@@ -56,17 +78,11 @@ export function RegistrationForm() {
     return (
       <div aria-live="polite">
         <p className="text-sm leading-6 text-muted-foreground">
-          Check your email for the next step. You can request a verification
-          email when you are ready.
+          {t("authAccepted")}
         </p>
-        <Button
-          className="mt-5"
-          nativeButton={false}
-          role="link"
-          render={<Link href="/verification-resend" />}
-        >
-          Request verification email
-        </Button>
+        <Link className="underline" href="/verify-email">
+          {t("authVerify")}
+        </Link>
       </div>
     );
   }
@@ -75,9 +91,10 @@ export function RegistrationForm() {
     <form className="space-y-5" noValidate onSubmit={handleSubmit}>
       <div>
         <Label className="form-field" htmlFor="registration-email">
-          Email address
+          {t("authEmail")}
         </Label>
         <Input
+          aria-describedby={error !== null ? "registration-error" : undefined}
           autoComplete="email"
           className="mt-1"
           disabled={isSubmitting}
@@ -91,9 +108,10 @@ export function RegistrationForm() {
       </div>
       <div>
         <Label className="form-field" htmlFor="registration-password">
-          Password
+          {t("authPassword")}
         </Label>
         <Input
+          aria-describedby={error !== null ? "registration-error" : undefined}
           autoComplete="new-password"
           className="mt-1"
           disabled={isSubmitting}
@@ -105,22 +123,27 @@ export function RegistrationForm() {
           value={password}
         />
         <p className="mt-2 text-xs leading-5 text-muted-foreground">
-          Use 15–128 Unicode code points. Spaces and Unicode characters are
-          allowed.
+          {t("authPasswordLength")}
         </p>
       </div>
       {error === null ? null : (
-        <Alert variant="destructive" aria-live="assertive">
+        <Alert
+          variant="destructive"
+          aria-live="assertive"
+          id="registration-error"
+          ref={errorMessage}
+          tabIndex={-1}
+        >
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
       <Button className="w-full" disabled={isSubmitting} type="submit">
-        {isSubmitting ? "Creating account…" : "Create account"}
+        {isSubmitting ? t("authCreatingAccount") : t("authCreateAccount")}
       </Button>
       <p className="text-center text-sm text-muted-foreground">
-        Already have an account?{" "}
+        {t("authAlreadyAccount")}{" "}
         <Link className="font-medium text-foreground underline" href="/login">
-          Sign in
+          {t("authSignIn")}
         </Link>
       </p>
     </form>

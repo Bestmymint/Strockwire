@@ -7,56 +7,74 @@ import { Button } from "@/components/ui/button";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { login } from "@/api-client";
 
 import {
-  authErrorMessage,
-  hasEmailShape,
-  passwordValidationMessage,
-} from "./auth-form-support";
+  clearContinuation,
+  saveContinuation,
+} from "@/verification-continuation-browser";
+import { useLanguage } from "@/providers/language-provider";
+import { hasEmailShape, passwordValidationMessage } from "./auth-form-support";
+import { verificationErrorMessage } from "./auth-copy";
 
 export function LoginForm() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { t } = useLanguage();
+  const pending = useRef(false);
+  const errorMessage = useRef<HTMLDivElement>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  useEffect(() => {
+    if (error !== null) errorMessage.current?.focus();
+  }, [error]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isSubmitting) {
+    if (pending.current) {
       return;
     }
 
     if (!hasEmailShape(email)) {
-      setError("Enter a valid email address.");
+      setError(t("authInvalidEmail"));
       return;
     }
 
     const passwordError = passwordValidationMessage(password);
     if (passwordError !== null) {
-      setError(passwordError);
+      setError(t("authPasswordLength"));
       return;
     }
 
     setError(null);
     setIsSubmitting(true);
+    pending.current = true;
+    clearContinuation();
 
     try {
-      await login({ email, password });
-      queryClient.removeQueries({ queryKey: ["access-context"] });
-      router.push("/app");
+      const result = await login({ email, password });
+      setPassword("");
+      queryClient.clear();
+      if (result.outcome === "verification_required") {
+        saveContinuation({
+          version: 1,
+          canonicalEmail: email.trim().toLowerCase(),
+          challengeId: result.verification.challengeId,
+          savedAt: Date.now(),
+        });
+        router.push("/verify-email");
+      } else {
+        router.push("/app");
+      }
     } catch (requestError: unknown) {
-      setError(
-        authErrorMessage(requestError, {
-          invalid_credentials: "The email or password is incorrect.",
-        }),
-      );
+      setError(verificationErrorMessage(requestError, t));
     } finally {
       setIsSubmitting(false);
+      pending.current = false;
     }
   }
 
@@ -64,9 +82,10 @@ export function LoginForm() {
     <form className="space-y-5" noValidate onSubmit={handleSubmit}>
       <div>
         <Label className="form-field" htmlFor="login-email">
-          Email address
+          {t("authEmail")}
         </Label>
         <Input
+          aria-describedby={error !== null ? "login-error" : undefined}
           autoComplete="email"
           className="mt-1"
           disabled={isSubmitting}
@@ -81,13 +100,14 @@ export function LoginForm() {
       <div>
         <div className="flex items-baseline justify-between gap-3">
           <Label className="form-field" htmlFor="login-password">
-            Password
+            {t("authPassword")}
           </Label>
           <Link className="text-sm underline" href="/forgot-password">
-            Forgot password?
+            {t("authForgotPassword")}
           </Link>
         </div>
         <Input
+          aria-describedby={error !== null ? "login-error" : undefined}
           autoComplete="current-password"
           className="mt-1"
           disabled={isSubmitting}
@@ -100,20 +120,26 @@ export function LoginForm() {
         />
       </div>
       {error === null ? null : (
-        <Alert variant="destructive" aria-live="assertive">
+        <Alert
+          variant="destructive"
+          aria-live="assertive"
+          id="login-error"
+          ref={errorMessage}
+          tabIndex={-1}
+        >
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
       <Button className="w-full" disabled={isSubmitting} type="submit">
-        {isSubmitting ? "Signing in…" : "Sign in"}
+        {isSubmitting ? t("authSigningIn") : t("authSignIn")}
       </Button>
       <p className="text-center text-sm text-muted-foreground">
-        Need an account?{" "}
+        {t("authNeedAccount")}{" "}
         <Link
           className="font-medium text-foreground underline"
           href="/register"
         >
-          Create one
+          {t("authCreateOne")}
         </Link>
       </p>
     </form>

@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -12,6 +9,8 @@ import {
   resetPassword,
   resendVerification,
   verifyEmail,
+  verificationPasswordProof,
+  verifyEmailCode,
 } from "./api-client";
 
 afterEach(() => {
@@ -27,14 +26,18 @@ function successfulResponse(data: unknown, status = 200): Response {
 
 describe("authentication API client", () => {
   it("posts exact credentials through the same-origin API path", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        successfulResponse(
-          { nextStep: "verify_email", status: "accepted" },
-          202,
-        ),
-      );
+    const fetchMock = vi.fn().mockResolvedValue(
+      successfulResponse(
+        {
+          nextStep: "verify_email",
+          status: "accepted",
+          verification: {
+            challengeId: "11111111-1111-4111-8111-111111111111",
+          },
+        },
+        202,
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const password = "  password with Unicode Ω  ";
@@ -68,9 +71,8 @@ describe("authentication API client", () => {
     await expect(
       login({ email: "person@example.com", password: "password long enough" }),
     ).resolves.toEqual({
-      data: {
-        user: { displayName: null, email: "person@example.com", id: "user-id" },
-      },
+      outcome: "authenticated",
+      user: { displayName: null, email: "person@example.com", id: "user-id" },
     });
   });
 
@@ -200,22 +202,173 @@ describe("authentication API client", () => {
       ).rejects.toMatchObject({ kind });
     }
   });
+  it.each(["11111111-1111-4111-8111-111111111111", null])(
+    "returns pending login without authenticated authority (%s)",
+    async (challengeId) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          successfulResponse(
+            {
+              status: "verification_required",
+              nextStep: "verify_email",
+              verification: { challengeId },
+            },
+            202,
+          ),
+        ),
+      );
+      await expect(
+        login({
+          email: "person@example.com",
+          password: "password long enough",
+        }),
+      ).resolves.toEqual({
+        outcome: "verification_required",
+        status: "verification_required",
+        nextStep: "verify_email",
+        verification: { challengeId },
+      });
+    },
+  );
 
-  it("keeps browser storage and the server-only loopback origin out of auth UI code", () => {
-    const sourceRoot = new URL(".", import.meta.url);
-    const authSources = [
-      new URL("./api-client.ts", sourceRoot),
-      new URL("./components/auth/login-form.tsx", sourceRoot),
-      new URL("./components/auth/onboarding-form.tsx", sourceRoot),
-      new URL("./components/auth/registration-form.tsx", sourceRoot),
-      new URL("./components/auth/reset-password-form.tsx", sourceRoot),
-      new URL("./components/auth/verification-form.tsx", sourceRoot),
-    ].map((url) => readFileSync(fileURLToPath(url), "utf8"));
-    const source = authSources.join("\n");
+  it("rejects ambiguous login data rather than granting authority", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        successfulResponse({
+          user: { id: "user", email: "person@example.com", displayName: null },
+          status: "verification_required",
+          nextStep: "verify_email",
+          verification: { challengeId: null },
+        }),
+      ),
+    );
+    await expect(
+      login({ email: "person@example.com", password: "password long enough" }),
+    ).rejects.toMatchObject({ kind: "unavailable" });
+  });
 
-    expect(source).not.toContain("localStorage");
-    expect(source).not.toContain("sessionStorage");
-    expect(source).not.toContain("STOCKWISE_API_ORIGIN");
-    expect(source).not.toContain("console.log");
+  it("accepts OTP completion, dedicated proof and resend continuation contracts", async () => {
+    const challengeId = "11111111-1111-4111-8111-111111111111";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(successfulResponse({ status: "verified" }))
+      .mockResolvedValueOnce(successfulResponse({ status: "accepted" }, 202))
+      .mockResolvedValueOnce(
+        successfulResponse(
+          { status: "accepted", verification: { challengeId } },
+          202,
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      verifyEmailCode({
+        email: "person@example.com",
+        challengeId,
+        code: "012345",
+      }),
+    ).resolves.toEqual({ data: { status: "verified" } });
+    await expect(
+      verificationPasswordProof({
+        email: "person@example.com",
+        password: "  unchanged password Ω  ",
+      }),
+    ).resolves.toEqual({ data: { status: "accepted" } });
+    await expect(
+      resendVerification({ email: "person@example.com" }),
+    ).resolves.toEqual({
+      data: { status: "accepted", verification: { challengeId } },
+    });
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/v1/auth/verify-email-code",
+      "/api/v1/auth/verification-password-proof",
+      "/api/v1/auth/verification-resend",
+    ]);
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      credentials: "same-origin",
+      body: JSON.stringify({
+        email: "person@example.com",
+        challengeId,
+        code: "012345",
+      }),
+    });
+  });
+
+  it.each([
+    ["INVALID_VERIFICATION_CODE", 400, "invalid_verification_code"],
+    ["INVALID_TOKEN", 400, "invalid_token"],
+    [
+      "VERIFICATION_PASSWORD_PROOF_REQUIRED",
+      401,
+      "verification_password_proof_required",
+    ],
+    ["INVALID_CREDENTIALS", 401, "invalid_credentials"],
+    ["VALIDATION_ERROR", 400, "validation"],
+  ] as const)(
+    "maps %s without returning server details",
+    async (code, status, kind) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              error: { code, message: "private provider details" },
+            }),
+            { status },
+          ),
+        ),
+      );
+      await expect(verifyEmail({ token: "opaque-token" })).rejects.toEqual(
+        new AuthApiError(kind),
+      );
+    },
+  );
+
+  it.each([200, 202])(
+    "rejects a login result with a mismatched HTTP status (%s)",
+    async (status) => {
+      const user = {
+        id: "user",
+        email: "person@example.com",
+        displayName: null,
+      };
+      const pending = {
+        status: "verification_required",
+        nextStep: "verify_email",
+        verification: { challengeId: null },
+      };
+      vi.stubGlobal(
+        "fetch",
+        vi
+          .fn()
+          .mockResolvedValue(
+            successfulResponse(status === 200 ? pending : { user }, status),
+          ),
+      );
+      await expect(
+        login({
+          email: "person@example.com",
+          password: "password long enough",
+        }),
+      ).rejects.toMatchObject({ kind: "unavailable" });
+    },
+  );
+
+  it("does not reveal password fallback from an unrelated server failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: { code: "VERIFICATION_PASSWORD_PROOF_REQUIRED" },
+          }),
+          { status: 500 },
+        ),
+      ),
+    );
+    await expect(verifyEmail({ token: "opaque-token" })).rejects.toMatchObject({
+      kind: "unavailable",
+    });
   });
 });

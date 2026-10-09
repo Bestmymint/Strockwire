@@ -1,13 +1,13 @@
-import { AuthCard } from "@/components/auth/auth-card";
-import { EmailRequestForm } from "@/components/auth/email-request-form";
+import { AuthCardLocalized } from "@/components/auth/auth-card-localized";
+import { VerificationResendForm } from "@/components/auth/verification-resend-form";
 
 export default function VerificationResendPage() {
   return (
-    <AuthCard
-      description="Request a new email verification link."
-      title="Verify your email"
+    <AuthCardLocalized
+      descriptionKey="authResendDescription"
+      titleKey="authResendTitle"
     >
-      <EmailRequestForm kind="verification" />
-    </AuthCard>
+      <VerificationResendForm />
+    </AuthCardLocalized>
   );
 }

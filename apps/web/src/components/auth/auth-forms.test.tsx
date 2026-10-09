@@ -18,9 +18,7 @@ import {
   login,
   logout,
   register,
-  resendVerification,
   resetPassword,
-  verifyEmail,
 } from "@/api-client";
 
 import { passwordValidationMessage } from "./auth-form-support";
@@ -30,7 +28,6 @@ import { LogoutButton } from "./logout-button";
 import { OnboardingForm } from "./onboarding-form";
 import { RegistrationForm } from "./registration-form";
 import { ResetPasswordForm } from "./reset-password-form";
-import { VerificationForm } from "./verification-form";
 
 const { routerPush } = vi.hoisted(() => ({ routerPush: vi.fn() }));
 
@@ -47,9 +44,7 @@ vi.mock("@/api-client", async (importOriginal) => {
     login: vi.fn(),
     logout: vi.fn(),
     register: vi.fn(),
-    resendVerification: vi.fn(),
     resetPassword: vi.fn(),
-    verifyEmail: vi.fn(),
   };
 });
 
@@ -61,10 +56,9 @@ afterEach(() => {
   vi.mocked(login).mockReset();
   vi.mocked(logout).mockReset();
   vi.mocked(register).mockReset();
-  vi.mocked(resendVerification).mockReset();
   vi.mocked(resetPassword).mockReset();
-  vi.mocked(verifyEmail).mockReset();
   window.history.replaceState(null, "", "/");
+  sessionStorage.clear();
 });
 
 function fillCredentials(password = "  password with Unicode Ω  ") {
@@ -82,9 +76,13 @@ function renderWithQueryClient(ui: ReactNode, queryClient = new QueryClient()) {
 }
 
 describe("registration form", () => {
-  it("renders only email and password, preserves their values, and shows a generic accepted state", async () => {
+  it("preserves exact credentials and transitions directly to non-secret verification continuation", async () => {
     vi.mocked(register).mockResolvedValue({
-      data: { nextStep: "verify_email", status: "accepted" },
+      data: {
+        nextStep: "verify_email",
+        status: "accepted",
+        verification: { challengeId: "11111111-1111-4111-8111-111111111111" },
+      },
     });
     render(<RegistrationForm />);
     fillCredentials();
@@ -99,12 +97,21 @@ describe("registration form", () => {
         password: "  password with Unicode Ω  ",
       }),
     );
-    expect(
-      await screen.findByText(
-        "Check your email for the next step. You can request a verification email when you are ready.",
-      ),
-    ).toBeTruthy();
-    expect(screen.queryByText(/already exists|existing account/i)).toBeNull();
+    await waitFor(() =>
+      expect(routerPush).toHaveBeenCalledWith("/verify-email"),
+    );
+    const saved = JSON.parse(
+      sessionStorage.getItem("stockwise_verification_continuation") ?? "{}",
+    );
+    expect(saved).toEqual({
+      version: 1,
+      canonicalEmail: "person@example.com",
+      challengeId: "11111111-1111-4111-8111-111111111111",
+      savedAt: expect.any(Number),
+    });
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    expect(screen.queryByLabelText("Email address")).toBeNull();
+    expect(routerPush).not.toHaveBeenCalledWith("/app");
   });
 
   it("shows client validation and rate limit feedback without submitting invalid input", async () => {
@@ -142,12 +149,11 @@ describe("login form", () => {
         new Promise((resolve) => {
           resolveLogin = () =>
             resolve({
-              data: {
-                user: {
-                  displayName: null,
-                  email: "person@example.com",
-                  id: "user-id",
-                },
+              outcome: "authenticated",
+              user: {
+                displayName: null,
+                email: "person@example.com",
+                id: "user-id",
               },
             });
         }),
@@ -322,70 +328,6 @@ describe("first organization onboarding form", () => {
     );
     expect((await screen.findByRole("alert")).textContent).toContain(
       "already has organization access",
-    );
-  });
-});
-
-describe("verification and resend forms", () => {
-  it("submits the query token, removes it from the address after completion, and presents a safe result", async () => {
-    window.history.replaceState(null, "", "/verify-email?token=opaque-token");
-    vi.mocked(verifyEmail).mockResolvedValue({ data: { status: "verified" } });
-    render(<VerificationForm />);
-    fireEvent.click(screen.getByRole("button", { name: "Verify email" }));
-
-    await waitFor(() =>
-      expect(verifyEmail).toHaveBeenCalledWith({ token: "opaque-token" }),
-    );
-    expect(window.location.search).toBe("");
-    expect(
-      await screen.findByText(
-        "Your email has been verified. You can now sign in.",
-      ),
-    ).toBeTruthy();
-  });
-
-  it("handles invalid links and non-disclosing resend completion/rate limits", async () => {
-    window.history.replaceState(null, "", "/verify-email?token=expired");
-    vi.mocked(verifyEmail).mockRejectedValue(new AuthApiError("invalid_token"));
-    render(<VerificationForm />);
-    fireEvent.click(screen.getByRole("button", { name: "Verify email" }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "This verification link is invalid or expired.",
-    );
-    expect(window.location.search).toBe("");
-
-    cleanup();
-    vi.mocked(resendVerification).mockResolvedValue({
-      data: { status: "accepted" },
-    });
-    render(<EmailRequestForm kind="verification" />);
-    fireEvent.change(screen.getByLabelText("Email address"), {
-      target: { value: "person@example.com" },
-    });
-    fireEvent.submit(
-      screen
-        .getByRole("button", { name: "Request verification email" })
-        .closest("form")!,
-    );
-    expect(
-      await screen.findByText(/If that email can receive a verification email/),
-    ).toBeTruthy();
-
-    cleanup();
-    vi.mocked(resendVerification).mockRejectedValue(
-      new AuthApiError("rate_limited", 45),
-    );
-    render(<EmailRequestForm kind="verification" />);
-    fireEvent.change(screen.getByLabelText("Email address"), {
-      target: { value: "person@example.com" },
-    });
-    fireEvent.submit(
-      screen
-        .getByRole("button", { name: "Request verification email" })
-        .closest("form")!,
-    );
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Please wait 45 seconds before trying again.",
     );
   });
 });

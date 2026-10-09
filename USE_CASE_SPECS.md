@@ -30,7 +30,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-IAM-001 — Register with email and password
 
-- **Status:** ADR-034 registration backend implemented by T02A; historical P2-M2-T01 behavior superseded; final web flow pending
+- **Status:** ADR-034 registration backend implemented by T02A; historical P2-M2-T01 behavior superseded; frontend implemented by T02A-AUTH-VERIFICATION-WEB-01, independent acceptance review pending
 - **Actor:** New user
 - **Preconditions:** The service is available; the submitted email may be new or already registered under the accepted normalization rule.
 - **Trigger:** The user submits the email/password registration form.
@@ -62,7 +62,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-IAM-002 — Sign in with email and password
 
-- **Status:** P2-M2-T02 application authentication preserved; ADR-034 verification backend delta implemented by T02A; final web continuation pending
+- **Status:** P2-M2-T02 application authentication preserved; ADR-034 verification backend delta implemented by T02A; frontend implemented by T02A-AUTH-VERIFICATION-WEB-01, independent acceptance review pending
 - **Actor:** Registered user
 - **Preconditions:** An account exists and is permitted to authenticate under verification/status policy.
 - **Trigger:** The user submits email and password.
@@ -169,7 +169,7 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 
 ### UC-IAM-007 — Verify an email/password account
 
-- **Status:** ADR-034 schema/backend/security implemented by T02A; final OTP web flow pending
+- **Status:** ADR-034 schema/backend/security implemented by T02A; frontend implemented by T02A-AUTH-VERIFICATION-WEB-01, independent acceptance review pending
 - **Actor:** Registered email/password user
 - **Preconditions:** Registration may have created an active unverified account with a bound unified mailbox challenge; account existence is not public information.
 - **Trigger:** The user requests/resends verification, submits the 6-digit code with the password proof, or submits the opaque link token.
@@ -195,11 +195,11 @@ The accepted MVP RBAC roles are `OWNER`, `ADMIN`, `BRANCH_MANAGER`, `INVENTORY_S
 - **Expected result:** One valid token changes the password, increments the credential version, invalidates any open verification challenge, and invalidates every prior session, without revealing account existence.
 - **Acceptance criteria:** Generic responses, hash-only 30-minute token, exact password policy, pre-Argon2 rejection, `ACTIVE` verified-only eligibility, atomic reset with credential-version increment and open-challenge invalidation, session revocation, replay/concurrency/provider/rollback/leakage tests pass.
 
-### ADR-034 verification and recovery contract (backend implemented; final web flow pending)
+### ADR-034 verification and recovery contract (backend and frontend implemented; acceptance review pending)
 
 The accepted `ADR-034` target defines the verification and recovery behavior
 for the use cases above. Its schema/backend/security cutover is implemented;
-the final web OTP/continuation flow remains assigned to its separate task.
+T02A-AUTH-VERIFICATION-WEB-01 implements the web OTP/link continuation and password fallback; independent acceptance review remains pending.
 Cryptographic, key-management, and envelope details are owned by `ADR-034` and
 are referenced, not duplicated, here.
 

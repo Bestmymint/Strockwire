@@ -17,6 +17,27 @@ const environment = loadWebEnvironment();
 const nextConfig: NextConfig = {
   agentRules: false,
   reactStrictMode: true,
+  async headers() {
+    return [
+      {
+        // Any document can host verification after an App Router navigation.
+        source: "/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+        ],
+      },
+      {
+        // The verification link token must never be cached or forwarded to
+        // third parties. ADR-034 secure-link handling.
+        headers: [
+          { key: "Cache-Control", value: "no-store" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+        ],
+        source: "/verify-email",
+      },
+    ];
+  },
   async rewrites() {
     return [getApiHealthRewrite(environment), getApiV1Rewrite(environment)];
   },

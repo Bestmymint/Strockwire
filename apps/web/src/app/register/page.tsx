@@ -1,13 +1,13 @@
-import { AuthCard } from "@/components/auth/auth-card";
+import { AuthCardLocalized } from "@/components/auth/auth-card-localized";
 import { RegistrationForm } from "@/components/auth/registration-form";
 
 export default function RegisterPage() {
   return (
-    <AuthCard
-      description="Create your StockWise account with an email address and password."
-      title="Create account"
+    <AuthCardLocalized
+      descriptionKey="authRegisterDescription"
+      titleKey="authRegisterTitle"
     >
       <RegistrationForm />
-    </AuthCard>
+    </AuthCardLocalized>
   );
 }

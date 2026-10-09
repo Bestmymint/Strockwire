@@ -58,6 +58,65 @@ export const en = {
   BRANCH_MANAGER: "BRANCH MANAGER",
   INVENTORY_STAFF: "INVENTORY STAFF",
   CASHIER: "CASHIER",
+  authEmail: "Email address",
+  authPassword: "Password",
+  authSignIn: "Sign in",
+  authSigningIn: "Signing in…",
+  authCreateAccount: "Create account",
+  authCreatingAccount: "Creating account…",
+  authForgotPassword: "Forgot password?",
+  authNeedAccount: "Need an account?",
+  authCreateOne: "Create one",
+  authAlreadyAccount: "Already have an account?",
+  authInvalidEmail: "Enter a valid email address.",
+  authInvalidCredentials: "The email or password is incorrect.",
+  authPasswordLength:
+    "Use 15–128 Unicode code points. Spaces and Unicode characters are allowed.",
+  authRegisterTitle: "Create account",
+  authRegisterDescription:
+    "Create your StockWise account with an email address and password.",
+  authLoginTitle: "Sign in",
+  authLoginDescription: "Sign in to continue to the next required setup step.",
+  authVerifyTitle: "Verify your email",
+  authVerifyDescription:
+    "Use your email code or confirm your secure link. Verification does not sign you in.",
+  authVerifyOtpDescription:
+    "If verification material can be sent to {email}, check its inbox and enter the code below.",
+  authVerifyLinkDescription:
+    "Confirm your email address to finish verification.",
+  authOtpLabel: "6-digit verification code",
+  authOtpInvalid: "Enter the 6-digit code.",
+  authVerify: "Verify",
+  authVerifying: "Verifying…",
+  authVerified: "Your email has been verified. You can now sign in.",
+  authInvalidCode:
+    "This code cannot be used. Check the latest email, use its secure link, or request a new code.",
+  authInvalidLink: "This verification link is invalid or expired.",
+  authProofRequired:
+    "Confirm your password to continue verifying this email address.",
+  authProofPassword: "Password",
+  authProofSubmit: "Confirm password",
+  authResendLink: "Request a new code",
+  authResendTitle: "Request a verification code",
+  authResendDescription:
+    "Request a new email verification code for your account.",
+  authResendButton: "Request verification code",
+  authResendSending: "Sending request…",
+  authResendAccepted:
+    "If that email can receive a verification code, check its inbox for the next step.",
+  authBackToLogin: "Back to sign in",
+  authRateLimited: "Please wait {seconds} second{plural} before trying again.",
+  authRateLimitedGeneric: "Please wait before trying again.",
+  authRequestError: "We could not complete that request. Please try again.",
+  authAccepted:
+    "Request accepted. Verification material may arrive by email. Check the latest email for the next step.",
+  authRecovery:
+    "Verification continuation is unavailable or expired. Return to sign in to continue.",
+  authNoChallenge:
+    "No code continuation is available. Request new verification material or return to sign in.",
+  authCheckInformation: "Please check the information and try again.",
+  authOtpSafety:
+    "Use the latest email. Do not share your code or follow unsolicited requests.",
 } as const;
 
 export type TranslationKey = keyof typeof en;

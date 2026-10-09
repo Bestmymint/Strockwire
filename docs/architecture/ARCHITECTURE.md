@@ -311,7 +311,7 @@ trusted state from PostgreSQL and call this policy before mutation or exposure.
 ### 6.1 Authentication and scope selection
 
 `ADR-034` is implemented by T02A's synchronized schema/backend/security
-cutover. The final web OTP/continuation flow remains a separate task.
+cutover. T02A-AUTH-VERIFICATION-WEB-01 implements the web OTP/link continuation and password-proof fallback; independent acceptance review remains pending.
 Historical P2 registration-without-delivery and link-only verification are
 no longer backend compatibility paths. Ordinary application authentication,
 onboarding, authorization, invitations, and reset eligibility retain their
@@ -392,10 +392,19 @@ The API contract owns exact envelopes, mailbox-first errors, and strict
 same-origin JSON/Origin/Fetch Metadata protections. Frontend continuation stores
 only noncredential email/selector/version/time (at most 30 minutes); normal
 register/login reaches OTP without re-entry. Missing/stale proof offers current
-password inline; browser reopen recovers through Login. Query link tokens are
-captured only in memory and immediately scrubbed, with no-referrer/no-store
-and explicit POST consumption. Existing Light/Dark, EN/TH, and accessible
-shadcn/ui direction remain. Cloud-wide abuse/delivery guarantees are not implied.
+password inline; browser reopen recovers through Login. Token-bearing verification
+GETs stop at a token-free, non-hydrating frontend document boundary. The browser
+captures the query credential in a one-use memory handoff, scrubs URL/history,
+then loads the clean Next.js document so the token cannot enter serialized
+App Router/hydration state. The verification component retains it only in memory
+for explicit POST consumption; reload/abandonment/pagehide discard it. Both
+documents preserve no-referrer/no-store. All web documents deny framing through
+CSP `frame-ancestors 'none'` and `X-Frame-Options: DENY`, including SPA entry
+routes. Resend commits require the current mounted request and unchanged
+continuation revision/identity, even if cancellation races with completion.
+Existing Light/Dark, EN/TH, and accessible shadcn/ui direction remain.
+Independent web acceptance re-review remains pending; cloud-wide abuse/delivery
+guarantees are not implied.
 
 P2-M3-T01 adds one authenticated first-organization command at
 `POST /api/v1/organizations`. The Express boundary accepts only the six profile,
