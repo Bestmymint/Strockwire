@@ -179,6 +179,48 @@ describe("disposable integration ownership gate (no container/database operation
     expect(harness.provisionTestDatabase).not.toHaveBeenCalled();
     expect(harness.applyTestDatabaseMigrations).not.toHaveBeenCalled();
   });
+  it("accepts only Playwright's verified internal worker marker without bypassing approval", () => {
+    expect(() =>
+      validateAuthIntegrationInvocation({
+        ...approved,
+        PLAYWRIGHT_TEST: "1",
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateAuthIntegrationInvocation({ PLAYWRIGHT_TEST: "1" }),
+    ).toThrow(
+      "Separate disposable database execution authorization is required.",
+    );
+  });
+  for (const value of ["0", "true", "2", " 1 ", ""]) {
+    it(`rejects unexpected PLAYWRIGHT_TEST value ${JSON.stringify(value)}`, () => {
+      expect(() =>
+        validateAuthIntegrationInvocation({
+          ...approved,
+          PLAYWRIGHT_TEST: value,
+        }),
+      ).toThrow(
+        "Inherited database, provider, browser-debug, or container configuration refused.",
+      );
+    });
+  }
+  it("does not let the internal worker marker bypass other blocked Playwright flags", () => {
+    for (const name of [
+      "PLAYWRIGHT_TRACE_DIR",
+      "PLAYWRIGHT_BROWSERS_PATH",
+      "PWDEBUG",
+    ]) {
+      expect(() =>
+        validateAuthIntegrationInvocation({
+          ...approved,
+          PLAYWRIGHT_TEST: "1",
+          [name]: "",
+        }),
+      ).toThrow(
+        "Inherited database, provider, browser-debug, or container configuration refused.",
+      );
+    }
+  });
   for (const name of [
     "DATABASE_URL",
     "TEST_DATABASE_URL",

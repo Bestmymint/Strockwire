@@ -55,6 +55,8 @@ export function validateAuthIntegrationInvocation(
       "Separate disposable database execution authorization is required.",
     );
   for (const [key, value] of Object.entries(environment)) {
+    // Playwright sets this exact internal worker marker; it is not a debug override.
+    if (key === "PLAYWRIGHT_TEST" && value === "1") continue;
     if (
       value !== undefined &&
       /^(?:DATABASE_URL|TEST_DATABASE_URL|STOCKWISE_ALLOW_STOCKWISE_TEST|PG.*|DOCKER_HOST|DOCKER_CONTEXT|COMPOSE_.*|DEBUG|PWDEBUG|PW_TEST_.*|PLAYWRIGHT_.*|RESEND_API_KEY|OPENROUTER_API_KEY|STOCKWISE_EMAIL_.*|STOCKWISE_POSTGRES_.*|STOCKWISE_VERIFICATION_.*|STOCKWISE_T02A_DB_.*|STOCKWISE_T02A_OWNER|STOCKWISE_T02A_PROJECT)$/.test(

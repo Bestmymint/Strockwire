@@ -54,8 +54,12 @@ Proposed resources, subject to separate execution approval:
 The runner rejects missing execution opt-in; inherited `DATABASE_URL`,
 `TEST_DATABASE_URL`, ordinary PostgreSQL inputs, `PG*`, provider/verification
 secrets, Docker host/context overrides, Compose overrides, and browser debugging
-or artifact overrides. Even empty inherited values are refused. It requires a
-local Unix-socket/named-pipe Docker endpoint and unused loopback ports.
+or artifact overrides. Even empty inherited values are refused, except the
+verified internal Playwright worker marker `PLAYWRIGHT_TEST=1`, which is
+set by Playwright 1.62.1 workers and carries no artifact/debug override. All
+other inherited `PLAYWRIGHT_*` variables and alternate marker values remain
+refused. It requires a local Unix-socket/named-pipe Docker endpoint and unused
+loopback ports.
 
 Before Compose up it inventories containers, volumes, networks, and project labels.
 Any existing named resource or unexpected project resource is refused, never
