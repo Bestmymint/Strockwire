@@ -11,6 +11,8 @@ import type { VerificationSecurity } from "./verification-security.ts";
 
 export type VerificationCompletionResult =
   "verified" | "invalid" | "proof_required";
+export type VerificationLinkCompletionResult =
+  VerificationCompletionResult | "already_verified";
 export type VerificationResendResult =
   | { outcome: "limited"; retryAfterSeconds: number }
   | {
@@ -30,7 +32,7 @@ export interface VerificationService {
   completeLink(input: {
     token: string;
     cookieHeader: string | undefined;
-  }): Promise<VerificationCompletionResult>;
+  }): Promise<VerificationLinkCompletionResult>;
 }
 
 export function createVerificationService({

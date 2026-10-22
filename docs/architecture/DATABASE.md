@@ -117,9 +117,12 @@ reviewed backfill and forward migration after all applicable accounts have a
 profile.
 
 `ADR-034` is implemented by the synchronized T02A schema/backend cutover.
-Backend and frontend are ACCEPTED / COMMITTED. The integration harness is
-NOT ACCEPTED; real frontend/backend/PostgreSQL integration is NOT EXECUTED,
-real email delivery is NOT VERIFIED, and Phase 8 is NOT STARTED.
+Backend and frontend are ACCEPTED / COMMITTED. The T02A integration harness and 22-case local frontend/backend/PostgreSQL
+verification were subsequently ACCEPTED (2026-10-10). Better Auth D4-N3
+isolated real browser/Express/PostgreSQL integration was independently ACCEPTED
+(2026-10-15). These are local/disposable-environment results, not Live
+Better Auth activation. Real external email and production HTTPS remain
+UNVERIFIED; Phase 8 is NOT STARTED.
 `User.credentialVersion` is PostgreSQL BIGINT, initially 1, with a positive
 check; password-replacement transactions atomically increment it with the hash
 and password-change timestamp. Migration
@@ -128,6 +131,72 @@ and password-change timestamp. Migration
 every open legacy row, and preserves historical identity, ownership, hashes,
 and terminal timestamps without inventing credential versions or OTP material.
 The verification password proof itself is a stateless encrypted cookie and has no table.
+
+### Better Auth additive D1 schema (verified in disposable PostgreSQL / no live cutover)
+
+Under ADR-035 and the bounded D1 authorization, the forward migration
+`20261012000000_better_auth_native_schema` adds native
+`BetterAuthSession`, `BetterAuthAccount`, and `BetterAuthVerification`,
+mapped to separate `better_auth_*` tables. All primary IDs are UUID;
+session/account user FKs reference the unchanged `users.id` with RESTRICT
+update/delete actions. Legacy Session and every existing business FK remain.
+Native session tokens are recoverable credentials under ADR-035's future
+session-only exception; the current legacy runtime still stores only hashes.
+Password/OTP/link/reset/invitation protections are not superseded.
+
+User adds `emailVerified` (`better_auth_email_verified`, false by default,
+snapshotted from non-null `email_verified_at`) and optional `image`
+(`better_auth_image`). Native name maps to existing nullable `displayName`;
+there is no second user table. The snapshot is not maintained by legacy writers
+and cannot authorize runtime access. Reconciliation and synchronization are
+mandatory before cutover.
+
+The non-null `password_hash` receives a valid Argon2id public dummy default
+with a discarded cryptographically random preimage. Existing hashes are not
+backfilled; legacy registration keeps explicitly supplying its own hash.
+Native credential enrollment must write only `better_auth_accounts.password`,
+never replace the domain dummy or run alongside legacy auth authority.
+Schema/adapter metadata and legacy rejection have DB-free checks. D1's
+isolated PostgreSQL proof recorded 29/29 PASS on 2026-10-12, including
+forward migration application and constraint/UUID/FK preservation in owned
+disposable databases. Later isolated D3/D4-N3 runs exercised the additive
+migration chain. No application of this schema to the normal development or
+production database is evidenced or authorized. See
+[`BETTER_AUTH_MIGRATION.md`](../development/BETTER_AUTH_MIGRATION.md)
+for mapping, lock/backfill risks, and forward recovery requirements.
+
+### Isolated D3 pending registration (accepted in disposable environment / not live)
+
+ADR-036 requires two additive persistence models, `PendingRegistration` and
+`PendingRegistrationQuota`. `PendingRegistration` has one row per canonical
+email and owns its UUID subject, credential version, Argon2id PHC hash, absolute
+ten-minute registration expiry, and state. It has no row in `users` and no
+`BetterAuthAccount` until successful mailbox-plus-password-proof completion.
+Each challenge has a fresh identifier bound to the pending subject and
+credential version. Resend changes only challenge material, preserving the
+pending hash/version and original expiry. Bounded cleanup removes expired
+pending registrations; expired quota windows can be pruned only after their
+fixed window closes.
+
+Successful completion atomically consumes the challenge, creates `User` with
+the pending UUID, and inserts `BetterAuthAccount.password` with the already
+computed PHC hash. It does not update or adopt an existing user, change any
+existing UUID, or alter any existing business FK. The configured Better Auth
+1.7.7 verifier must verify this directly promoted hash; `setPassword` is not
+used because it hashes raw input. Completion creates no session.
+
+`PendingRegistrationQuota` provides durable fixed-window budgets of five
+registration attempts, three delivery requests, and five credential-proof
+failures per canonical email per 15 minutes. A credential snapshot check does
+not increment or reset the failure counter; a failed credential proof
+increments it. The isolated D3 router remains separately exported and unmounted.
+Its model/migration implementation and isolated database/security verification
+were ACCEPTED on 2026-10-12; see the external D3 isolated final acceptance
+record. This is uncommitted, non-live work and does not authorize migration
+application to the normal development/production database or auth cutover.
+Restart/outage/retry recovery and independent protected-API exclusion
+evidence remain required before cutover.
+
 
 ## 2. Database-wide invariants
 
@@ -535,6 +604,22 @@ Required logical attributes (`PasswordResetToken`):
   `passwordHash`/`passwordChangedAt`/`credentialVersion`, invalidate open
   verification material, and revoke all sessions. Failure rolls everything back;
   completion never creates a session.
+- Isolated native D4-N2 adds `requiresNativeDeliveryConfirmation` (false for
+  existing/legacy rows) and nullable `deliveryConfirmedAt`. Native issuance
+  sets the flag and leaves confirmation null; validation rejects pending
+  delivery. Acknowledged delivery confirms only the same non-terminal,
+  unexpired token after user/token locks and native eligibility revalidation.
+  Native issue/validation timestamps use PostgreSQL time; native completion
+  changes Better Auth credential PHC and deletes native sessions, not legacy
+  password/session state.
+- `NativePasswordResetQuota` stores only a SHA-256 canonical-email key,
+  database-clock fixed-window start and admitted-attempt count (1–3).
+  Atomic PostgreSQL admission enforces three native requests per 15 minutes
+  across instances, before eligibility lookup. Legacy quotas are unchanged.
+  Migration `20261012050000_native_password_reset_delivery_quota` is additive;
+  deployment is separately authorized and must precede native writer use.
+  Recovery leaves additive columns/table intact and keeps the native gate off;
+  no destructive down migration or legacy writer change is required.
 
 #### `Invitation`
 

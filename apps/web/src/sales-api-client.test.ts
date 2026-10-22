@@ -26,25 +26,17 @@ function jsonResponse(body: unknown, status = 200): Response {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("sales API client", () => {
-  it("passes scanner cancellation to same-origin fetch without changing barcode case or leading zeros", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        jsonResponse({ data: { products: [] }, meta: { nextCursor: null } }),
-      );
-    vi.stubGlobal("fetch", fetchMock);
+  it("rejects a cancelled scanner lookup even when fetch returns a late success", async () => {
+    const pending = Promise.withResolvers<Response>();
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(pending.promise));
     const controller = new AbortController();
-    await searchPosProducts(
+    const lookup = searchPosProducts(
       { organizationId: ORGANIZATION_ID, branchId: BRANCH_ID },
       { barcode: " 00AbC ", signal: controller.signal },
     );
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining("barcode=00AbC"),
-      expect.objectContaining({
-        credentials: "same-origin",
-        signal: controller.signal,
-      }),
-    );
+    controller.abort();
+    pending.resolve(jsonResponse({ data: { products: [] }, meta: { nextCursor: null } }));
+    await expect(lookup).rejects.toBeInstanceOf(SalesApiError);
   });
   it("uses the scoped POS product endpoint and only parses the safe product representation", async () => {
     const fetchMock = vi.fn().mockResolvedValue(

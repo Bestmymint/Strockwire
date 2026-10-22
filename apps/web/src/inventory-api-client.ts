@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { privateFetch, readPrivateJson } from "@/session-lifecycle";
 
 const productUnitSchema = z.enum([
   "EA",
@@ -119,7 +120,7 @@ function inventoryPath(
 async function request(path: string, init?: RequestInit): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(`/api/v1/${path}`, {
+    response = await privateFetch(`/api/v1/${path}`, {
       ...init,
       credentials: "same-origin",
       headers: {
@@ -136,7 +137,7 @@ async function request(path: string, init?: RequestInit): Promise<unknown> {
 
   let body: unknown;
   try {
-    body = await response.json();
+    body = await readPrivateJson(response);
   } catch {
     throw new InventoryApiError("unavailable");
   }

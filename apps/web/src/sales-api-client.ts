@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { privateFetch, readPrivateJson } from "@/session-lifecycle";
 
 const productUnitSchema = z.enum([
   "EA",
@@ -255,7 +256,7 @@ function salesPath(context: SalesRequestContext, suffix: string): string {
 async function request(path: string, init?: RequestInit): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(`/api/v1/${path}`, {
+    response = await privateFetch(`/api/v1/${path}`, {
       ...init,
       credentials: "same-origin",
       headers: {
@@ -269,7 +270,7 @@ async function request(path: string, init?: RequestInit): Promise<unknown> {
   } catch {
     throw new SalesApiError("unavailable");
   }
-  const body: unknown = await response.json().catch(() => null);
+  const body = await readPrivateJson(response).catch(() => null);
   if (!response.ok) throw errorFromResponse(response.status, body);
   return body;
 }

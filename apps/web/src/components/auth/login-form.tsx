@@ -9,12 +9,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
-import { login } from "@/api-client";
+import { AuthApiError, login } from "@/api-client";
 
 import {
   clearContinuation,
   saveContinuation,
 } from "@/verification-continuation-browser";
+import { getContinuationRevision } from "@/verification-continuation-browser";
+import { discardPrivateSession, notifySessionChange } from "@/session-lifecycle";
 import { useLanguage } from "@/providers/language-provider";
 import { hasEmailShape, passwordValidationMessage } from "./auth-form-support";
 import { verificationErrorMessage } from "./auth-copy";
@@ -24,11 +26,33 @@ export function LoginForm() {
   const queryClient = useQueryClient();
   const { t } = useLanguage();
   const pending = useRef(false);
+  const mounted = useRef(false);
+  const requestId = useRef(0);
   const errorMessage = useRef<HTMLDivElement>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  useEffect(() => {
+    const restore = () => {
+      mounted.current = true;
+      pending.current = false;
+      setIsSubmitting(false);
+      setPassword("");
+    };
+    const invalidate = () => {
+      mounted.current = false;
+      requestId.current += 1;
+    };
+    restore();
+    window.addEventListener("pagehide", invalidate);
+    window.addEventListener("pageshow", restore);
+    return () => {
+      invalidate();
+      window.removeEventListener("pagehide", invalidate);
+      window.removeEventListener("pageshow", restore);
+    };
+  }, []);
   useEffect(() => {
     if (error !== null) errorMessage.current?.focus();
   }, [error]);
@@ -54,27 +78,40 @@ export function LoginForm() {
     setIsSubmitting(true);
     pending.current = true;
     clearContinuation();
+    const id = ++requestId.current;
+    const revision = getContinuationRevision();
+    const isCurrent = () => mounted.current && id === requestId.current &&
+      revision === getContinuationRevision();
 
     try {
       const result = await login({ email, password });
-      setPassword("");
-      queryClient.clear();
-      if (result.outcome === "verification_required") {
-        saveContinuation({
-          version: 1,
-          canonicalEmail: email.trim().toLowerCase(),
-          challengeId: result.verification.challengeId,
-          savedAt: Date.now(),
-        });
-        router.push("/verify-email");
-      } else {
-        router.push("/app");
+      const current = isCurrent();
+      if (result.outcome === "authenticated") {
+        // Do not abort login and infer its cookie was unchanged. Even a late
+        // accepted response invalidates authority in every live tab.
+        notifySessionChange(queryClient);
+        if (current) router.replace("/app");
+        return;
       }
+      if (!current) return;
+      setPassword("");
+      discardPrivateSession(queryClient);
+      saveContinuation({
+        version: 1,
+        canonicalEmail: email.trim().toLowerCase(),
+        challengeId: result.verification.challengeId,
+        savedAt: Date.now(),
+      });
+      router.replace("/verify-email");
     } catch (requestError: unknown) {
-      setError(verificationErrorMessage(requestError, t));
+      if (isCurrent()) setError(verificationErrorMessage(requestError, t));
+      if (requestError instanceof AuthApiError && requestError.kind === "unavailable")
+        notifySessionChange(queryClient);
     } finally {
-      setIsSubmitting(false);
-      pending.current = false;
+      if (mounted.current && id === requestId.current) {
+        setIsSubmitting(false);
+        pending.current = false;
+      }
     }
   }
 
@@ -102,7 +139,7 @@ export function LoginForm() {
           <Label className="form-field" htmlFor="login-password">
             {t("authPassword")}
           </Label>
-          <Link className="text-sm underline" href="/forgot-password">
+          <Link className="text-sm underline" href="/forgot-password" replace>
             {t("authForgotPassword")}
           </Link>
         </div>
@@ -138,6 +175,7 @@ export function LoginForm() {
         <Link
           className="font-medium text-foreground underline"
           href="/register"
+          replace
         >
           {t("authCreateOne")}
         </Link>

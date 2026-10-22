@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
+import { SessionLifecycleProvider } from "./session-lifecycle-provider";
 
 interface QueryProviderProps {
   children: ReactNode;
@@ -21,6 +22,8 @@ export function QueryProvider({ children }: QueryProviderProps) {
   );
 
   return (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <SessionLifecycleProvider>{children}</SessionLifecycleProvider>
+    </QueryClientProvider>
   );
 }

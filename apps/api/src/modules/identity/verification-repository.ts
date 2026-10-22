@@ -44,7 +44,7 @@ export interface VerificationRepository {
     linkTokenHash: string;
     cookieHeader: string | undefined;
     security: VerificationSecurity;
-  }): Promise<"verified" | "invalid" | "proof_required">;
+  }): Promise<"verified" | "already_verified" | "invalid" | "proof_required">;
   revokeDelivery(input: {
     challengeId: string;
     reason: "DELIVERY_FAILED" | "RESPONSE_ABORTED";
@@ -169,6 +169,7 @@ async function readChallenge(
     where: { id: challengeId },
     select: {
       consumedAt: true,
+      consumedVia: true,
       credentialVersion: true,
       expiresAt: true,
       failedOtpAttempts: true,
@@ -489,19 +490,33 @@ export function createPrismaVerificationRepository(
         if (
           user === null ||
           user.status !== "ACTIVE" ||
-          user.emailVerifiedAt !== null ||
           challenge === null ||
           challenge.userId !== userId ||
-          !isNonterminal(challenge) ||
           challenge.credentialVersion !== user.credentialVersion
         ) {
           return "invalid";
         }
 
+        // Both completion and the bounded informational replay use fresh
+        // database time. A consumed link never extends its original expiry.
         const now = await freshDbTime(transaction);
-        if (now >= challenge.expiresAt) {
-          return "invalid";
+        if (now >= challenge.expiresAt) return "invalid";
+
+        if (user.emailVerifiedAt !== null) {
+          // A hash-matched, *consumed* link can explain a completed
+          // verification only while the originally issued link is valid.
+          // This path never grants authority or changes database state.
+          return !challenge.isLegacy &&
+            challenge.consumedAt !== null &&
+            challenge.consumedAt < challenge.expiresAt &&
+            (challenge.consumedVia === "OTP" ||
+              challenge.consumedVia === "LINK") &&
+            challenge.replacedAt === null &&
+            challenge.revokedAt === null
+            ? "already_verified"
+            : "invalid";
         }
+        if (!isNonterminal(challenge)) return "invalid";
 
         const proof = security.readProof(cookieHeader, now);
         if (

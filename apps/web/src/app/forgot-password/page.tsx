@@ -1,13 +1,13 @@
-import { AuthCard } from "@/components/auth/auth-card";
+import { AuthCardLocalized } from "@/components/auth/auth-card-localized";
 import { EmailRequestForm } from "@/components/auth/email-request-form";
 
 export default function ForgotPasswordPage() {
   return (
-    <AuthCard
-      description="Request a secure password reset link."
-      title="Reset your password"
+    <AuthCardLocalized
+      descriptionKey="authForgotDescription"
+      titleKey="authForgotTitle"
     >
       <EmailRequestForm kind="password_reset" />
-    </AuthCard>
+    </AuthCardLocalized>
   );
 }

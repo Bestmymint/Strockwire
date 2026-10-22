@@ -19,7 +19,7 @@ export function AuthCardLocalized({
 }: AuthCardLocalizedProps) {
   const { t } = useLanguage();
   return (
-    <AuthCard description={t(descriptionKey)} title={t(titleKey)}>
+    <AuthCard description={t(descriptionKey)} title={t(titleKey)} focusOnMount>
       {children}
     </AuthCard>
   );

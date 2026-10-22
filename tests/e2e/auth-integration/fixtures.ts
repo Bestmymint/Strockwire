@@ -129,6 +129,7 @@ export async function register(input: Scenario) {
     .getByRole("button", { name: "Create account", exact: true })
     .click();
   expect((await response)?.status()).toBe(202);
+  await input.page.getByRole("link", { name: "Continue verification" }).click();
   await expect(input.page).toHaveURL(`${webOrigin}/verify-email`);
   const mail = await input.harness.mailbox.next(input.email);
   const challenge =

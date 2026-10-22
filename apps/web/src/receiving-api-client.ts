@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { privateFetch, readPrivateJson } from "@/session-lifecycle";
 
 const receiptItemSchema = z.object({
   actualUnitCost: z.string(),
@@ -63,7 +64,7 @@ export async function receivePurchaseOrder(
 ): Promise<Receipt> {
   let response: Response;
   try {
-    response = await fetch(
+    response = await privateFetch(
       `/api/v1/organizations/${context.organizationId}/branches/${context.branchId}/purchase-orders/${purchaseOrderId}/receipts`,
       {
         method: "POST",
@@ -79,7 +80,7 @@ export async function receivePurchaseOrder(
   } catch {
     throw new ReceivingApiError("unavailable");
   }
-  const body: unknown = await response.json().catch(() => null);
+  const body = await readPrivateJson(response).catch(() => null);
   if (response.ok) {
     const parsed = z
       .object({ data: z.object({ receipt: receiptSchema }) })

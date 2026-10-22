@@ -1,9 +1,25 @@
-import type { IdentityEmailProvider } from "./email-provider.ts";
+import {
+  EmailDeliveryError,
+  type IdentityEmailProvider,
+} from "./email-provider.ts";
 import type { VerificationRepository } from "./verification-repository.ts";
 import type { VerificationChallengeMaterial } from "./verification-security.ts";
 
 const MAX_OUTSTANDING_DELIVERIES = 32;
 const DELIVERY_TIMEOUT_MILLISECONDS = 10_000;
+
+// Allowlisted operational metadata only. No account, token, provider body, or
+// exception message is passed to logging.
+export interface VerificationDeliveryFailure {
+  stage:
+    | "pre_send"
+    | "provider_http"
+    | "network"
+    | "timeout"
+    | "provider_unknown"
+    | "compensation_failure";
+  providerHttpStatus?: number;
+}
 
 export interface VerificationResponseDelivery {
   finish(): void;
@@ -32,7 +48,10 @@ export function createVerificationDelivery({
   emailProvider: IdentityEmailProvider;
   publicWebOrigin: string;
   repository: Pick<VerificationRepository, "canDeliver" | "revokeDelivery">;
-  onFailure?: (kind: "verification" | "verification_compensation") => void;
+  onFailure?: (
+    kind: "verification" | "verification_compensation",
+    failure: VerificationDeliveryFailure,
+  ) => void;
 }): VerificationDelivery {
   let outstanding = 0;
   let stopping = false;
@@ -53,7 +72,9 @@ export function createVerificationDelivery({
     try {
       await repository.revokeDelivery({ challengeId, reason });
     } catch {
-      onFailure("verification_compensation");
+      onFailure("verification_compensation", {
+        stage: "compensation_failure",
+      });
     }
   }
 
@@ -86,6 +107,8 @@ export function createVerificationDelivery({
               started = true;
               track(
                 (async () => {
+                  let sendStarted = false;
+                  let timedOut = false;
                   try {
                     if (shutdownExpired)
                       throw new Error("Verification delivery drain expired.");
@@ -98,6 +121,7 @@ export function createVerificationDelivery({
                     controllers.add(controller);
                     let timer: NodeJS.Timeout | undefined;
                     try {
+                      sendStarted = true;
                       await Promise.race([
                         emailProvider.send(
                           {
@@ -110,10 +134,14 @@ export function createVerificationDelivery({
                         ),
                         new Promise<never>((_resolve, reject) => {
                           timer = setTimeout(() => {
-                            controller.abort();
-                            reject(
-                              new Error("Verification delivery timed out."),
+                            timedOut = true;
+                            controller.abort(
+                              new DOMException(
+                                "Verification delivery timed out.",
+                                "TimeoutError",
+                              ),
                             );
+                            reject(new EmailDeliveryError("timeout"));
                           }, DELIVERY_TIMEOUT_MILLISECONDS);
                         }),
                       ]);
@@ -121,8 +149,20 @@ export function createVerificationDelivery({
                       clearTimeout(timer);
                       controllers.delete(controller);
                     }
-                  } catch {
-                    onFailure("verification");
+                  } catch (error: unknown) {
+                    const failure: VerificationDeliveryFailure = !sendStarted
+                      ? { stage: "pre_send" }
+                      : timedOut
+                        ? { stage: "timeout" }
+                        : error instanceof EmailDeliveryError
+                          ? {
+                              stage: error.category,
+                              ...(error.httpStatus === undefined
+                                ? {}
+                                : { providerHttpStatus: error.httpStatus }),
+                            }
+                          : { stage: "provider_unknown" };
+                    onFailure("verification", failure);
                     await compensate(challengeId, "DELIVERY_FAILED");
                   } finally {
                     release();

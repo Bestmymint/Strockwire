@@ -10,11 +10,31 @@ export interface IdentityEmailProvider {
   send(message: IdentityEmailMessage, signal?: AbortSignal): Promise<void>;
 }
 
+export type EmailDeliveryFailureCategory =
+  "provider_http" | "network" | "timeout";
+
 export class EmailDeliveryError extends Error {
-  constructor() {
+  readonly category: EmailDeliveryFailureCategory;
+  readonly httpStatus: number | undefined;
+
+  constructor(
+    category: EmailDeliveryFailureCategory = "network",
+    httpStatus?: number,
+  ) {
     super("Identity email delivery failed.");
     this.name = "EmailDeliveryError";
+    this.category = category;
+    this.httpStatus = category === "provider_http" ? httpStatus : undefined;
   }
+}
+
+function isTimeout(reason: unknown): boolean {
+  return (
+    typeof reason === "object" &&
+    reason !== null &&
+    "name" in reason &&
+    reason.name === "TimeoutError"
+  );
 }
 
 export const nonDeliveryEmailProvider: IdentityEmailProvider = {
@@ -62,6 +82,14 @@ export function createResendEmailProvider({
           ? "accept your organization invitation"
           : "reset your password";
 
+      const requestSignal =
+        signal === undefined
+          ? AbortSignal.timeout(RESEND_TIMEOUT_MILLISECONDS)
+          : AbortSignal.any([
+              signal,
+              AbortSignal.timeout(RESEND_TIMEOUT_MILLISECONDS),
+            ]);
+
       try {
         const response = await fetchImplementation(RESEND_EMAIL_ENDPOINT, {
           body: JSON.stringify({
@@ -79,20 +107,20 @@ export function createResendEmailProvider({
             "User-Agent": "stockwise-api/1.0",
           },
           method: "POST",
-          signal:
-            signal === undefined
-              ? AbortSignal.timeout(RESEND_TIMEOUT_MILLISECONDS)
-              : AbortSignal.any([
-                  signal,
-                  AbortSignal.timeout(RESEND_TIMEOUT_MILLISECONDS),
-                ]),
+          signal: requestSignal,
         });
 
         if (!response.ok) {
-          throw new EmailDeliveryError();
+          // Status only: never parse, log or retain provider response bodies.
+          throw new EmailDeliveryError("provider_http", response.status);
         }
-      } catch {
-        throw new EmailDeliveryError();
+      } catch (error: unknown) {
+        if (error instanceof EmailDeliveryError) throw error;
+        throw new EmailDeliveryError(
+          isTimeout(error) || isTimeout(requestSignal.reason)
+            ? "timeout"
+            : "network",
+        );
       }
     },
   };

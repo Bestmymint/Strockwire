@@ -4,29 +4,29 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
 import Link from "next/link";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { forgotPassword } from "@/api-client";
+import { useLanguage } from "@/providers/language-provider";
 
-import { authErrorMessage, hasEmailShape } from "./auth-form-support";
-
-const content = {
-  button: "Request password reset",
-  otherLink: "/login",
-  otherText: "Back to sign in",
-  success:
-    "If that email can receive a password reset, check its inbox for the next step.",
-};
+import { verificationErrorMessage } from "./auth-copy";
+import { hasEmailShape } from "./auth-form-support";
 
 interface EmailRequestFormProps {
   kind: "password_reset";
 }
 
 export function EmailRequestForm({ kind }: EmailRequestFormProps) {
+  const { t } = useLanguage();
+  const message = useRef<HTMLParagraphElement>(null);
   const [email, setEmail] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [invalidEmail, setInvalidEmail] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAccepted, setIsAccepted] = useState(false);
+  useEffect(() => {
+    if (error !== null || invalidEmail || isAccepted) message.current?.focus();
+  }, [error, invalidEmail, isAccepted]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -35,18 +35,19 @@ export function EmailRequestForm({ kind }: EmailRequestFormProps) {
     }
 
     if (!hasEmailShape(email)) {
-      setError("Enter a valid email address.");
+      setInvalidEmail(true);
       return;
     }
 
     setError(null);
+    setInvalidEmail(false);
     setIsSubmitting(true);
 
     try {
       await forgotPassword({ email });
       setIsAccepted(true);
     } catch (requestError: unknown) {
-      setError(authErrorMessage(requestError));
+      setError(requestError);
     } finally {
       setIsSubmitting(false);
     }
@@ -54,15 +55,21 @@ export function EmailRequestForm({ kind }: EmailRequestFormProps) {
 
   if (isAccepted) {
     return (
-      <div aria-live="polite">
-        <p className="text-sm leading-6 text-muted-foreground">
-          {content.success}
+      <div>
+        <p
+          className="text-sm leading-6 text-muted-foreground"
+          ref={message}
+          role="status"
+          tabIndex={-1}
+        >
+          {t("authResetAccepted")}
         </p>
         <Link
           className="mt-5 inline-flex min-h-11 items-center rounded-md bg-foreground px-4 text-sm font-medium text-background outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          href={content.otherLink}
+          href="/login"
+          replace
         >
-          {content.otherText}
+          {t("authBackToLogin")}
         </Link>
       </div>
     );
@@ -72,9 +79,13 @@ export function EmailRequestForm({ kind }: EmailRequestFormProps) {
     <form className="space-y-5" noValidate onSubmit={handleSubmit}>
       <div>
         <Label className="form-field" htmlFor={`${kind}-email`}>
-          Email address
+          {t("authEmail")}
         </Label>
         <Input
+          aria-describedby={
+            error !== null || invalidEmail ? `${kind}-error` : undefined
+          }
+          aria-invalid={invalidEmail}
           autoComplete="email"
           className="mt-1"
           disabled={isSubmitting}
@@ -86,24 +97,35 @@ export function EmailRequestForm({ kind }: EmailRequestFormProps) {
           value={email}
         />
       </div>
-      {error === null ? null : (
+      {error === null && !invalidEmail ? null : (
         <p
           aria-live="assertive"
           className="text-sm text-destructive form-message"
+          id={`${kind}-error`}
+          ref={message}
+          tabIndex={-1}
           role="alert"
         >
-          {error}
+          {invalidEmail
+            ? t("authInvalidEmail")
+            : verificationErrorMessage(error, t)}
         </p>
       )}
-      <Button className="w-full" disabled={isSubmitting} type="submit">
-        {isSubmitting ? "Sending request…" : content.button}
+      <Button
+        aria-live="polite"
+        className="w-full"
+        disabled={isSubmitting}
+        type="submit"
+      >
+        {isSubmitting ? t("authResendSending") : t("authResetRequest")}
       </Button>
       <p className="text-center text-sm text-muted-foreground">
         <Link
           className="font-medium text-foreground underline"
-          href={content.otherLink}
+          href="/login"
+          replace
         >
-          {content.otherText}
+          {t("authBackToLogin")}
         </Link>
       </p>
     </form>

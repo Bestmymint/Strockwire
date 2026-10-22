@@ -64,7 +64,7 @@ export function OnboardingForm() {
     try {
       await completeFirstOrganizationOnboarding(fields);
       queryClient.removeQueries({ queryKey: ["access-context"] });
-      router.push("/app");
+      router.replace("/app");
     } catch (requestError: unknown) {
       setError(
         authErrorMessage(requestError, {

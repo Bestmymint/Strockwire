@@ -32,14 +32,29 @@ export function VerificationResendForm() {
   const [invalidEmail, setInvalidEmail] = useState(false);
   const message = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
-    mounted.current = true;
-    setEmail(loadContinuation().continuation?.canonicalEmail ?? "");
-    setReady(true);
-    return () => {
+    function restore() {
+      mounted.current = true;
+      pending.current = false;
+      setBusy(false);
+      setEmail(loadContinuation().continuation?.canonicalEmail ?? "");
+      setReady(true);
+    }
+    function abandon() {
       mounted.current = false;
       requestId.current += 1;
       controller.current?.abort();
       controller.current = null;
+    }
+    function onPageShow(event: PageTransitionEvent) {
+      if (event.persisted) restore();
+    }
+    restore();
+    window.addEventListener("pagehide", abandon);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      abandon();
+      window.removeEventListener("pagehide", abandon);
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, []);
   useEffect(() => {
@@ -96,7 +111,7 @@ export function VerificationResendForm() {
             : Date.now(),
       });
       setAccepted(true);
-      if (saved) router.push("/verify-email");
+      if (saved) router.replace("/verify-email");
     } catch (requestError: unknown) {
       if (isCurrent()) setError(requestError);
     } finally {
@@ -114,7 +129,7 @@ export function VerificationResendForm() {
         <p ref={message} role="status" tabIndex={-1}>
           {t("authResendAccepted")}
         </p>
-        <Link className="underline" href="/login">
+        <Link className="underline" href="/login" replace>
           {t("authBackToLogin")}
         </Link>
       </div>
@@ -157,6 +172,7 @@ export function VerificationResendForm() {
         className="block text-center text-sm underline"
         href="/login"
         onClick={clearContinuation}
+        replace
       >
         {t("authBackToLogin")}
       </Link>

@@ -311,7 +311,7 @@ trusted state from PostgreSQL and call this policy before mutation or exposure.
 ### 6.1 Authentication and scope selection
 
 `ADR-034` is implemented by T02A's synchronized schema/backend/security
-cutover. T02A-AUTH-VERIFICATION-WEB-01 implements the web OTP/link continuation and password-proof fallback; independent frontend acceptance review is accepted; real frontend/backend/PostgreSQL integration and email delivery remain unverified.
+cutover. T02A-AUTH-VERIFICATION-WEB-01 implements the web OTP/link continuation and password-proof fallback; independent frontend acceptance and scoped local frontend/backend/PostgreSQL integration final review are accepted (2026-10-10); external email delivery and production HTTPS remain unverified.
 Historical P2 registration-without-delivery and link-only verification are
 no longer backend compatibility paths. Ordinary application authentication,
 onboarding, authorization, invitations, and reset eligibility retain their
@@ -403,7 +403,7 @@ CSP `frame-ancestors 'none'` and `X-Frame-Options: DENY`, including SPA entry
 routes. Resend commits require the current mounted request and unchanged
 continuation revision/identity, even if cancellation races with completion.
 Existing Light/Dark, EN/TH, and accessible shadcn/ui direction remain.
-Independent web acceptance re-review is accepted; real frontend/backend/PostgreSQL integration and email delivery remain unverified; cloud-wide abuse/delivery
+Independent web acceptance and scoped local real frontend/backend/PostgreSQL integration review are accepted; external email delivery and production HTTPS remain unverified; cloud-wide abuse/delivery
 guarantees are not implied.
 
 P2-M3-T01 adds one authenticated first-organization command at

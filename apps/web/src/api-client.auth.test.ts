@@ -138,45 +138,13 @@ describe("authentication API client", () => {
     });
   });
 
-  it("posts only the accepted first-onboarding fields and validates the safe result", async () => {
-    const responseData = {
-      branch: {
-        address: null,
-        code: "MAIN",
-        id: "branch-id",
-        name: "Main",
-        phone: null,
-      },
-      nextStep: "app",
-      organization: { id: "organization-id", name: "Store" },
-      role: "OWNER",
-      user: { displayName: "Owner", id: "user-id", phone: null },
-    };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(successfulResponse(responseData));
-    vi.stubGlobal("fetch", fetchMock);
-    const request = {
-      branchAddress: "",
+  it("rejects a malformed successful onboarding response instead of granting application entry", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(successfulResponse({ nextStep: "app" })));
+    await expect(completeFirstOrganizationOnboarding({
       branchName: "Main",
-      branchPhone: "",
       displayName: "Owner",
       organizationName: "Store",
-      phone: "",
-    };
-
-    await expect(completeFirstOrganizationOnboarding(request)).resolves.toEqual(
-      { data: responseData },
-    );
-    expect(fetchMock).toHaveBeenCalledWith("/api/v1/organizations", {
-      body: JSON.stringify(request),
-      credentials: "same-origin",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/json",
-      },
-      method: "POST",
-    });
+    })).rejects.toMatchObject({ kind: "unavailable" });
   });
 
   it("maps first-onboarding conflicts to safe client error kinds", async () => {

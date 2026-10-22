@@ -36,6 +36,20 @@ const nextConfig: NextConfig = {
         ],
         source: "/verify-email",
       },
+      {
+        source: "/reset-password",
+        headers: [
+          { key: "Cache-Control", value: "no-store" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+        ],
+      },
+      {
+        source: "/accept-invitation",
+        headers: [
+          { key: "Cache-Control", value: "no-store" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+        ],
+      },
     ];
   },
   async rewrites() {

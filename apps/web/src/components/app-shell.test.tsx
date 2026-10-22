@@ -12,6 +12,12 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import HomePage from "@/app/page";
+import { fetchAccessContext } from "@/branch-api-client";
+import { RegistrationForm } from "@/components/auth/registration-form";
+import { VerificationForm } from "@/components/auth/verification-form";
+import { verificationLinkEntryHtml } from "@/verification-link-entry";
+import type { VerificationLinkWindow } from "@/verification-link-entry";
+import type { CredentialLinkWindow } from "@/credential-link-entry";
 import type {
   AccessContext,
   AccessibleOrganization,
@@ -32,6 +38,14 @@ vi.mock("next/navigation", () => ({
 
 const ORG = "10000000-0000-4000-8000-000000000001";
 const BRANCH = "20000000-0000-4000-8000-000000000001";
+const guestPaths = [
+  "/login",
+  "/register",
+  "/verification-resend",
+  "/forgot-password",
+  "/reset-password",
+  "/verify-email",
+];
 
 function accessContext(
   role: AccessibleOrganization["role"] = "OWNER",
@@ -57,10 +71,10 @@ function accessContext(
 function renderShell(
   context?: AccessContext,
   children = <p>Module content</p>,
-) {
-  const client = new QueryClient({
+  client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
-  });
+  }),
+) {
   if (context) client.setQueryData(["access-context"], context);
   render(
     <QueryClientProvider client={client}>
@@ -98,9 +112,99 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  delete (window as VerificationLinkWindow).__stockwiseTakeVerificationLink;
+  delete (window as CredentialLinkWindow).__stockwiseTakeCredentialLink;
+  window.history.replaceState(null, "", "/");
 });
 
 describe("web application shell", () => {
+  it.each(["/reset-password", "/accept-invitation"])(
+    "abandons an unclaimed %s credential when switching to another credential route",
+    (owningPath) => {
+      pathname = owningPath;
+      const sessionCheck = Promise.withResolvers<Response>();
+      vi.mocked(fetch).mockReturnValue(sessionCheck.promise);
+      const dispose = vi.fn(() => {
+        delete (window as CredentialLinkWindow).__stockwiseTakeCredentialLink;
+        return { route: owningPath, token: null };
+      });
+      Object.defineProperty(window, "__stockwiseTakeCredentialLink", {
+        configurable: true,
+        value: dispose,
+      });
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      const content = () => (
+        <QueryClientProvider client={client}>
+          <AppShell>
+            <p>Pending protected form</p>
+          </AppShell>
+        </QueryClientProvider>
+      );
+      const view = render(content());
+      expect(dispose).not.toHaveBeenCalled();
+      // Neither protected form mounts: access-context is still pending.
+      pathname =
+        owningPath === "/reset-password"
+          ? "/accept-invitation"
+          : "/reset-password";
+      view.rerender(content());
+      expect(dispose).toHaveBeenCalledTimes(1);
+      // Back must not revive the credential from the previous route visit.
+      pathname = owningPath;
+      view.rerender(content());
+      expect(dispose).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(["network", "503", "malformed"])(
+    "retries a guest %s failure without form flash until explicit 401",
+    async (failure) => {
+      pathname = "/register";
+      if (failure === "network")
+        vi.mocked(fetch).mockRejectedValueOnce(new Error("offline"));
+      else
+        vi.mocked(fetch).mockResolvedValueOnce(
+          new Response("{}", { status: failure === "503" ? 503 : 200 }),
+        );
+      renderShell(undefined, <RegistrationForm />);
+      await screen.findByRole("alert");
+      expect(screen.queryByLabelText("Password")).toBeNull();
+      const pending = Promise.withResolvers<Response>();
+      vi.mocked(fetch).mockReturnValueOnce(pending.promise);
+      fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+      expect(screen.queryByLabelText("Password")).toBeNull();
+      pending.resolve(
+        new Response(
+          JSON.stringify({ error: { code: "AUTHENTICATION_REQUIRED" } }),
+          { status: 401 },
+        ),
+      );
+      await screen.findByLabelText("Password");
+      expect(replace).not.toHaveBeenCalled();
+    },
+  );
+
+  it("retries a guest failure to fresh authenticated context without exposing a form", async () => {
+    pathname = "/login";
+    vi.mocked(fetch).mockResolvedValueOnce(new Response("{}", { status: 503 }));
+    renderShell(undefined, <RegistrationForm />);
+    await screen.findByRole("alert");
+    const pending = Promise.withResolvers<Response>();
+    vi.mocked(fetch).mockReturnValueOnce(pending.promise);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    pending.resolve(new Response(JSON.stringify({ data: accessContext() })));
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith(
+        `/app?organizationId=${ORG}&branchId=${BRANCH}`,
+      ),
+    );
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    expect(replace).toHaveBeenCalledTimes(1);
+  });
+
   it("renders public landmarks without waiting for or requesting a session", () => {
     pathname = "/";
     renderShell(undefined, <HomePage />);
@@ -151,20 +255,202 @@ describe("web application shell", () => {
     }
   });
 
-  it.each(["/login"])(
+  it.each(guestPaths)(
     "opens authenticated Home from %s without showing public auth content",
     async (path) => {
       pathname = path;
-      renderShell(accessContext(), <p>Sign in</p>);
+      vi.mocked(fetch).mockResolvedValue(
+        new Response(JSON.stringify({ data: accessContext() })),
+      );
+      renderShell(accessContext(), <p>Public authentication form</p>);
+      expect(screen.queryByText("Public authentication form")).toBeNull();
       await waitFor(() =>
         expect(replace).toHaveBeenCalledWith(
           `/app?organizationId=${ORG}&branchId=${BRANCH}`,
         ),
       );
-      expect(screen.queryByText("Sign in")).toBeNull();
+      expect(screen.queryByText("Public authentication form")).toBeNull();
     },
   );
 
+  it.each(guestPaths)(
+    "waits for explicit 401 before exposing %s to an anonymous or pending user",
+    async (path) => {
+      pathname = path;
+      renderShell(undefined, <p>Guest form</p>);
+      expect(screen.getByText(/Loading access/)).toBeTruthy();
+      expect(screen.queryByText("Guest form")).toBeNull();
+      await waitFor(() => expect(screen.getByText("Guest form")).toBeTruthy());
+      expect(replace).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(guestPaths)(
+    "fails closed on unavailable access context at %s",
+    async (path) => {
+      pathname = path;
+      vi.mocked(fetch).mockResolvedValue(new Response("{}", { status: 503 }));
+      renderShell(undefined, <RegistrationForm />);
+      expect(screen.queryByLabelText("Password")).toBeNull();
+      expect((await screen.findByRole("alert")).textContent).toContain(
+        "access context could not be loaded",
+      );
+      expect(
+        screen.queryByRole("button", { name: "Create account" }),
+      ).toBeNull();
+      expect(replace).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not trust a cached 401 when a guest entry rechecks a valid session", async () => {
+    pathname = "/register";
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    await expect(
+      client.fetchQuery({
+        queryKey: ["access-context"],
+        queryFn: fetchAccessContext,
+      }),
+    ).rejects.toMatchObject({ kind: "authentication_required" });
+    const response = Promise.withResolvers<Response>();
+    vi.mocked(fetch).mockReturnValue(response.promise);
+    renderShell(undefined, <RegistrationForm />, client);
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    response.resolve(new Response(JSON.stringify({ data: accessContext() })));
+    await waitFor(() => expect(replace).toHaveBeenCalled());
+    expect(client.getQueryData(["access-context"])).toEqual(accessContext());
+    expect(screen.queryByLabelText("Password")).toBeNull();
+  });
+
+  it.each([403, 200])(
+    "does not treat an unknown %s access-context response as anonymous",
+    async (status) => {
+      pathname = "/login";
+      vi.mocked(fetch).mockResolvedValue(new Response("{}", { status }));
+      renderShell(undefined, <RegistrationForm />);
+      await screen.findByRole("alert");
+      expect(screen.queryByLabelText("Password")).toBeNull();
+      expect(replace).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([403, 503])(
+    "requires HTTP 401, not merely an auth error code on %s",
+    async (status) => {
+      pathname = "/register";
+      vi.mocked(fetch).mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { code: "AUTHENTICATION_REQUIRED" } }),
+          { status },
+        ),
+      );
+      renderShell(undefined, <RegistrationForm />);
+      await screen.findByRole("alert");
+      expect(screen.queryByLabelText("Password")).toBeNull();
+      expect(replace).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps stale authenticated guest content suppressed if revalidation fails", async () => {
+    pathname = "/register";
+    vi.mocked(fetch).mockRejectedValue(new Error("synthetic unavailable"));
+    renderShell(accessContext(), <RegistrationForm />);
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    await screen.findByRole("alert");
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    expect(screen.queryByRole("complementary")).toBeNull();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it.each(["/accept-invitation", "/onboarding", "/missing"])(
+    "does not apply guest redirection to authenticated %s",
+    (path) => {
+      pathname = path;
+      renderShell(accessContext());
+      expect(screen.getByText("Module content")).toBeTruthy();
+      expect(replace).not.toHaveBeenCalled();
+    },
+  );
+
+  it("shows an authenticated visitor the mailbox-link status action without redirecting or auto-submitting", async () => {
+    pathname = "/verify-email";
+    window.history.replaceState(
+      null,
+      "",
+      `/verify-email?token=${"a".repeat(43)}`,
+    );
+    const script = new DOMParser()
+      .parseFromString(verificationLinkEntryHtml, "text/html")
+      .querySelector("script")!.textContent;
+    new Function(
+      "window",
+      "location",
+      "history",
+      "addEventListener",
+      "fetch",
+      script,
+    )(
+      window,
+      window.location,
+      window.history,
+      window.addEventListener.bind(window),
+      () => Promise.withResolvers().promise,
+    );
+    expect(window.location.search).toBe("");
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ data: accessContext() })),
+    );
+    renderShell(undefined, <VerificationForm />);
+    await screen.findByRole("button", { name: "Check verification link" });
+    expect(replace).not.toHaveBeenCalled();
+    expect(
+      (window as VerificationLinkWindow).__stockwiseTakeVerificationLink,
+    ).toBeUndefined();
+    expect(screen.queryByRole("complementary")).toBeNull();
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.every(
+          ([, options]) => !options?.method || options.method === "GET",
+        ),
+    ).toBe(true);
+  });
+
+  it("routes marketing Get Started to the guest guard without a registration flash", async () => {
+    pathname = "/";
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <AppShell>
+          <HomePage />
+        </AppShell>
+      </QueryClientProvider>,
+    );
+    const cta = screen.getAllByRole("link", { name: "Get started" })[0]!;
+    expect(cta.getAttribute("href")).toBe("/register");
+    expect(fetch).not.toHaveBeenCalled();
+    pathname = cta.getAttribute("href")!;
+    const response = Promise.withResolvers<Response>();
+    vi.mocked(fetch).mockReturnValue(response.promise);
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <AppShell>
+          <RegistrationForm />
+        </AppShell>
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    response.resolve(new Response(JSON.stringify({ data: accessContext() })));
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith(
+        `/app?organizationId=${ORG}&branchId=${BRANCH}`,
+      ),
+    );
+    expect(screen.queryByRole("button", { name: "Create account" })).toBeNull();
+  });
   it.each(["/", "/pricing"])(
     "keeps %s public when access context is already authenticated",
     (path) => {

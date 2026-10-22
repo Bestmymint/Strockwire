@@ -1,3 +1,4 @@
+import { privateFetch, readPrivateJson } from "@/session-lifecycle";
 import { z } from "zod";
 
 import { API_HEALTH_PATH } from "./api-proxy";
@@ -122,7 +123,7 @@ function authErrorFromResponse(
 
 async function readResponseBody(response: Response): Promise<unknown> {
   try {
-    return await response.json();
+    return await readPrivateJson(response);
   } catch {
     return undefined;
   }
@@ -204,7 +205,7 @@ const loginUnverifiedResponseSchema = z.object({
     .strict(),
 });
 const verificationResponseSchema = z.object({
-  data: z.object({ status: z.literal("verified") }),
+  data: z.object({ status: z.enum(["verified", "already_verified"]) }),
 });
 const resendVerificationResponseSchema = z.object({
   data: z.object({
@@ -345,7 +346,8 @@ export async function resetPassword(input: {
 }
 
 export async function logout() {
-  await postAuth("logout");
+  const response = await postAuth("logout", {});
+  if (response.status !== 204) throw new AuthApiError("unavailable");
 }
 
 export interface FirstOrganizationOnboardingRequest {
@@ -363,7 +365,7 @@ export async function completeFirstOrganizationOnboarding(
   let response: Response;
 
   try {
-    response = await fetch("/api/v1/organizations", {
+    response = await privateFetch("/api/v1/organizations", {
       body: JSON.stringify(input),
       credentials: "same-origin",
       headers: {

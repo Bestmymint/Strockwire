@@ -4,7 +4,10 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   testDir: "./tests/e2e",
-  testMatch: "auth-verification.browser.spec.ts",
+  testMatch: [
+    "auth-verification.browser.spec.ts",
+    "recovery-localization.browser.spec.ts",
+  ],
   outputDir: "test-results/auth-verification",
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   reporter: "list",

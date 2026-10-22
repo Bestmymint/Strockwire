@@ -40,9 +40,12 @@ describe("credential lifecycle router", () => {
   async function startRouter({
     lifecycleService = createLifecycleService(),
     now = () => 1_000,
+    linkOutcome = "invalid",
   }: {
     lifecycleService?: CredentialLifecycleService;
     now?: () => number;
+    linkOutcome?:
+      "verified" | "already_verified" | "invalid" | "proof_required";
   } = {}) {
     const apiRouter = createCredentialLifecycleRouter({
       authenticationMiddleware: (_request, response) => {
@@ -59,7 +62,7 @@ describe("credential lifecycle router", () => {
           delivery: null,
         }),
         completeCode: async () => "invalid",
-        completeLink: async () => "invalid",
+        completeLink: async () => linkOutcome,
       },
     });
     runningServer = await startApiServer(createApp({ apiRouter, logger }), {
@@ -166,6 +169,32 @@ describe("credential lifecycle router", () => {
     expect(failure.status).toBe(500);
     expect(failure.headers.get("set-cookie")).toBeNull();
     expect(await failure.text()).not.toContain("database unavailable");
+  });
+
+  it("responds informationally to an already consumed link without cookies or authority", async () => {
+    const { url } = await startRouter({ linkOutcome: "already_verified" });
+    const replay = await post(url, "/auth/verify-email", {
+      token: "a".repeat(43),
+    });
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toMatchObject({
+      data: { status: "already_verified" },
+    });
+    expect(replay.headers.get("set-cookie")).toBeNull();
+    expect(replay.headers.get("cache-control")).toBe("no-store");
+    expect(replay.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
+  it("keeps unknown links generic even when a recognized link could be informational", async () => {
+    const { url } = await startRouter({ linkOutcome: "invalid" });
+    const invalid = await post(url, "/auth/verify-email", {
+      token: "z".repeat(43),
+    });
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toMatchObject({
+      error: { code: "INVALID_TOKEN" },
+    });
+    expect(invalid.headers.get("set-cookie")).toBeNull();
   });
 
   it("rejects cross-site logout before session work", async () => {

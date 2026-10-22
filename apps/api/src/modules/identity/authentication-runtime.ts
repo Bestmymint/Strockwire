@@ -25,7 +25,10 @@ import { createRegistrationRouter } from "./registration-router.ts";
 import { createRegistrationService } from "./registration-service.ts";
 import { createSessionConfiguration } from "./session-configuration.ts";
 import { secureSessionTokenProvider } from "./session-token.ts";
-import { createVerificationDelivery } from "./verification-delivery.ts";
+import {
+  createVerificationDelivery,
+  type VerificationDeliveryFailure,
+} from "./verification-delivery.ts";
 import { createPrismaVerificationRepository } from "./verification-repository.ts";
 import {
   createVerificationSecurity,
@@ -49,6 +52,7 @@ export function createAuthenticationRuntime({
       | "verification_compensation"
       | "password_reset"
       | "password_reset_compensation",
+    failure?: VerificationDeliveryFailure,
   ) => void;
 }) {
   const configuration = createSessionConfiguration(environment);

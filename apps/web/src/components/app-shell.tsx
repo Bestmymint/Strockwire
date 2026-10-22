@@ -1,9 +1,9 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 
 import { BranchApiError, fetchAccessContext } from "@/branch-api-client";
 import {
@@ -46,6 +46,11 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { PreferenceControls } from "@/components/preference-controls";
 import { useLanguage } from "@/providers/language-provider";
+import { isGuestRoute, routeAccessPolicy } from "@/route-access-policy";
+import type { VerificationLinkWindow } from "@/verification-link-entry";
+import type { CredentialLinkWindow } from "@/credential-link-entry";
+import { useSessionLifecycle } from "@/providers/session-lifecycle-provider";
+import { discardPrivateSession } from "@/session-lifecycle";
 import type {
   AccessContext,
   AccessibleOrganization,
@@ -57,10 +62,54 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
-  if (pathname === "/" || pathname === "/pricing") {
+  const lifecycle = useSessionLifecycle();
+  const { t } = useLanguage();
+  const policy = routeAccessPolicy(pathname);
+  const previousPathname = useRef(pathname);
+  useEffect(() => {
+    const previous = previousPathname.current;
+    previousPathname.current = pathname;
+    // Discard an unclaimed credential as soon as the user leaves its owning
+    // route, including navigation directly to the other credential route.
+    // First mount and StrictMode effect replays are not abandonment.
+    if (
+      previous !== pathname &&
+      (previous === "/reset-password" || previous === "/accept-invitation")
+    ) {
+      (window as CredentialLinkWindow).__stockwiseTakeCredentialLink?.();
+    }
+  }, [pathname]);
+  if (policy === "public-marketing") {
     return <MarketingShell key={pathname}>{children}</MarketingShell>;
   }
-  return <WorkspaceShell>{children}</WorkspaceShell>;
+  if (lifecycle.suspended)
+    return (
+      <main>
+        <p aria-live="polite">{t("loadingAccess")}</p>
+      </main>
+    );
+  if (
+    lifecycle.unauthorized &&
+    (policy === "protected-application" ||
+      policy === "onboarding" ||
+      policy === "invitation")
+  )
+    return (
+      <main className="p-6">
+        <p role="alert">{t("sessionExpired")}</p>
+        <Link href="/login" replace>
+          {t("signIn")}
+        </Link>
+      </main>
+    );
+  // Recheck a guest entry even when Back/Forward restores a cached 401.
+  return (
+    <WorkspaceShell
+      key={`${lifecycle.generation}:${isGuestRoute(policy) ? pathname : "workspace"}`}
+    >
+      {children}
+    </WorkspaceShell>
+  );
 }
 
 function WorkspaceShell({ children }: AppShellProps) {
@@ -68,12 +117,38 @@ function WorkspaceShell({ children }: AppShellProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { t } = useLanguage();
+  const queryClient = useQueryClient();
+  const lifecycle = useSessionLifecycle();
+  const guestRoute = isGuestRoute(routeAccessPolicy(pathname));
+  // A real mailbox-link visit is not an ordinary guest auth page.
+  // The one-use handoff is installed by the pre-hydration bootstrap and
+  // remains associated with this mounted route even after the form claims it.
+  const mailboxLinkVisit = useRef(false);
+  if (
+    pathname === "/verify-email" &&
+    typeof window !== "undefined" &&
+    typeof (window as VerificationLinkWindow)
+      .__stockwiseTakeVerificationLink === "function"
+  ) {
+    mailboxLinkVisit.current = true;
+  }
   const contextQuery = useQuery({
-    queryFn: fetchAccessContext,
+    // Guest probes survive the initial StrictMode observer replay; session
+    // generation cancellation still aborts on real logout/actor changes.
+    queryFn: guestRoute
+      ? () => fetchAccessContext()
+      : ({ signal }) => fetchAccessContext({ signal }),
     queryKey: ["access-context"],
     retry: false,
+    // Recheck cached guest errors on revisits. StrictMode's initial observer
+    // replay remains single-request because guest queries do not consume its
+    // abort signal; the session-generation abort signal still applies.
+    refetchOnMount: guestRoute ? "always" : true,
   });
-  const context = contextQuery.isError ? undefined : contextQuery.data;
+  const context =
+    contextQuery.isError || contextQuery.isFetching
+      ? undefined
+      : contextQuery.data;
   const resolved = context
     ? resolveApplicationContext(
         context,
@@ -86,15 +161,69 @@ function WorkspaceShell({ children }: AppShellProps) {
   const homeUrl = organization
     ? applicationContextUrl(organization.id, branch?.id ?? null)
     : "/app";
-  const openingWorkspace = context !== undefined && pathname === "/login";
-  const checkingSession = contextQuery.isPending && pathname === "/login";
+  const openingWorkspace =
+    context !== undefined && guestRoute && !mailboxLinkVisit.current;
+  const checkingSession = contextQuery.isPending || contextQuery.isFetching;
   const signedOut =
     contextQuery.error instanceof BranchApiError &&
     contextQuery.error.kind === "authentication_required";
+  const previouslyAnonymous = useRef(false);
+  if (guestRoute && signedOut && !checkingSession)
+    previouslyAnonymous.current = true;
+  // Once the backend established anonymous access for this mounted guest
+  // route, keep its unsent draft mounted during later focus revalidation.
+  const preserveGuestDraft =
+    guestRoute && previouslyAnonymous.current && !openingWorkspace;
+  const protectedRoute =
+    routeAccessPolicy(pathname) === "protected-application" ||
+    routeAccessPolicy(pathname) === "onboarding";
+  useEffect(() => {
+    if (signedOut && protectedRoute && !checkingSession) {
+      discardPrivateSession(queryClient);
+      router.replace("/login");
+    }
+  }, [signedOut, protectedRoute, checkingSession, queryClient, router]);
 
   useEffect(() => {
-    if (openingWorkspace) router.replace(homeUrl);
-  }, [homeUrl, openingWorkspace, router]);
+    // A resource 401 is only a revocation hint. An explicit, fresh and
+    // successful access-context check on guest entry can confirm authority
+    // is still valid; otherwise the protected recovery screen would loop.
+    if (
+      guestRoute &&
+      lifecycle.unauthorized &&
+      contextQuery.isSuccess &&
+      contextQuery.isFetchedAfterMount &&
+      !contextQuery.isFetching
+    ) {
+      lifecycle.acknowledgeFreshAuthenticatedContext();
+    }
+  }, [
+    guestRoute,
+    lifecycle.unauthorized,
+    lifecycle.acknowledgeFreshAuthenticatedContext,
+    contextQuery.isSuccess,
+    contextQuery.isFetchedAfterMount,
+    contextQuery.isFetching,
+  ]);
+
+  useEffect(() => {
+    if (openingWorkspace && !checkingSession && !lifecycle.unauthorized) {
+      // The pre-hydration boundary already scrubbed the URL. The form never
+      // mounts here, so explicitly discard its one-use credential handoff.
+      if (pathname === "/verify-email")
+        (window as VerificationLinkWindow).__stockwiseTakeVerificationLink?.();
+      if (pathname === "/reset-password")
+        (window as CredentialLinkWindow).__stockwiseTakeCredentialLink?.();
+      router.replace(homeUrl);
+    }
+  }, [
+    checkingSession,
+    homeUrl,
+    openingWorkspace,
+    pathname,
+    router,
+    lifecycle.unauthorized,
+  ]);
 
   const canManage =
     organization?.role === "OWNER" || organization?.role === "ADMIN";
@@ -138,10 +267,26 @@ function WorkspaceShell({ children }: AppShellProps) {
       className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 px-4 py-6 sm:px-6"
       id="main-content"
     >
-      {checkingSession ? (
+      {checkingSession && !preserveGuestDraft ? (
         <p aria-live="polite">{t("loadingAccess")}</p>
       ) : openingWorkspace ? (
         <p aria-live="polite">{t("openingWorkspace")}</p>
+      ) : signedOut && protectedRoute ? (
+        <p role="alert">{t("sessionExpired")}</p>
+      ) : !signedOut && !context && !preserveGuestDraft ? (
+        <div className="space-y-4">
+          <p role="alert">
+            {t(
+              contextQuery.error instanceof BranchApiError &&
+                contextQuery.error.kind === "forbidden"
+                ? "accessDenied"
+                : "accessError",
+            )}
+          </p>
+          <Button type="button" onClick={() => void contextQuery.refetch()}>
+            {t("accessRetry")}
+          </Button>
+        </div>
       ) : (
         children
       )}
@@ -155,7 +300,7 @@ function WorkspaceShell({ children }: AppShellProps) {
       {t("skip")}
     </a>
   );
-  if (!context)
+  if (!context || mailboxLinkVisit.current)
     return (
       <div className="flex min-h-screen flex-col">
         {skip}
@@ -177,7 +322,7 @@ function WorkspaceShell({ children }: AppShellProps) {
                   variant="ghost"
                   nativeButton={false}
                   role="link"
-                  render={<Link href="/login" />}
+                  render={<Link href="/login" replace={guestRoute} />}
                 >
                   {t("signIn")}
                 </Button>

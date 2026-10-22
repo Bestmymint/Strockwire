@@ -1,29 +1,30 @@
 # StockWise GitHub course mirrors
 
-**Canonical source:** `athikarn5678/stockwise` (public, `main`). Edit and push here only.
+**Canonical source:** `athikarn5678/stockwise` (public, `main`). Develop and push here only.
 
-The two course repositories must remain **private**:
-
+**Private destination repositories:**
 - `athikarn5678/stockwise-cloud-computing-06016404` — 06016404 CLOUD COMPUTING
 - `athikarn5678/stockwise-server-side-web-development-06016418` — 06016418 SERVER-SIDE WEB DEVELOPMENT
 
-The workflow `.github/workflows/sync-course-repositories.yml` runs after each `main` push to the canonical repository and on manual `workflow_dispatch`. It copies the exact checked-out repository contents to each course repository, replacing **only the root `README.md`** with its fixed subject header plus the canonical `README.md`. Headers are stored at `.github/course-readmes/*.md` and do not need manual editing for later syncs.
+The workflow `.github/workflows/sync-course-repositories.yml` runs after each canonical `main` push (and manually via `workflow_dispatch`). It **fetches the canonical repository's complete Git commit history** into both course repositories, then creates a merge commit whose second parent is the exact source commit. Every canonical commit, including all historical commits, remains reachable in each course repo without force-pushing or rewriting their existing history.
+
+The checked-out file tree is copied from the canonical source with just one exception: the **root `README.md`** is generated using the stable subject-specific header in `.github/course-readmes/*.md` plus the entire canonical README body. These headers never need manual updates.
 
 ## One-time GitHub setup
 
-1. Confirm that the complete working tree **and Git history** are safe to publish publicly; explicitly examine ignored files, accidental secrets, scratch/debug files, hardcoded tokens, and any sensitive historical commits. Do not stage everything blindly from the currently dirty worktree.
-2. Create `athikarn5678/stockwise` as **public** with `main`, and both course repositories as **private** with `main`. Initialize course repositories with a README so that their `main` branches exist before first sync. Do not create them as forks.
-3. Generate a **fine-grained GitHub personal access token** whose repository access is limited to the **two private course repositories**, with repository **Contents: Read and write** and **Workflows: Read and write** (needed because the mirrored tree contains `.github/workflows`). Use an expiration and rotate before expiry. Do not paste the token in chat or write it to a file.
-4. In the **public** source repository: Settings → Secrets and variables → Actions → New repository secret. Name it exactly `COURSE_SYNC_TOKEN`, and enter the token value.
-5. Set the local repository's `origin` to the canonical source when the public-history audit is complete. Commit only deliberately reviewed files and push `main`.
-6. Verify the `Sync course repositories` workflow run and inspect both private repositories. Use Actions → workflow → Run workflow to retry after correcting any issue.
+1. Audit the complete working tree and all Git history for actual secrets and unintended public files; do not blindly include local scratch/debug files.
+2. Create `athikarn5678/stockwise` **public** and both course repos **private**, each with an initialized `main` branch. Do not fork the public repo.
+3. Generate a **fine-grained personal access token** limited to the two private course repositories, with **Contents: Read and write** and **Workflows: Read and write** (the mirrored tree contains GitHub Actions workflows). Set an expiry and rotate before expiry.
+4. In the **public** source repo: Settings → Secrets and variables → Actions → New repository secret, named exactly `COURSE_SYNC_TOKEN`. Never place the token in source, logs, or chat.
+5. Point local `origin` to the canonical source. Commit only reviewed files and push `main`. Inspect the `Sync course repositories` Actions result and both private destinations.
+6. Re-run the sync workflow through GitHub Actions if a temporary error occurs.
 
-## Guarantees and limitations
+## History, behavior and limits
 
-- All committed files are mirrored, including workflows and documentation. The root README is the only intended file-content difference. Course headers remain stable while the canonical README body tracks the main project automatically.
-- The workflow runs **only** on the canonical `athikarn5678/stockwise` repository; its copies in course repositories will not fan out.
-- Destination-only edits and files (other than the protected root README) are overwritten/deleted by the next successful sync. Do not work directly in the course repositories.
-- Repos have independent commit histories and different commit SHAs. A single push does not make the three remote updates atomic: review Actions status and rerun failures as necessary.
-- Empty/uninitialized course repositories cannot be cloned with `--branch main`. Initialize each as instructed.
-- The workflow must have access to `COURSE_SYNC_TOKEN` to write cross-repository; the default `GITHUB_TOKEN` is not sufficient. Avoid secrets in source/commit history.
-- The sync job intentionally does not run on the course repositories (but other copied CI workflows may).
+- **All canonical source commits are retained verbatim as historical ancestors** of destination `main`. Their original SHA-1s and file trees are preserved.
+- The two private destinations have their own additional sync merge commits and initial course-repository commits. Their `main` HEAD SHA is therefore different from the canonical `main` HEAD; this is unavoidable when their root README differs.
+- Files in each destination's final tree match the source except the root `README.md`. The subject-specific README header remains stable, while its shared StockWise body updates automatically.
+- The sync workflow is gated to only run in the canonical source repository. The two course repos do not trigger recursive sync jobs.
+- Any manual changes in destination repositories are overwritten in the next successful sync. Make all changes in the canonical repository.
+- If a push fails in one destination, the other may have succeeded; updates are not atomic. Check Actions statuses, then retry.
+- Private destinations are expected to have existing `main` branches. No force-push is used; existing course repo commits are retained in the merged history.

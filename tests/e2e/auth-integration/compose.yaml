@@ -9,7 +9,7 @@ services:
     labels:
       stockwise.t02a.owner: ${STOCKWISE_T02A_OWNER:?worker ownership required}
     ports:
-      - "127.0.0.1:55439:5432"
+      - "127.0.0.1:56221:5432"
     volumes:
       - auth-data:/var/lib/postgresql/data
     healthcheck:

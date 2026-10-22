@@ -1,13 +1,13 @@
-import { AuthCard } from "@/components/auth/auth-card";
+import { AuthCardLocalized } from "@/components/auth/auth-card-localized";
 import { ResetPasswordForm } from "@/components/auth/reset-password-form";
 
 export default function ResetPasswordPage() {
   return (
-    <AuthCard
-      description="Choose a new password using the secure link from your email."
-      title="Set a new password"
+    <AuthCardLocalized
+      descriptionKey="authResetDescription"
+      titleKey="authResetTitle"
     >
       <ResetPasswordForm />
-    </AuthCard>
+    </AuthCardLocalized>
   );
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { privateFetch, readPrivateJson } from "@/session-lifecycle";
 
 const roleSchema = z.enum([
   "OWNER",
@@ -68,7 +69,7 @@ export class BranchApiError extends Error {
 async function request(path: string, init?: RequestInit): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(`/api/v1/${path}`, {
+    response = await privateFetch(`/api/v1/${path}`, {
       credentials: "same-origin",
       headers: {
         accept: "application/json",
@@ -82,16 +83,19 @@ async function request(path: string, init?: RequestInit): Promise<unknown> {
     throw new BranchApiError("unavailable");
   }
 
+  if (response.status === 401) throw new BranchApiError("authentication_required");
+  if (response.status === 403) throw new BranchApiError("forbidden");
   let body: unknown;
   try {
-    body = await response.json();
+    body = await readPrivateJson(response);
   } catch {
     throw new BranchApiError("unavailable");
   }
   if (!response.ok) {
     const code = apiErrorSchema.safeParse(body);
     const kinds: Record<string, BranchApiErrorKind> = {
-      AUTHENTICATION_REQUIRED: "authentication_required",
+      AUTHENTICATION_REQUIRED:
+        response.status === 401 ? "authentication_required" : "unavailable",
       BRANCH_CODE_CONFLICT: "code_conflict",
       BRANCH_NOT_FOUND: "not_found",
       BRANCH_STALE: "stale",
@@ -114,9 +118,13 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   return result.data;
 }
 
-export async function fetchAccessContext(): Promise<AccessContext> {
-  return parse(accessContextResponseSchema, await request("me/access-context"))
-    .data;
+export async function fetchAccessContext(
+  options?: { signal?: AbortSignal },
+): Promise<AccessContext> {
+  return parse(
+    accessContextResponseSchema,
+    await request("me/access-context", options?.signal ? { signal: options.signal } : undefined),
+  ).data;
 }
 
 export async function fetchBranches(

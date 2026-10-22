@@ -269,7 +269,7 @@ requests.
 | `POST /auth/logout` | Safely idempotent | None | `204`; revokes a valid current session, clears its cookie, and clears the proof cookie on success | Missing/malformed/unknown/expired/revoked state is idempotent; dependency failure does not clear cookie | Implemented P2-M2-T03 with T02A `ADR-034` proof cleanup |
 | `POST /auth/logout-all` | Authenticated | None | `204`; revokes all sessions for current user and clears current application/proof cookies on success | Authentication/dependency/cross-site-request failure | Implemented P2-M2-T03 with T02A `ADR-034` proof cleanup |
 | `POST /auth/verify-email-code` | Public | `{ "email", "challengeId", "code" }` plus a valid proof cookie | `200` `data {status: "verified"}`; clears the proof cookie | Generic `400 INVALID_VERIFICATION_CODE` for invalid mail regardless of proof; `401 VERIFICATION_PASSWORD_PROOF_REQUIRED` only for valid mail with missing/phantom/stale proof; both proofs mandatory | Implemented T02A `ADR-034` |
-| `POST /auth/verify-email` | Public | `{ "token" }` plus a valid proof cookie | `200` `data {status: "verified"}`; clears the proof cookie | Generic `400 INVALID_TOKEN` for invalid mail regardless of proof; `401 VERIFICATION_PASSWORD_PROOF_REQUIRED` only for valid mail with missing/phantom/stale proof; both proofs mandatory | Implemented T02A `ADR-034`; no live legacy-link compatibility |
+| `POST /auth/verify-email` | Public | `{ "token" }`; first-time completion requires valid verification proof | First success: `200` `data {status: "verified"}` and clears proof; informational replay: `200` `data {status: "already_verified"}` with no cookie/session mutation, only for a matching consumed, unreplaced/unrevoked, nonlegacy current-version link to an ACTIVE verified user before the original ten-minute expiry | Generic `400 INVALID_TOKEN` for unknown/expired/replaced/revoked/legacy/stale links; `401 VERIFICATION_PASSWORD_PROOF_REQUIRED` only for valid pending material with unusable proof | T02A ADR-034 narrow UX amendment 2026-10-11; no live legacy-link compatibility |
 | `POST /auth/verification-resend` | Public | `{ "email": "account@example.com" }` | `202` `data {status: "accepted", verification: {challengeId}}`; never creates, refreshes, or clears a proof cookie | Validation; shared mail budget three per 15 minutes per canonical email; explicit `429` with `Retry-After`; provider failure remains non-disclosing | Implemented T02A `ADR-034` |
 | `POST /auth/forgot-password` | Public | `{ "email": "account@example.com" }` | Generic `202`; creates/replaces and delivers only for an eligible account | Validation; accepted three-per-15-minute limit; provider failure remains non-disclosing | Implemented by P2-M2-T03 |
 | `POST /auth/reset-password` | Public | `{ "token": "opaque-token", "newPassword": "exact-value" }` | `200` reset result; atomically consumes token, updates password, increments credential version, invalidates open challenges, and revokes all sessions | Generic `400 INVALID_TOKEN`; password validation; safe dependency failure | Implemented P2-M2-T03 with T02A `ADR-034` version/challenge invalidation |
@@ -377,9 +377,12 @@ eligibility transactionally.
 - The historical P2-M2-T01 baseline predated `ADR-034`: it created no
   verification challenge or proof cookie and returned the pre-`ADR-034`
   envelope without a `verification` object. The accepted and committed T02A
-  backend/frontend implement the current contract. The integration harness is
-  NOT ACCEPTED; real frontend/backend/PostgreSQL integration is NOT EXECUTED,
-  real email delivery is NOT VERIFIED, and Phase 8 is NOT STARTED.
+  backend/frontend implement the current contract. The integration harness and
+  T02A frontend/backend/PostgreSQL integration were subsequently ACCEPTED in
+  the isolated local environment on 2026-10-10. This does not establish Live or
+  production readiness. Real external email and production HTTPS remain
+  UNVERIFIED; Phase 8 is NOT STARTED. D5 recovery/cutover and Better Auth Live
+  activation remain unauthorized.
 
 Accepted target success envelope (all accepted registrations, real or
 phantom):
@@ -403,6 +406,46 @@ phantom):
 noncredential selector: an issued challenge UUID or same-format phantom.
 It is never eligibility/password proof. The implemented baseline response
 has no `verification` object.
+
+### Isolated Better Auth D3 registration contract (not mounted)
+
+ADR-036 defines an isolated, non-live registration surface using the existing
+endpoint paths and request/response shapes below. This contract does not change
+the endpoint catalog's current T02A implementation status: the D3 router is
+separately exported and is not mounted, and `BETTER_AUTH_NATIVE_ENABLED` remains
+false.
+
+| Method/path | Request | Accepted result |
+| --- | --- | --- |
+| `POST /auth/register` | `{ "email", "password" }` | Generic `202` accepted envelope with a fresh `verification.challengeId`; real pending attempts set an encrypted proof cookie. No new `User`, `User.passwordHash`, Better Auth account, or session is created before completion; any existing user remains unchanged and duplicate responses do not disclose account state. |
+| `POST /auth/verification-resend` | `{ "email" }` | Generic `202` accepted envelope with a new challenge ID; rotates challenge material only, preserving pending hash/version and original ten-minute expiry; never sets or refreshes proof. |
+| `POST /auth/verification-password-proof` | `{ "email", "password" }` | `202` accepted; sets proof only after exact pending-hash verification and version recheck; no challenge, delivery, or session is created. |
+| `POST /auth/verify-email-code` | `{ "email", "challengeId", "code" }` plus proof cookie | `200` verified after both proofs and atomic promotion; invalid mailbox material is generic before proof status is disclosed. |
+| `POST /auth/verify-email` | `{ "token" }` plus proof cookie | `200` verified after both proofs and atomic promotion; bounded consumed-link informational replay retains ADR-034 behavior and does not create a session. |
+
+The registration hash is the accepted Argon2id PHC value in standalone pending
+storage, never an active `User.passwordHash` or native account before
+completion. Password proof and mailbox challenge bind to the same pending UUID
+and credential version. Same-browser verification uses the encrypted proof
+cookie; cross-device completion requires explicit proof of the current
+password. Completion atomically creates `User` with the pending UUID and writes
+the already-computed PHC hash directly to `BetterAuthAccount.password`; it
+never passes that PHC string as raw input to Better Auth `setPassword`. No
+session or automatic login is produced; explicit sign-in follows completion.
+
+Existing OTP HMAC/link hashing, ten-minute absolute expiry, five wrong-code
+attempts followed by `LINK_ONLY`, OTP single-use, consumed-link informational
+replay only before original expiry, and mailbox-first error precedence remain
+required. A resend cannot replace the password or upgrade/renew proof. Durable
+fixed-window budgets are five registrations, three delivery requests, and five
+credential failures per canonical email per 15 minutes; credential snapshot
+checks neither increment nor reset the failure counter, while failed credential
+proof increments it. Existing `User` rows and UUID/FK relationships are never
+adopted or modified. and isolated database/security verification were
+independently ACCEPTED on 2026-10-12 (external D3 isolated final acceptance).
+This router remains unmounted in the normal Legacy runtime, and these
+native D3 endpoints are not exposed to Live traffic. This does not imply
+D4/D5 completion or cutover authorization.
 
 ### Registration/login security requirements
 
@@ -605,13 +648,18 @@ and the password proof.
   attempts even without proof. Unknown/stale/terminal requests cannot affect
   successors. Valid OTP/link with unusable proof returns
   `401 VERIFICATION_PASSWORD_PROOF_REQUIRED` without consumption; a correct
-  OTP in this case adds no failure. Invalid mailbox material always returns
-  `400 INVALID_VERIFICATION_CODE` or `400 INVALID_TOKEN` regardless of proof.
-  No public proof/account/challenge status endpoint exists.
+  OTP in this case adds no failure. Unknown, unusable and expired mailbox
+  material returns `400 INVALID_VERIFICATION_CODE` or `400 INVALID_TOKEN`
+  regardless of proof. The sole exception is the bounded, hash-matched,
+  consumed-link informational replay described in ADR-034; there is no general
+  public proof/account/challenge status endpoint.
 - Completion endpoints: `POST /auth/verify-email-code` with body exactly
   `{ "email", "challengeId", "code" }`, and `POST /auth/verify-email` with
-  body exactly `{ "token" }`. Both require the proof cookie and return `200`
-  with `data.status = "verified"` on success, clearing the proof cookie.
+  body exactly `{ "token" }`. First-time verification requires the proof cookie
+  and returns `200` with `data.status = "verified"`, clearing proof. A known
+  previously consumed link may return `200 already_verified` without proof
+  **only before its original 10-minute expiry** and without mutation or authority;
+  random, replaced, revoked, legacy, disabled and stale links remain invalid.
 - Both proofs are mandatory and bound to the same issuance:
   `proof.subject = challenge.userId = user.id` and
   `proof.credentialVersion = challenge.credentialVersion = user.credentialVersion`, re-checked
@@ -710,7 +758,11 @@ and the password proof.
   Native OTP normalization maps both selection endpoints through ASCII-digit
   filtering and six-digit truncation; keyboard replacement and selection-aware
   paste preserve the resulting caret without changing focus.
-  Independent frontend acceptance re-review is accepted; real frontend/backend/PostgreSQL integration and email delivery remain unverified. Verification grants no session.
+  Independent frontend acceptance re-review is accepted. T02A frontend/backend/
+  PostgreSQL integration was subsequently ACCEPTED in the isolated local
+  environment on 2026-10-10. Real external email and production HTTPS remain
+  unverified; isolated acceptance does not establish Live or production readiness.
+  Verification grants no session.
 - Local/single-process limits only; cloud is not production readiness.
   Fleet, IP/global, provider, proxy, secret-manager IAM, key-rotation
   accounting, capacity, DoS, and outbox behavior are deferred to Phase 8.

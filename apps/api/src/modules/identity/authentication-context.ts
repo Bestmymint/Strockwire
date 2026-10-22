@@ -1,6 +1,9 @@
-import type { RequestHandler, Response } from "express";
+import type { Request, RequestHandler, Response } from "express";
 
-import type { AuthenticationSessionRepository } from "./authentication-repository.ts";
+import type {
+  AuthenticationSessionRepository,
+  ResolvedAuthenticationSession,
+} from "./authentication-repository.ts";
 import type { SessionConfiguration } from "./session-configuration.ts";
 import { readSessionCookie } from "./session-cookie.ts";
 import { hashSessionToken } from "./session-token.ts";
@@ -62,21 +65,26 @@ export function createAuthenticationMiddleware({
   now?: () => Date;
   repository: AuthenticationSessionRepository;
 }): RequestHandler {
-  return async (request, response, next) => {
+  return createSessionAuthenticationMiddleware(async (request) => {
     const rawToken = readSessionCookie(request.headers.cookie);
+    if (rawToken === null) return null;
+    return repository.resolveSession({
+      configuration,
+      now: now(),
+      tokenHash: hashSessionToken(rawToken),
+    });
+  });
+}
 
-    if (rawToken === null) {
-      denyAuthentication(response);
-      return;
-    }
-
+// Both adapters share the private brand; neither supplies membership or RBAC.
+export function createSessionAuthenticationMiddleware(
+  resolveSession: (
+    request: Request,
+  ) => Promise<ResolvedAuthenticationSession | null>,
+): RequestHandler {
+  return async (request, response, next) => {
     try {
-      const resolved = await repository.resolveSession({
-        configuration,
-        now: now(),
-        tokenHash: hashSessionToken(rawToken),
-      });
-
+      const resolved = await resolveSession(request);
       if (resolved === null) {
         denyAuthentication(response);
         return;

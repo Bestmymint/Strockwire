@@ -3,8 +3,15 @@ import { z } from "zod";
 
 import { getTrustedAuthenticationContext } from "./authentication-context.ts";
 import { canonicalEmailSchema, passwordSchema } from "./credential-schemas.ts";
-import type { CredentialLifecycleService } from "./credential-lifecycle-service.ts";
-import type { EmailRequestLimiter } from "./email-request-limiter.ts";
+import type {
+  CredentialLifecycleService,
+  PasswordResetService,
+} from "./credential-lifecycle-service.ts";
+import type { NativePasswordResetLimiter } from "./native-password-reset-limiter.ts";
+import type {
+  EmailRequestLimiter,
+  EmailRequestLimitResult,
+} from "./email-request-limiter.ts";
 import { isOneTimeToken } from "./one-time-token.ts";
 import type { SessionConfiguration } from "./session-configuration.ts";
 import {
@@ -93,7 +100,7 @@ export function attachVerificationDelivery(
 
 function verificationCompletion(
   response: Response,
-  result: "verified" | "invalid" | "proof_required",
+  result: "verified" | "already_verified" | "invalid" | "proof_required",
   invalidCode: boolean,
 ): void {
   if (result === "invalid") {
@@ -117,6 +124,14 @@ function verificationCompletion(
         message: "Current password proof is required.",
         requestId: requestId(response),
       },
+    });
+    return;
+  }
+  if (result === "already_verified") {
+    // Informational replay only; never sets or clears a session/proof cookie.
+    response.status(200).json({
+      data: { status: "already_verified" },
+      meta: { requestId: requestId(response) },
     });
     return;
   }
@@ -165,6 +180,112 @@ export function createCrossSiteRequestProtection(
 
     next();
   };
+}
+
+function createPasswordResetRouterWithLimiter({
+  lifecycleService,
+  passwordResetLimiter,
+  publicWebOrigin,
+  strictProtection = false,
+}: {
+  lifecycleService: PasswordResetService;
+  passwordResetLimiter: {
+    consume(
+      canonicalEmail: string,
+    ): EmailRequestLimitResult | Promise<EmailRequestLimitResult>;
+  };
+  publicWebOrigin: string;
+  strictProtection?: boolean;
+}): Router {
+  const router = Router();
+  if (strictProtection) {
+    router.use(createCrossSiteRequestProtection(publicWebOrigin, true));
+  }
+
+  router.post("/auth/forgot-password", async (request, response, next) => {
+    const parsed = emailRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      validationError(response);
+      return;
+    }
+
+    try {
+      const limit = await passwordResetLimiter.consume(parsed.data.email);
+      if (!limit.allowed) {
+        rateLimited(response, limit.retryAfterSeconds);
+        return;
+      }
+
+      await lifecycleService.requestPasswordReset(parsed.data.email);
+      accepted(response);
+    } catch (error: unknown) {
+      next(error);
+    }
+  });
+
+  router.post("/auth/reset-password", async (request, response, next) => {
+    const parsed = resetPasswordRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      validationError(response);
+      return;
+    }
+
+    try {
+      const reset = await lifecycleService.resetPassword({
+        newPassword: parsed.data.newPassword,
+        rawToken: parsed.data.token,
+      });
+      if (!reset) {
+        invalidToken(response);
+        return;
+      }
+
+      response.status(200).json({
+        data: { status: "password_reset" },
+        meta: { requestId: requestId(response) },
+      });
+    } catch (error: unknown) {
+      next(error);
+    }
+  });
+
+  return router;
+}
+
+export function createPasswordResetRouter({
+  lifecycleService,
+  passwordResetLimiter,
+  publicWebOrigin,
+  strictProtection = false,
+}: {
+  lifecycleService: PasswordResetService;
+  passwordResetLimiter: EmailRequestLimiter;
+  publicWebOrigin: string;
+  strictProtection?: boolean;
+}): Router {
+  return createPasswordResetRouterWithLimiter({
+    lifecycleService,
+    passwordResetLimiter,
+    publicWebOrigin,
+    strictProtection,
+  });
+}
+
+export function createBetterAuthPasswordResetRouter({
+  lifecycleService,
+  passwordResetLimiter,
+  publicWebOrigin,
+}: {
+  lifecycleService: PasswordResetService;
+  passwordResetLimiter: NativePasswordResetLimiter;
+  publicWebOrigin: string;
+}): Router {
+  return createPasswordResetRouterWithLimiter({
+    lifecycleService,
+    passwordResetLimiter,
+    publicWebOrigin,
+    strictProtection: true,
+  });
 }
 
 export function createCredentialLifecycleRouter({
@@ -320,52 +441,13 @@ export function createCredentialLifecycleRouter({
     },
   );
 
-  router.post("/auth/forgot-password", async (request, response, next) => {
-    const parsed = emailRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      validationError(response);
-      return;
-    }
-
-    const limit = passwordResetLimiter.consume(parsed.data.email);
-    if (!limit.allowed) {
-      rateLimited(response, limit.retryAfterSeconds);
-      return;
-    }
-
-    try {
-      await lifecycleService.requestPasswordReset(parsed.data.email);
-      accepted(response);
-    } catch (error: unknown) {
-      next(error);
-    }
-  });
-
-  router.post("/auth/reset-password", async (request, response, next) => {
-    const parsed = resetPasswordRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      validationError(response);
-      return;
-    }
-
-    try {
-      const reset = await lifecycleService.resetPassword({
-        newPassword: parsed.data.newPassword,
-        rawToken: parsed.data.token,
-      });
-      if (!reset) {
-        invalidToken(response);
-        return;
-      }
-
-      response.status(200).json({
-        data: { status: "password_reset" },
-        meta: { requestId: requestId(response) },
-      });
-    } catch (error: unknown) {
-      next(error);
-    }
-  });
+  router.use(
+    createPasswordResetRouter({
+      lifecycleService,
+      passwordResetLimiter,
+      publicWebOrigin,
+    }),
+  );
 
   return router;
 }

@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | Accepted decision history |
 | Baseline | Architecture Freeze v1 |
-| Last updated | 2026-09-24 |
+| Last updated | 2026-10-12 |
 
 ## 1. Log rules
 
@@ -2303,7 +2303,7 @@ deferred/unassigned, and P0-M2-T05 remains unchecked.
 ## ADR-034 — Require version-bound password and mailbox proof for OTP-first verification
 
 - **Date:** 2026-10-08
-- **Status:** Accepted; backend/schema and frontend ACCEPTED / COMMITTED; independent frontend review accepted. Integration harness NOT ACCEPTED; real frontend/backend/PostgreSQL integration NOT EXECUTED; real email delivery NOT VERIFIED; Phase 8 NOT STARTED.
+- **Status:** Accepted; backend/schema, frontend and integration harness ACCEPTED / COMMITTED. Scoped local frontend/backend/PostgreSQL integration final review ACCEPTED on 2026-10-10 (22/22 real tests operator-reported PASS, 258/258 independent database-free PASS). Real external email delivery and production HTTPS NOT VERIFIED; Phase 8 NOT STARTED.
 - **Authority:** Accepted `T02A-AUTH-VERIFICATION-ARCHITECTURE-03`
 
 ### Context
@@ -2387,9 +2387,28 @@ enforced by a partial unique index; issuance terminates expired open predecessor
 too. OTP requests bind email and challenge ID so old digits cannot select a
 successor. Either method's success invalidates both credentials.
 
+**T02A-UX-REMEDIATION-01 narrow amendment (2026-10-11; user-approved):**
+After successful verification by either OTP or link, an explicit POST of the
+**same originally issued secure link** may return a read-only
+`200 {data:{status:"already_verified"}}` instead of generic `INVALID_TOKEN`,
+**only before its original ten-minute challenge expiry** (database time) and
+only if its hashed token matches an existing nonlegacy challenge whose
+`consumedAt` and `consumedVia` are set, whose `replacedAt` and `revokedAt`
+are null, and whose user is ACTIVE, verified and at the same credential
+version. The transaction locks and rechecks both challenge and user rows.
+No cookie, session, OTP, challenge, proof or verification authority is created,
+renewed, cleared or consumed on this informational replay. No GET inspection,
+new public status endpoint, token reuse for authentication, or expiry extension
+is authorized. Unknown/malformed, expired (including consumed-but-expired),
+replaced, revoked, legacy, stale-version, disabled or unmatched links remain
+indistinguishable generic `400 INVALID_TOKEN` without account state. The
+original *single-use verification* property remains absolute; this exception
+is only for a bounded confirmation message, and does not change OTP replay.
+
 Wrong usable-challenge OTP comparisons count even without password proof.
 Invalid mailbox material returns generic invalid-code/token outcomes regardless
-of cookie validity. Only valid mailbox material may reveal
+of cookie validity, except the narrowly recognized informational consumed-link
+replay defined above. Only valid, unconsumed mailbox material may reveal
 `VERIFICATION_PASSWORD_PROOF_REQUIRED`; correct mailbox material with missing,
 invalid, phantom, expired, mismatched, or stale proof is not consumed and does
 not increment the failed-code count. This ordering avoids a real/phantom-cookie
@@ -2611,7 +2630,218 @@ usage accounting, capacity/DoS targets, and reliable outbox remain Phase 8 under
 At acceptance, schema/migration work required separate authorization before runtime
 cutover. The committed T02A forward migration now invalidates legacy open links
 while preserving terminal history. Deploy that migration with the matching backend
-and dedicated keys; deployment and real integration execution remain separate gates.
+and dedicated keys. Scoped local real integration received separate acceptance on 2026-10-10; production deployment remains a distinct, unexecuted gate.
+
+## ADR-035 — Adopt self-hosted Better Auth native sessions with StockWise-owned identity and authorization
+
+- **Date:** 2026-10-12
+- **Status:** Accepted decision; migration and runtime cutover NOT IMPLEMENTED / NOT VERIFIED by this ADR
+- **Authority:** Explicit owner approval on 2026-10-12 for Better Auth native sessions and the bounded ADR/migration-plan task
+
+### Context
+
+The owner accepted replacing StockWise's custom session implementation with
+self-hosted Better Auth on the existing Express API, using Prisma 7 and
+PostgreSQL. Current accounts are test-only and their authentication credentials
+are disposable; StockWise `User.id` UUIDs, domain records, and all foreign-key
+references are not disposable. Migration must preserve them.
+
+The owner reports that M0 proof A, native password signup before OTP, permits
+pre-hijacking: a victim's mailbox proof activates an attacker-chosen password.
+That composition is forbidden. The reported M0B proof recorded 31 PASS and
+2 FAIL: native session-token persistence conflicted with the old hash-only
+policy, and native OTP sign-in created a session. These are proof findings,
+not verification of the actual StockWise root or permission to expose an OTP
+registration session.
+
+### Alternatives considered
+
+1. Retain the custom hash-only session runtime.
+2. Adapt Better Auth to the legacy hash-only session implementation.
+3. Adopt Better Auth native opaque database sessions, retaining StockWise's
+   identity, tenancy, and authorization boundaries.
+
+### Decision
+
+Accept option 3. Better Auth is self-hosted inside the existing Express API;
+Prisma 7/PostgreSQL remain the persistence stack. StockWise owns stable
+`User.id` UUID identity, disabled-user state, Organization/Branch relationships,
+memberships, branch assignments, and deny-by-default RBAC. Better Auth session
+identity does not independently grant business access. Do not replace these
+boundaries with Better Auth organization/role authority or a second user identity.
+
+Resend remains behind the existing production/non-delivery/test provider
+configuration under `ADR-014`; tests never send real mail. No external delivery
+or deployment is authorized by this decision.
+
+#### Narrow supersession and effective date
+
+For the future Better Auth runtime **only after an explicitly gated cutover**,
+supersede `ADR-013`'s hash-only session-credential persistence and custom session
+lifecycle implementation, and `ADR-034`'s authenticated-application-session
+implementation concept, with Better Auth native database-persisted opaque
+session tokens. This exception is for session credentials only, not passwords,
+OTP, verification links, reset tokens, or invitation tokens. Earlier ADR text
+remains historical and unchanged. The existing runtime retains its current
+contract until cutover; this ADR is not evidence that it has migrated.
+
+No JWT browser authentication, refresh-token flow, browser credential storage
+in localStorage/sessionStorage, or second credential transport is introduced.
+Session expiry, rotation, revocation, and reset guarantees require an explicit
+compatibility mapping and real verification; selecting native lifecycle does
+not silently approve weaker product guarantees.
+
+#### Required compensating controls
+
+- HttpOnly, host-only session cookies with `Path=/`, `SameSite=Lax`, and Secure
+  cookies over HTTPS in production; validate the actual browser/proxy path.
+- Same-origin CSRF/Origin checks before auth or cookie-authenticated mutations.
+- Server auth secret outside the database, with least-privilege access to
+  database session records, backups, and credentials.
+- No session tokens or other credentials in logs, URLs, errors, traces,
+  analytics, or client-visible response bodies.
+- Explicit current-session and all-session revocation, including password-reset
+  revocation; reject expired/revoked sessions and fail closed on dependency errors.
+- Backend revalidation of ACTIVE/verified/completed-registration user state
+  before trusted application context, followed by fresh StockWise access-context,
+  membership, branch, and role authorization. Initial Better Auth cookie cache
+  is OFF; cached cookie claims cannot bypass deauthorization.
+
+These are acceptance requirements, not controls automatically satisfied by
+installing Better Auth. Raw persisted session tokens increase database/backup
+disclosure risk relative to hash-only storage. A separate server secret does
+not encrypt those records or make stolen tokens harmless; the owner accepts
+that trade-off subject to verified controls.
+
+#### OTP-first registration boundary
+
+M0B is the required candidate composition for implementation validation:
+Better Auth emailOTP proves mailbox ownership first and creates an internal
+authenticated session on the server; native `setPassword` is then used only
+for a never-password user, followed by `signOut` before the HTTP response.
+Public `signUp.email`, `signIn.emailOtp`, and `setPassword` must be disabled.
+No registration auth cookie or token reaches the browser; the user explicitly
+signs in afterward. The internal registration session must never construct
+StockWise trusted application context or grant protected-API access.
+
+This is custom orchestration of native operations, **not** a fully native
+no-session OTP operation. Native session approval resolves the reported
+hash-only policy conflict; it does not resolve the need for this composition.
+Failure atomicity, crash/outage recovery, retries, stale passwordless users,
+idempotency, races, and durable session cleanup remain unverified cutover gates.
+Response cookie suppression or best-effort `finally` cleanup alone is insufficient.
+
+Preserve anti-pre-hijacking, generic duplicate/no-enumeration responses,
+no auto-login, protected OTP storage, rate limits, reset/invitation semantics,
+and scanner-safe verification. Any incompatibility beyond the narrowly
+superseded session implementation, including the M0B ordering versus
+`ADR-034`'s version-bound proof/challenge contract, requires an explicit
+separate decision before runtime cutover; do not silently relax `ADR-034`.
+
+### Why selected
+
+Native session handling avoids maintaining a second custom session mechanism
+inside Better Auth. Retaining StockWise identity and server authorization avoids
+domain-data migration and tenant/RBAC reinterpretation. The accepted trade-off
+is recoverable session credentials in persistence plus mandatory verification
+of compensating controls and registration orchestration.
+
+### Consequences and gates
+
+The bounded design is [Better Auth migration](../development/BETTER_AUTH_MIGRATION.md).
+Only D0 records an accepted decision here. D1–D5 require implementation,
+compatibility decisions where needed, and independent verification before
+cutover. No dual live auth, destructive migration, user-UUID replacement,
+production deployment, package installation, live development database change,
+or external provider execution is authorized by this documentation task.
+Topic-owned Source of Truth and HTTP contracts must be synchronized in the
+authorized implementation before cutover, not rewritten as already implemented.
+
+## ADR-036 — Use password-first pending registration for Better Auth migration
+
+- **Date:** 2026-10-12
+- **Status:** Accepted decision; isolated implementation and verification pending
+- **Authority:** Explicit owner approval on 2026-10-12 for the D3 registration-order/proof change only
+
+### Context
+
+ADR-035 selected Better Auth native sessions but its proposed M0B registration
+composition installs a password only after mailbox OTP and uses a server-internal
+Better Auth session. That order is incompatible with ADR-034's version-bound
+password proof and its unified OTP/link completion contract. A mailbox challenge
+must not activate a password selected by someone who only controls the mailbox.
+Registration also must not create or alter an existing StockWise user before
+both independent proofs succeed.
+
+### Decision
+
+For the isolated D3 registration path, accept password-first pending
+registration. Validate the existing email/password contract, derive the
+Argon2id PHC hash using the accepted policy, and store it only in a standalone
+pending-registration record. Do not create an active `User`, write
+`User.passwordHash`, or create a Better Auth credential account before
+completion. The pending record has a UUID subject, canonical unique email, and
+positive credential version, initially `1`. Every fresh registration creates a
+new version-bound challenge; a fresh registration for the same pending email
+advances its credential version. Real OTP/link proof is bound to the pending
+subject and credential version.
+
+Completion requires both mailbox possession and proof of the exact submitted
+password generation. The same browser can use its encrypted, short-lived
+password-proof cookie; a different device must explicitly prove the current
+password. Neither proof can be upgraded or refreshed by resend. Completion
+promotes the pending UUID and already-computed Argon2id hash directly to the
+Better Auth credential account in the same database transaction that consumes
+the challenge and creates the StockWise `User`. Do not pass the encoded hash to
+Better Auth `setPassword` as if it were a raw password; the credential account
+must receive the stored hash directly. No session, automatic login, or
+authenticated application authority is created. The user signs in explicitly
+afterward.
+
+Retain ADR-034's mailbox-first error precedence, OTP HMAC protection, secure
+link hash, absolute ten-minute challenge expiry, five wrong-code attempts,
+`LINK_ONLY` transition, single-use OTP/link rules, and narrowly bounded
+informational replay of a consumed link before the original expiry. Invalid
+mailbox material remains generic regardless of password proof; only valid
+mailbox material with missing, invalid, or stale password proof may produce
+the proof-required result. Resend rotates only the challenge, preserving the
+pending password hash, credential version, and absolute ten-minute expiry; it
+does not install a password, renew a proof, or extend registration lifetime.
+Do not resend, replace, or otherwise mutate any existing StockWise user,
+including unverified users.
+
+Use durable fixed-window quotas: five registration attempts, three verification
+delivery requests, and five credential failures per canonical email per
+15-minute window. Credential snapshot checks do not charge failures or reset
+the failure counter; credential-proof failures increment it. No proof, challenge,
+or pending state authorizes protected API access.
+
+### Narrow supersession
+
+This ADR supersedes ADR-035's M0B ordering and server-internal Better Auth
+registration-session/setPassword composition for D3 registration only. It
+supersedes ADR-034 only to the extent that registration stages its hash and
+proof in a standalone pending record instead of an active `User`; its
+mailbox-proof, OTP/link, attempt, expiry, replay, transport, and delivery
+protections remain in force. Reset retains its 30-minute single-use lifecycle;
+invitations retain their seven-day hash-only single-use lifecycle. It does not
+supersede ADR-035's accepted native session direction or its security controls,
+nor any existing-user, UUID, domain-FK, tenancy, or authorization guarantees.
+ADR-034 and ADR-035 remain unchanged historical records.
+
+### Consequences and gates
+
+The accepted design is isolated and non-live: the D3 router is separately
+exported and is not mounted. Pending registration and durable quota storage
+require additive tables and a forward-only migration; no live migration,
+database mutation, external mail delivery, deployment, or authentication
+cutover is authorized here. Implementation and verification remain pending;
+restart/outage/retry recovery and independent protected-API exclusion evidence
+remain required before cutover. D1/D2 evidence and earlier M0/M0B reports remain
+historical and are not D3 evidence. Preserve `BETTER_AUTH_NATIVE_ENABLED=false`.
+Prove that Better Auth 1.7.7's configured password verifier accepts the
+directly promoted Argon2id PHC hash. Its native `setPassword` API hashes a raw
+password and is not a valid promotion path.
 
 ## 2. Explicitly superseded planning directions
 

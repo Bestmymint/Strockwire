@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { privateFetch, readPrivateJson } from "@/session-lifecycle";
 
 const timestampSchema = z.string().datetime({ offset: false, precision: 3 });
 const statusSchema = z.enum(["DRAFT", "ORDERED", "RECEIVED", "CANCELLED"]);
@@ -97,7 +98,7 @@ function path(context: PurchaseOrderRequestContext, purchaseOrderId?: string) {
 async function request(pathname: string, init?: RequestInit): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(`/api/v1/${pathname}`, {
+    response = await privateFetch(`/api/v1/${pathname}`, {
       credentials: "same-origin",
       headers: {
         accept: "application/json",
@@ -113,7 +114,7 @@ async function request(pathname: string, init?: RequestInit): Promise<unknown> {
 
   let body: unknown;
   try {
-    body = await response.json();
+    body = await readPrivateJson(response);
   } catch {
     throw new PurchaseOrderApiError("unavailable");
   }

@@ -12,6 +12,7 @@ import { register } from "@/api-client";
 import {
   clearContinuation,
   saveContinuation,
+  getContinuationRevision,
 } from "@/verification-continuation-browser";
 import { useLanguage } from "@/providers/language-provider";
 
@@ -19,22 +20,43 @@ import { hasEmailShape, passwordValidationMessage } from "./auth-form-support";
 import { verificationErrorMessage } from "./auth-copy";
 
 export function RegistrationForm() {
-  const router = useRouter();
   const { t } = useLanguage();
+  const router = useRouter();
   const pending = useRef(false);
+  const mounted = useRef(false);
+  const requestId = useRef(0);
   const errorMessage = useRef<HTMLDivElement>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isAccepted, setIsAccepted] = useState(false);
+  useEffect(() => {
+    const restore = () => {
+      mounted.current = true;
+      pending.current = false;
+      setIsSubmitting(false);
+    };
+    restore();
+    const invalidate = () => {
+      mounted.current = false;
+      requestId.current += 1;
+    };
+    window.addEventListener("pagehide", invalidate);
+    // A restored document may submit again, but cannot accept pre-pagehide work.
+    window.addEventListener("pageshow", restore);
+    return () => {
+      invalidate();
+      window.removeEventListener("pagehide", invalidate);
+      window.removeEventListener("pageshow", restore);
+    };
+  }, []);
   useEffect(() => {
     if (error !== null) errorMessage.current?.focus();
   }, [error]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (pending.current || isAccepted) {
+    if (pending.current) {
       return;
     }
 
@@ -53,38 +75,38 @@ export function RegistrationForm() {
     setIsSubmitting(true);
     pending.current = true;
     clearContinuation();
+    const id = ++requestId.current;
+    const revision = getContinuationRevision();
+    const isCurrent = () =>
+      mounted.current &&
+      id === requestId.current &&
+      revision === getContinuationRevision();
 
     try {
       const result = await register({ email, password });
-      saveContinuation({
+      if (!isCurrent()) return;
+      const saved = saveContinuation({
         version: 1,
         canonicalEmail: email.trim().toLowerCase(),
         challengeId: result.data.verification.challengeId,
         savedAt: Date.now(),
       });
       setPassword("");
-      setEmail("");
-      setIsAccepted(true);
-      router.push("/verify-email");
+      if (!saved) {
+        // Cannot safely recover the OTP challenge without the one-use
+        // continuation. Preserve the generic enrollment response.
+        setError(t("authRecovery"));
+        return;
+      }
+      router.replace("/verify-email");
     } catch (requestError: unknown) {
-      setError(verificationErrorMessage(requestError, t));
+      if (isCurrent()) setError(verificationErrorMessage(requestError, t));
     } finally {
-      setIsSubmitting(false);
-      pending.current = false;
+      if (mounted.current && id === requestId.current) {
+        setIsSubmitting(false);
+        pending.current = false;
+      }
     }
-  }
-
-  if (isAccepted) {
-    return (
-      <div aria-live="polite">
-        <p className="text-sm leading-6 text-muted-foreground">
-          {t("authAccepted")}
-        </p>
-        <Link className="underline" href="/verify-email">
-          {t("authVerify")}
-        </Link>
-      </div>
-    );
   }
 
   return (
@@ -128,13 +150,16 @@ export function RegistrationForm() {
       </div>
       {error === null ? null : (
         <Alert
-          variant="destructive"
+          variant="default"
+          className="border-destructive/60"
           aria-live="assertive"
           id="registration-error"
           ref={errorMessage}
           tabIndex={-1}
         >
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription className="text-foreground">
+            {error}
+          </AlertDescription>
         </Alert>
       )}
       <Button className="w-full" disabled={isSubmitting} type="submit">
@@ -142,7 +167,11 @@ export function RegistrationForm() {
       </Button>
       <p className="text-center text-sm text-muted-foreground">
         {t("authAlreadyAccount")}{" "}
-        <Link className="font-medium text-foreground underline" href="/login">
+        <Link
+          className="font-medium text-foreground underline"
+          href="/login"
+          replace
+        >
           {t("authSignIn")}
         </Link>
       </p>

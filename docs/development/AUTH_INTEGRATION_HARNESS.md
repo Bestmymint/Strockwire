@@ -1,12 +1,17 @@
 # Authentication integration harness
 
-This dedicated harness prepares ADR-034 verification against the real Next.js
-application, Express routes/services/security middleware, and PostgreSQL. Its
-real-response scenarios are implemented but unexecuted. Backend and frontend are
-ACCEPTED / COMMITTED; the integration harness is NOT ACCEPTED and requires
-independent re-review. Real frontend/backend/PostgreSQL integration is NOT EXECUTED;
-real email delivery is NOT VERIFIED and requires separate authorization.
-Phase 8 remains NOT STARTED. Installing the harness does not authorize execution.
+This dedicated harness verifies ADR-034 against the real Next.js application,
+Express routes/services/security middleware, and PostgreSQL. Backend, frontend,
+and integration harness are ACCEPTED / COMMITTED. The authorized local suite
+reported 22/22 real-response scenarios PASS on 2026-10-10; the independent
+final review returned ACCEPT and independently reran 258/258 database-free tests.
+The reviewer inspected passing run metadata but did not have the original full
+terminal transcript. Real external email delivery and production HTTPS remain
+UNVERIFIED; the 31 separately discovered frontend smoke scenarios remain
+UNEXECUTED and are not a gate for this scoped local acceptance. Late browser
+cookie-arrival timing remains partially unverified. Phase 8 remains NOT STARTED;
+user-directed Web UI/local usability review precedes any Phase 8 planning.
+A previous test authorization does not authorize future executions.
 
 ## Composition and private email transport
 
@@ -46,7 +51,7 @@ Proposed resources, subject to separate execution approval:
 | Volume | `<project>-postgres-data` |
 | Network | `<project>_default` |
 | Database | `stockwise_t02a_auth_test` |
-| PostgreSQL bind | `127.0.0.1:55439` (must be free at execution) |
+| PostgreSQL bind | `127.0.0.1:56221` (must be free at execution) |
 | Image | Existing baseline `postgres:16.15-alpine` |
 | Browser origin | `http://localhost:3102` |
 | Express bind | `127.0.0.1:3103` |
@@ -185,7 +190,8 @@ of successful late response delivery to the SPA. Server-side committed effects
 remain independently asserted: resend replaces its predecessor and opens a new
 challenge; verification consumes its challenge and verifies its user; password
 proof performs neither completion nor challenge mutation. All three real
-integration cases remain unexecuted. A database-free synthetic Chromium regression
+delayed-response integration cases passed in the separately executed local suite.
+A database-free synthetic Chromium regression
 reproduces backend-equivalent 202, one canceled request, zero browser responses,
 and resolved fulfillment, and requires cancellation rather than delivery. A
 separate synthetic control confirms genuine response delivery and settlement;
@@ -211,8 +217,9 @@ OTP / valid mailbox-without-password-proof rejection. The existing cookie and
 protected-access assertions also remain. Database-free mocked persistence results
 exercise the same terminal assertion function, including the former false positive
 of a consumed challenge with one failure, verified users, incorrect/null failure
-counts, and unintended sessions. The database-backed scenario is not executed by
-these assertion regressions; T02A end-to-end integration remains incomplete.
+counts, and unintended sessions. These database-free assertion regressions do
+not execute the database-backed scenario; it passed separately in the accepted
+local real-integration suite. Production delivery remains a separate gate.
 
 Traces, video, screenshots, downloads, HAR, storage-state files, and request/body/
 cookie logging are disabled or absent. The runner does not forward Next.js
@@ -285,10 +292,11 @@ artifact, not necessarily current source. Do not open a real local application
 without confirming its backend target and navigation behavior. Built-in Browser
 inspection is separate evidence; Playwright execution is not Built-in Browser use.
 
-## Future real integration execution
+## Procedure for a separately authorized real integration rerun
 
-Only after independent harness review and explicit approval for creation,
-migrations, browser/database execution, and owned-resource deletion:
+The scoped local suite was accepted on 2026-10-10. Any future rerun still
+requires fresh explicit approval for creation, migrations, browser/database
+execution, and owned-resource deletion:
 
 1. Use an isolated checkout with existing dependencies and generated Prisma client,
    without populated root or `apps/web` `.env`, `.env.local`, `.env.production`, or

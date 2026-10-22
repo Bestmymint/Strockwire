@@ -13,6 +13,7 @@ import {
 import {
   AuthApiError,
   verificationPasswordProof,
+  resendVerification,
   verifyEmail,
   verifyEmailCode,
 } from "@/api-client";
@@ -26,6 +27,7 @@ import {
   clearContinuation,
   getContinuationRevision,
   loadContinuation,
+  saveContinuation,
 } from "@/verification-continuation-browser";
 import { verificationErrorMessage } from "./auth-copy";
 import { hasEmailShape, passwordValidationMessage } from "./auth-form-support";
@@ -69,6 +71,8 @@ export function VerificationForm() {
   >(null);
   const [busy, setBusy] = useState(false);
   const [verified, setVerified] = useState(false);
+  const [alreadyVerified, setAlreadyVerified] = useState(false);
+  const [resent, setResent] = useState(false);
 
   // Token-bearing documents are intercepted before Next can serialize the URL.
   // The clean document consumes the bootstrap's one-use memory handoff.
@@ -114,7 +118,25 @@ export function VerificationForm() {
       setContinuation(null);
       mounted.current = false;
     }
+    function restore(event: PageTransitionEvent) {
+      if (!event.persisted || mounted.current) return;
+      const saved = loadContinuation().continuation;
+      // BFCache keeps this component, not a new mount. Restore only the
+      // nonsecret selector; pagehide-invalidated requests and credentials stay dead.
+      flow.current = {
+        revision: getContinuationRevision(),
+        continuation: saved,
+      };
+      mounted.current = true;
+      setContinuation(saved);
+      setEmail(saved?.canonicalEmail ?? "");
+      setIsLink(false);
+      setError(null);
+      setInputError(null);
+      setResent(false);
+    }
     window.addEventListener("pagehide", abandon);
+    window.addEventListener("pageshow", restore);
     return () => {
       mounted.current = false;
       invalidate();
@@ -124,6 +146,7 @@ export function VerificationForm() {
         if (!mounted.current) token.current = null;
       });
       window.removeEventListener("pagehide", abandon);
+      window.removeEventListener("pageshow", restore);
     };
   }, []);
 
@@ -160,9 +183,15 @@ export function VerificationForm() {
   }
 
   useEffect(() => {
-    if (error !== null || inputError !== null || needsProof || verified)
+    if (
+      error !== null ||
+      inputError !== null ||
+      needsProof ||
+      verified ||
+      resent
+    )
       message.current?.focus();
-  }, [error, inputError, needsProof, verified]);
+  }, [error, inputError, needsProof, verified, resent]);
 
   useEffect(() => {
     if (continuation === null) return;
@@ -203,20 +232,20 @@ export function VerificationForm() {
   ) {
     if (!request.isCurrent()) return;
     try {
-      if (credential.kind === "link")
-        await verifyEmail(
-          { token: credential.token },
-          { signal: request.signal },
-        );
-      else
-        await verifyEmailCode(
-          {
-            email: credential.email,
-            challengeId: credential.challengeId,
-            code: credential.code,
-          },
-          { signal: request.signal },
-        );
+      const result =
+        credential.kind === "link"
+          ? await verifyEmail(
+              { token: credential.token },
+              { signal: request.signal },
+            )
+          : await verifyEmailCode(
+              {
+                email: credential.email,
+                challengeId: credential.challengeId,
+                code: credential.code,
+              },
+              { signal: request.signal },
+            );
       if (!request.isCurrent()) return;
       clearContinuation();
       token.current = null;
@@ -227,6 +256,7 @@ export function VerificationForm() {
       setPassword("");
       setNeedsProof(false);
       setBusy(false);
+      setAlreadyVerified(result.data.status === "already_verified");
       setVerified(true);
     } catch (requestError: unknown) {
       if (!request.isCurrent()) return;
@@ -338,14 +368,71 @@ export function VerificationForm() {
     }
   }
 
+  async function handleResend() {
+    if (pending.current || verified || isLink || !isFlowCurrent()) return;
+    const saved = loadContinuation().continuation;
+    if (
+      saved === null ||
+      continuation === null ||
+      saved.savedAt !== continuation.savedAt ||
+      saved.canonicalEmail !== continuation.canonicalEmail ||
+      saved.challengeId !== continuation.challengeId
+    )
+      return;
+    pending.current = true;
+    setBusy(true);
+    setResent(false);
+    setError(null);
+    setInputError(null);
+    const request = beginRequest();
+    try {
+      const result = await resendVerification(
+        { email: saved.canonicalEmail },
+        { signal: request.signal },
+      );
+      if (!request.isCurrent()) return;
+      const next = {
+        ...saved,
+        challengeId: result.data.verification.challengeId,
+      };
+      if (!saveContinuation(next)) {
+        // The server may have replaced the challenge, but storage is not
+        // reliable. Never retain a stale OTP or trap the user in busy state.
+        mailbox.current = null;
+        setNeedsProof(false);
+        setContinuation(null);
+        setCode("");
+        setEmail("");
+        setPassword("");
+        setResent(false);
+        setBusy(false);
+        setError(new AuthApiError("unavailable"));
+        return;
+      }
+      flow.current = {
+        revision: getContinuationRevision(),
+        continuation: next,
+      };
+      mailbox.current = null;
+      setNeedsProof(false);
+      setCode("");
+      setContinuation(next);
+      setResent(true);
+    } catch (requestError: unknown) {
+      if (request.isCurrent()) setError(requestError);
+    } finally {
+      request.finish();
+    }
+  }
+
   if (!ready) return <p role="status">{t("loading")}</p>;
   if (verified)
     return (
       <div className="space-y-5">
         <p ref={message} role="status" tabIndex={-1}>
-          {t("authVerified")}
+          {t(alreadyVerified ? "authAlreadyVerified" : "authVerified")}
         </p>
-        <Link className="underline" href="/login">
+        <Link className="underline" href="/login" replace>
           {t("authSignIn")}
         </Link>
       </div>
@@ -362,6 +449,16 @@ export function VerificationForm() {
     : continuation?.challengeId != null;
   return (
     <div className="space-y-5">
+      {resent && errorText === null && (
+        <p
+          className="text-sm text-muted-foreground"
+          ref={message}
+          role="status"
+          tabIndex={-1}
+        >
+          {t("authResendAccepted")}
+        </p>
+      )}
       {errorText !== null && (
         <p
           className="text-sm text-destructive"
@@ -452,7 +549,9 @@ export function VerificationForm() {
             </div>
           )}
           <Button className="w-full" disabled={busy} type="submit">
-            {busy ? t("authVerifying") : t("authVerify")}
+            {busy
+              ? t("authVerifying")
+              : t(isLink ? "authCheckVerificationLink" : "authVerify")}
           </Button>
         </form>
       ) : (
@@ -462,16 +561,32 @@ export function VerificationForm() {
           </p>
         )
       )}
-      {!busy && (
-        <div className="flex flex-wrap justify-between gap-4 text-sm">
-          <Link className="underline" href="/verification-resend">
+      <div className="flex flex-wrap justify-between gap-4 text-sm">
+        {!isLink && continuation !== null ? (
+          <button
+            className="underline disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={busy}
+            onClick={() => void handleResend()}
+            type="button"
+          >
             {t("authResendLink")}
-          </Link>
-          <Link className="underline" href="/login" onClick={clearContinuation}>
-            {t("authBackToLogin")}
-          </Link>
-        </div>
-      )}
+          </button>
+        ) : (
+          !busy && (
+            <Link className="underline" href="/verification-resend" replace>
+              {t("authResendLink")}
+            </Link>
+          )
+        )}
+        <Link
+          className="underline"
+          href="/login"
+          onClick={clearContinuation}
+          replace
+        >
+          {t("authBackToLogin")}
+        </Link>
+      </div>
     </div>
   );
 }

@@ -19,6 +19,7 @@ import {
 } from "../../test/database-harness.ts";
 import {
   createRecordingEmailProvider,
+  EmailDeliveryError,
   type IdentityEmailProvider,
 } from "./email-provider.ts";
 import {
@@ -404,6 +405,107 @@ describe("ADR-034 identity backend HTTP cutover", () => {
     expect(challenge.revokedAt).not.toBeNull();
   });
 
+  it("recovers after accepted registration delivery fails via explicit resend, OTP, and login", async () => {
+    const mailbox = createRecordingEmailProvider();
+    let attempts = 0;
+    await start({
+      emailProvider: {
+        async send(message) {
+          attempts += 1;
+          if (attempts === 1)
+            throw new EmailDeliveryError("provider_http", 503);
+          await mailbox.send(message);
+        },
+      },
+    });
+
+    const original = await register();
+    const originalId = original.body.data.verification.challengeId;
+    await vi.waitFor(async () => {
+      const failed = await prisma.emailVerificationChallenge.findUniqueOrThrow({
+        where: { id: originalId },
+      });
+      expect(failed).toMatchObject({
+        revocationReason: "DELIVERY_FAILED",
+        revokedAt: expect.any(Date),
+        consumedAt: null,
+      });
+    });
+    expect(mailbox.messages).toEqual([]);
+
+    const resend = await post(
+      "verification-resend",
+      { email: "user@example.com" },
+      original.cookie,
+    );
+    expect(resend.status).toBe(202);
+    expect(resend.headers.getSetCookie()).toEqual([]);
+    const resent = (await resend.json()) as AcceptedBody;
+    const successorId = resent.data.verification.challengeId;
+    expect(successorId).not.toBe(originalId);
+
+    await fixture!.delivery.drain();
+    expect(attempts).toBe(2);
+    expect(mailbox.messages).toHaveLength(1);
+    const message = mailbox.messages[0];
+    if (message?.kind !== "verification")
+      throw new Error("Expected recovery verification email");
+
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { email: "user@example.com" },
+    });
+    expect(user.credentialVersion).toBe(1n);
+    const successor = await prisma.emailVerificationChallenge.findUniqueOrThrow(
+      {
+        where: { id: successorId },
+      },
+    );
+    expect(successor).toMatchObject({
+      credentialVersion: 1n,
+      revokedAt: null,
+      replacedAt: null,
+      consumedAt: null,
+    });
+    expect(
+      (
+        await post(
+          "verify-email-code",
+          {
+            email: "user@example.com",
+            challengeId: originalId,
+            code: message.code,
+          },
+          original.cookie,
+        )
+      ).status,
+    ).toBe(400);
+
+    const verified = await post(
+      "verify-email-code",
+      {
+        email: "user@example.com",
+        challengeId: successorId,
+        code: message.code,
+      },
+      original.cookie,
+    );
+    expect(verified.status).toBe(200);
+    expect(await verified.json()).toMatchObject({
+      data: { status: "verified" },
+    });
+    expect(await prisma.session.count()).toBe(0);
+    const login = await post("login", {
+      email: "user@example.com",
+      password: PASSWORD,
+    });
+    expect(login.status).toBe(200);
+    expect(
+      login.headers
+        .getSetCookie()
+        .some((cookie) => cookie.startsWith("stockwise_session=")),
+    ).toBe(true);
+  });
+
   it("returns pending login proof without session/cookie mutation and fallback never authenticates", async () => {
     await start();
     await register();
@@ -596,9 +698,31 @@ describe("ADR-034 identity backend HTTP cutover", () => {
         })
       ).consumedVia,
     ).toBe("LINK");
-    expect(
-      (await post("verify-email", { token }, registered.cookie)).status,
-    ).toBe(400);
+    const replay = await post("verify-email", { token });
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toMatchObject({
+      data: { status: "already_verified" },
+    });
+    expect(replay.headers.getSetCookie()).toEqual([]);
+    expect(await prisma.session.count()).toBe(0);
+
+    // A known consumed link becomes invalid at its original absolute expiry;
+    // it can never be extended by an informational response.
+    const pastIssuedAt = new Date(Date.now() - 11 * 60_000);
+    await prisma.emailVerificationChallenge.update({
+      where: { id: payload.challengeId },
+      data: {
+        issuedAt: pastIssuedAt,
+        expiresAt: new Date(pastIssuedAt.getTime() + 10 * 60_000),
+        consumedAt: new Date(pastIssuedAt.getTime() + 2 * 60_000),
+      },
+    });
+    const expired = await post("verify-email", { token });
+    expect(expired.status).toBe(400);
+    expect(await expired.json()).toMatchObject({
+      error: { code: "INVALID_TOKEN" },
+    });
+    expect(expired.headers.getSetCookie()).toEqual([]);
     expect(await prisma.session.count()).toBe(0);
   });
 
@@ -641,6 +765,15 @@ describe("ADR-034 identity backend HTTP cutover", () => {
       (await prisma.user.findUniqueOrThrow({ where: { email: payload.email } }))
         .emailVerifiedAt,
     ).not.toBeNull();
+    const consumedLink = await post("verify-email", {
+      token: new URL(message.url).searchParams.get("token"),
+    });
+    expect(consumedLink.status).toBe(200);
+    expect(await consumedLink.json()).toMatchObject({
+      data: { status: "already_verified" },
+    });
+    expect(consumedLink.headers.getSetCookie()).toEqual([]);
+    expect(await prisma.session.count()).toBe(0);
   });
 
   it("resend preserves credentials and never changes proof, and invalidates the predecessor", async () => {
@@ -893,9 +1026,24 @@ describe("ADR-034 identity backend HTTP cutover", () => {
         registered.cookie,
       ),
     ]);
-    expect(results.map((response) => response.status).sort()).toEqual([
-      200, 400,
+    const [otpResponse, linkResponse] = results;
+    const [otpBody, linkBody] = await Promise.all([
+      otpResponse.json(),
+      linkResponse.json(),
     ]);
+    if (otpResponse.status === 200) {
+      expect(otpBody).toMatchObject({ data: { status: "verified" } });
+      expect(linkResponse.status).toBe(200);
+      expect(linkBody).toMatchObject({ data: { status: "already_verified" } });
+    } else {
+      expect(otpResponse.status).toBe(400);
+      expect(otpBody).toMatchObject({
+        error: { code: "INVALID_VERIFICATION_CODE" },
+      });
+      expect(linkResponse.status).toBe(200);
+      expect(linkBody).toMatchObject({ data: { status: "verified" } });
+    }
+    expect(await prisma.session.count()).toBe(0);
     const challenge = await prisma.emailVerificationChallenge.findUniqueOrThrow(
       { where: { id } },
     );

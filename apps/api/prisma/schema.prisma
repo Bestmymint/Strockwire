@@ -205,21 +205,28 @@ enum VerificationRevocationReason {
 }
 
 model User {
-  id                String     @id @default(uuid()) @db.Uuid
-  email             String     @unique(map: "users_email_key") @db.VarChar(320)
-  passwordHash      String     @map("password_hash") @db.VarChar(255)
-  status            UserStatus @default(ACTIVE)
-  displayName       String?    @map("display_name") @db.VarChar(200)
-  phone             String?    @db.VarChar(32)
-  emailVerifiedAt   DateTime?  @map("email_verified_at") @db.Timestamptz(3)
-  passwordChangedAt DateTime   @default(now()) @map("password_changed_at") @db.Timestamptz(3)
-  credentialVersion BigInt     @default(1) @map("credential_version") @db.BigInt
-  disabledAt        DateTime?  @map("disabled_at") @db.Timestamptz(3)
-  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                            String     @id @default(uuid()) @db.Uuid
+  email                         String     @unique(map: "users_email_key") @db.VarChar(320)
+  // Public dummy verifier; its random preimage was discarded, never a credential.
+  passwordHash                  String     @default("$argon2id$v=19$m=65536,p=4,t=3$MELWslgkJzw87Me69Wz1tw$l9XoBv1UBhpmS40M2xzT5cHzqoSubftPd1Md5u/ZmvQ") @map("password_hash") @db.VarChar(255)
+  status                        UserStatus @default(ACTIVE)
+  displayName                   String?    @map("display_name") @db.VarChar(200)
+  phone                         String?    @db.VarChar(32)
+  emailVerifiedAt               DateTime?  @map("email_verified_at") @db.Timestamptz(3)
+  emailVerified                 Boolean    @default(false) @map("better_auth_email_verified")
+  image                         String?    @map("better_auth_image")
+  nativeRegistrationCompletedAt DateTime?  @map("native_registration_completed_at") @db.Timestamptz(3)
+  passwordChangedAt             DateTime   @default(now()) @map("password_changed_at") @db.Timestamptz(3)
+  credentialVersion             BigInt     @default(1) @map("credential_version") @db.BigInt
+  disabledAt                    DateTime?  @map("disabled_at") @db.Timestamptz(3)
+  createdAt                     DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   memberships                 OrganizationMembership[]
   sessions                    Session[]
+  betterAuthSessions          BetterAuthSession[]
+  betterAuthAccounts          BetterAuthAccount[]
+  pendingRegistrations        PendingRegistration[]
   emailVerificationChallenges EmailVerificationChallenge[]
   passwordResetTokens         PasswordResetToken[]
   acceptedInvitations         Invitation[]
@@ -231,6 +238,106 @@ model User {
 
   @@unique([id, email], map: "users_id_email_key")
   @@map("users")
+}
+
+// D3 staging only: never a credential or an authenticated identity.
+model PendingRegistration {
+  id                String    @id @default(uuid()) @db.Uuid
+  email             String    @unique(map: "pending_registrations_email_key") @db.VarChar(320)
+  credentialVersion BigInt    @default(1) @map("credential_version")
+  passwordHash      String?   @map("password_hash") @db.VarChar(255)
+  issuedAt          DateTime  @map("issued_at") @db.Timestamptz(3)
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(3)
+  challengeId       String?   @unique(map: "pending_registrations_challenge_id_key") @map("challenge_id") @db.Uuid
+  otpMac            String?   @map("otp_mac") @db.Char(64)
+  otpKeyId          Int?      @map("otp_key_id")
+  linkTokenHash     String?   @unique(map: "pending_registrations_link_token_hash_key") @map("link_token_hash") @db.Char(64)
+  failedOtpAttempts Int       @default(0) @map("failed_otp_attempts")
+  consumedAt        DateTime? @map("consumed_at") @db.Timestamptz(3)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(3)
+  userId            String?   @map("user_id") @db.Uuid
+  user              User?     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "pending_registrations_user_id_fkey")
+
+  @@index([expiresAt], map: "pending_registrations_expires_at_idx")
+  @@map("pending_registrations")
+}
+
+// Durable D3 quotas survive process replacement; key is a canonical-email digest.
+model PendingRegistrationQuota {
+  key                String                                 @db.Char(64)
+  purpose            String                                 @db.VarChar(16)
+  windowAt           DateTime                               @map("window_at") @db.Timestamptz(3)
+  count              Int                                    @default(0)
+  credentialAttempts PendingRegistrationCredentialAttempt[]
+
+  @@id([key, purpose], map: "pending_registration_quotas_pkey")
+  @@index([windowAt], map: "pending_registration_quotas_window_at_idx")
+  @@map("pending_registration_quotas")
+}
+
+// A quota slot is occupied before Argon2; unknown outcomes remain charged until
+// the fixed window ends. Lease expiry invalidates proof, not comparison history.
+model PendingRegistrationCredentialAttempt {
+  id        String                   @id @default(uuid()) @db.Uuid
+  key       String                   @db.Char(64)
+  purpose   String                   @default("credential") @db.VarChar(16)
+  windowAt  DateTime                 @map("window_at") @db.Timestamptz(3)
+  expiresAt DateTime                 @map("expires_at") @db.Timestamptz(3)
+  quota     PendingRegistrationQuota @relation(fields: [key, purpose], references: [key, purpose], onDelete: Cascade, onUpdate: Restrict, map: "pending_registration_credential_attempts_quota_fkey")
+
+  @@index([key, purpose], map: "pending_registration_credential_attempts_key_idx")
+  @@index([expiresAt], map: "pending_registration_credential_attempts_expires_at_idx")
+  @@map("pending_registration_credential_attempts")
+}
+
+model BetterAuthSession {
+  id                         String   @id @default(uuid()) @db.Uuid
+  token                      String   @unique(map: "better_auth_sessions_token_key")
+  userId                     String   @map("user_id") @db.Uuid
+  stockwisePurpose           String?  @map("stockwise_purpose") @db.VarChar(16)
+  stockwiseCredentialVersion BigInt?  @map("stockwise_credential_version") @db.BigInt
+  expiresAt                  DateTime @map("expires_at") @db.Timestamptz(3)
+  ipAddress                  String?  @map("ip_address")
+  userAgent                  String?  @map("user_agent")
+  createdAt                  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user                       User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "better_auth_sessions_user_id_fkey")
+
+  @@index([userId], map: "better_auth_sessions_user_id_idx")
+  @@map("better_auth_sessions")
+}
+
+model BetterAuthAccount {
+  id                    String    @id @default(uuid()) @db.Uuid
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  userId                String    @map("user_id") @db.Uuid
+  password              String?
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at") @db.Timestamptz(3)
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz(3)
+  scope                 String?
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "better_auth_accounts_user_id_fkey")
+
+  @@unique([providerId, accountId], map: "better_auth_accounts_provider_id_account_id_key")
+  @@index([userId], map: "better_auth_accounts_user_id_idx")
+  @@map("better_auth_accounts")
+}
+
+model BetterAuthVerification {
+  id         String   @id @default(uuid()) @db.Uuid
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([identifier], map: "better_auth_verifications_identifier_idx")
+  @@map("better_auth_verifications")
 }
 
 model Organization {
@@ -969,6 +1076,8 @@ model PasswordResetToken {
   consumedAt DateTime? @map("consumed_at") @db.Timestamptz(3)
   revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
   replacedAt DateTime? @map("replaced_at") @db.Timestamptz(3)
+  requiresNativeDeliveryConfirmation Boolean @default(false) @map("requires_native_delivery_confirmation")
+  deliveryConfirmedAt DateTime? @map("delivery_confirmed_at") @db.Timestamptz(3)
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -976,6 +1085,14 @@ model PasswordResetToken {
 
   @@index([userId, expiresAt], map: "password_reset_tokens_user_expiry_idx")
   @@map("password_reset_tokens")
+}
+
+model NativePasswordResetQuota {
+  keyHash String @id @map("key_hash") @db.VarChar(64)
+  windowStartedAt DateTime @map("window_started_at") @db.Timestamptz(3)
+  attempts Int
+
+  @@map("native_password_reset_quotas")
 }
 
 model Invitation {

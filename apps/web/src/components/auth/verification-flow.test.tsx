@@ -21,15 +21,21 @@ import {
 } from "@/api-client";
 import type * as AuthApi from "@/api-client";
 import { LanguageProvider } from "@/providers/language-provider";
-import { saveContinuation } from "@/verification-continuation-browser";
+import {
+  clearContinuation,
+  saveContinuation,
+} from "@/verification-continuation-browser";
 import { verificationLinkEntryHtml } from "@/verification-link-entry";
 import { LoginForm } from "./login-form";
 import { RegistrationForm } from "./registration-form";
 import { VerificationForm } from "./verification-form";
 import { VerificationResendForm } from "./verification-resend-form";
 
-const { push } = vi.hoisted(() => ({ push: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+const { push, replace } = vi.hoisted(() => ({
+  push: vi.fn(),
+  replace: vi.fn(),
+}));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push, replace }) }));
 vi.mock("@/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof AuthApi>()),
   login: vi.fn(),
@@ -76,7 +82,14 @@ function save(selector: string | null = challengeId) {
   });
 }
 function submit(name = "Verify") {
-  fireEvent.submit(screen.getByRole("button", { name }).closest("form")!);
+  const accessibleName =
+    name === "Verify" &&
+    screen.queryByRole("button", { name: "Check verification link" })
+      ? "Check verification link"
+      : name;
+  fireEvent.submit(
+    screen.getByRole("button", { name: accessibleName }).closest("form")!,
+  );
 }
 function credentials() {
   fireEvent.change(screen.getByLabelText("Email address"), {
@@ -134,6 +147,7 @@ describe("OTP and secure-link verification", () => {
     ).toBe("/login");
     expect(sessionStorage.getItem(key)).toBeNull();
     expect(push).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it("requires six ASCII digits and handles server-invalid code without guessing LINK_ONLY", async () => {
@@ -157,7 +171,7 @@ describe("OTP and secure-link verification", () => {
     );
     expect(screen.queryByLabelText("Password")).toBeNull();
     expect(
-      screen.getByRole("link", { name: "Request a new code" }),
+      screen.getByRole("button", { name: "Request a new code" }),
     ).toBeTruthy();
   });
 
@@ -202,6 +216,27 @@ describe("OTP and secure-link verification", () => {
       expect(screen.queryByRole("button", { name: "Verify" })).toBeNull();
     },
   );
+
+  it("shows an informational already-verified state and Sign in for a recognized consumed link", async () => {
+    window.history.replaceState(null, "", `/verify-email?token=${linkToken}`);
+    vi.mocked(verifyEmail).mockResolvedValue({
+      data: { status: "already_verified" },
+    });
+    render(<VerificationForm />);
+    expect(window.location.search).toBe("");
+    expect(verifyEmail).not.toHaveBeenCalled();
+    submit();
+    expect((await screen.findByRole("status")).textContent).toContain(
+      "already verified",
+    );
+    expect(
+      screen.getByRole("link", { name: "Sign in" }).getAttribute("href"),
+    ).toBe("/login");
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    expect(verificationPasswordProof).not.toHaveBeenCalled();
+    expect(login).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(key)).toBeNull();
+  });
 
   it("discards an invalid/replayed link and offers recovery without password fallback", async () => {
     window.history.replaceState(null, "", `/verify-email?token=${linkToken}`);
@@ -399,8 +434,11 @@ describe("pending login, registration recovery and resend", () => {
       );
       credentials();
       submit("Sign in");
-      await waitFor(() => expect(push).toHaveBeenCalledWith("/verify-email"));
-      expect(push).not.toHaveBeenCalledWith("/app");
+      await waitFor(() =>
+        expect(replace).toHaveBeenCalledWith("/verify-email"),
+      );
+      expect(replace).not.toHaveBeenCalledWith("/app");
+      expect(push).not.toHaveBeenCalled();
       expect(JSON.parse(sessionStorage.getItem(key)!)).toMatchObject({
         canonicalEmail: "person@example.com",
         challengeId: selector,
@@ -427,9 +465,13 @@ describe("pending login, registration recovery and resend", () => {
     render(<RegistrationForm />);
     credentials();
     submit("Create account");
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/verify-email"));
+    await screen.findByRole("alert");
+    expect(replace).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(key)).toBeNull();
-    expect(screen.queryByLabelText("Password")).toBeNull();
+    expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe(
+      "",
+    );
     expect(resendVerification).not.toHaveBeenCalled();
   });
 
@@ -438,9 +480,196 @@ describe("pending login, registration recovery and resend", () => {
     render(<VerificationForm />);
     expect(screen.queryByLabelText("6-digit verification code")).toBeNull();
     expect(
-      screen.getByRole("link", { name: "Request a new code" }),
+      screen.getByRole("button", { name: "Request a new code" }),
     ).toBeTruthy();
     expect(resendVerification).not.toHaveBeenCalled();
+  });
+
+  it("resends directly from the current OTP continuation with one click and no email re-entry", async () => {
+    save();
+    const before = JSON.parse(sessionStorage.getItem(key)!);
+    const deferred = Promise.withResolvers<{
+      data: { status: "accepted"; verification: { challengeId: string } };
+    }>();
+    vi.mocked(resendVerification).mockReturnValue(deferred.promise);
+    render(<VerificationForm />);
+    expect(screen.queryByLabelText("Email address")).toBeNull();
+    const button = screen.getByRole("button", { name: "Request a new code" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(resendVerification).toHaveBeenCalledTimes(1);
+    expect(resendVerification).toHaveBeenCalledWith(
+      { email: "person@example.com" },
+      { signal: expect.any(AbortSignal) },
+    );
+    await act(async () =>
+      deferred.resolve({
+        data: { status: "accepted", verification: { challengeId: successor } },
+      }),
+    );
+    expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual({
+      ...before,
+      challengeId: successor,
+    });
+    expect(screen.getByRole("status").textContent).toContain("inbox");
+    expect(push).not.toHaveBeenCalled();
+    expect(login).not.toHaveBeenCalled();
+    expect(verificationPasswordProof).not.toHaveBeenCalled();
+  });
+
+  it("recovers safely without leaving busy UI if storage refuses the successor", async () => {
+    save();
+    vi.mocked(resendVerification).mockResolvedValue({
+      data: { status: "accepted", verification: { challengeId: successor } },
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("synthetic storage unavailable");
+    });
+    render(<VerificationForm />);
+    fireEvent.click(screen.getByRole("button", { name: "Request a new code" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "could not complete",
+      ),
+    );
+    expect(sessionStorage.getItem(key)).toBeNull();
+    expect(screen.queryByLabelText("6-digit verification code")).toBeNull();
+    expect(
+      screen
+        .getByRole("link", { name: "Request a new code" })
+        .getAttribute("href"),
+    ).toBe("/verification-resend");
+    expect(
+      screen
+        .getByRole("link", { name: "Back to sign in" })
+        .getAttribute("href"),
+    ).toBe("/login");
+    expect(verifyEmailCode).not.toHaveBeenCalled();
+    expect(verificationPasswordProof).not.toHaveBeenCalled();
+    expect(login).not.toHaveBeenCalled();
+  });
+
+  it("ignores a resend response after the continuation is cleared or replaced", async () => {
+    save();
+    const deferred = Promise.withResolvers<{
+      data: { status: "accepted"; verification: { challengeId: string } };
+    }>();
+    vi.mocked(resendVerification).mockReturnValue(deferred.promise);
+    render(<VerificationForm />);
+    fireEvent.click(screen.getByRole("button", { name: "Request a new code" }));
+    const newer = {
+      version: 1 as const,
+      canonicalEmail: "other@example.com",
+      challengeId: successor,
+      savedAt: Date.now(),
+    };
+    saveContinuation(newer);
+    await act(async () =>
+      deferred.resolve({
+        data: { status: "accepted", verification: { challengeId: successor } },
+      }),
+    );
+    expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual(newer);
+    expect(push).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("preserves Back to sign in while resend is pending and abandons safely", async () => {
+    save();
+    const deferred = Promise.withResolvers<{
+      data: { status: "accepted"; verification: { challengeId: string } };
+    }>();
+    vi.mocked(resendVerification).mockReturnValue(deferred.promise);
+    const view = render(<VerificationForm />);
+    fireEvent.click(screen.getByRole("button", { name: "Request a new code" }));
+    const resendButton = screen.getByRole("button", {
+      name: "Request a new code",
+    }) as HTMLButtonElement;
+    expect(resendButton.disabled).toBe(true);
+    const back = screen.getByRole("link", { name: "Back to sign in" });
+    expect(back.getAttribute("href")).toBe("/login");
+    const signal = vi.mocked(resendVerification).mock.calls[0]?.[1]?.signal;
+    expect(signal?.aborted).toBe(false);
+    fireEvent.click(back);
+    expect(sessionStorage.getItem(key)).toBeNull();
+    view.unmount();
+    expect(signal?.aborted).toBe(true);
+    await act(async () =>
+      deferred.resolve({
+        data: { status: "accepted", verification: { challengeId: successor } },
+      }),
+    );
+    expect(sessionStorage.getItem(key)).toBeNull();
+    expect(verifyEmailCode).not.toHaveBeenCalled();
+    expect(verificationPasswordProof).not.toHaveBeenCalled();
+    expect(login).not.toHaveBeenCalled();
+  });
+
+  it("ignores a delayed resend after clearing and restoring identical continuation (ABA)", async () => {
+    save();
+    const original = JSON.parse(sessionStorage.getItem(key)!);
+    const deferred = Promise.withResolvers<{
+      data: { status: "accepted"; verification: { challengeId: string } };
+    }>();
+    vi.mocked(resendVerification).mockReturnValue(deferred.promise);
+    render(<VerificationForm />);
+    fireEvent.click(screen.getByRole("button", { name: "Request a new code" }));
+    clearContinuation();
+    saveContinuation(original);
+    await act(async () =>
+      deferred.resolve({
+        data: { status: "accepted", verification: { challengeId: successor } },
+      }),
+    );
+    expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual(original);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("aborts a direct resend on unmount and never changes its saved challenge", async () => {
+    save();
+    const original = JSON.parse(sessionStorage.getItem(key)!);
+    const deferred = Promise.withResolvers<{
+      data: { status: "accepted"; verification: { challengeId: string } };
+    }>();
+    vi.mocked(resendVerification).mockReturnValue(deferred.promise);
+    const view = render(<VerificationForm />);
+    fireEvent.click(screen.getByRole("button", { name: "Request a new code" }));
+    const options = vi.mocked(resendVerification).mock.calls[0]?.[1];
+    view.unmount();
+    expect(options?.signal?.aborted).toBe(true);
+    await act(async () =>
+      deferred.resolve({
+        data: { status: "accepted", verification: { challengeId: successor } },
+      }),
+    );
+    expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual(original);
+  });
+
+  it("keeps successive one-click resends bound to the newly saved challenge", async () => {
+    save();
+    const old = JSON.parse(sessionStorage.getItem(key)!);
+    vi.mocked(resendVerification)
+      .mockResolvedValueOnce({
+        data: { status: "accepted", verification: { challengeId: successor } },
+      })
+      .mockResolvedValueOnce({
+        data: { status: "accepted", verification: { challengeId } },
+      });
+    render(<VerificationForm />);
+    fireEvent.click(screen.getByRole("button", { name: "Request a new code" }));
+    await waitFor(() =>
+      expect(JSON.parse(sessionStorage.getItem(key)!).challengeId).toBe(
+        successor,
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Request a new code" }));
+    await waitFor(() =>
+      expect(JSON.parse(sessionStorage.getItem(key)!).challengeId).toBe(
+        challengeId,
+      ),
+    );
+    expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual(old);
+    expect(resendVerification).toHaveBeenCalledTimes(2);
   });
 
   it("prefills known email and replaces only the selector without renewing proof", async () => {
@@ -459,7 +688,8 @@ describe("pending login, registration recovery and resend", () => {
       .closest("form")!;
     fireEvent.submit(form);
     fireEvent.submit(form);
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/verify-email"));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/verify-email"));
+    expect(push).not.toHaveBeenCalled();
     expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual({
       ...old,
       challengeId: successor,

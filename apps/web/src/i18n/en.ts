@@ -47,6 +47,9 @@ export const en = {
   openingWorkspace: "Opening workspace…",
   openingSetup: "Opening setup…",
   accessError: "Your access context could not be loaded.",
+  accessDenied: "You do not have permission to access this page.",
+  sessionExpired: "Your session is no longer available. Sign in again.",
+  accessRetry: "Try again",
   theme: "Appearance",
   light: "Light",
   dark: "Dark",
@@ -83,12 +86,15 @@ export const en = {
   authVerifyOtpDescription:
     "If verification material can be sent to {email}, check its inbox and enter the code below.",
   authVerifyLinkDescription:
-    "Confirm your email address to finish verification.",
+    "Open this email link to confirm verification. If it was already used, checking will show its status while the link is valid.",
+  authCheckVerificationLink: "Check verification link",
   authOtpLabel: "6-digit verification code",
   authOtpInvalid: "Enter the 6-digit code.",
   authVerify: "Verify",
   authVerifying: "Verifying…",
   authVerified: "Your email has been verified. You can now sign in.",
+  authAlreadyVerified:
+    "This email address is already verified. You can sign in.",
   authInvalidCode:
     "This code cannot be used. Check the latest email, use its secure link, or request a new code.",
   authInvalidLink: "This verification link is invalid or expired.",
@@ -109,7 +115,8 @@ export const en = {
   authRateLimitedGeneric: "Please wait before trying again.",
   authRequestError: "We could not complete that request. Please try again.",
   authAccepted:
-    "Request accepted. Verification material may arrive by email. Check the latest email for the next step.",
+    "Request accepted. This does not confirm account creation or email delivery. Continue verification if needed, or sign in if you already have an account.",
+  authContinueVerification: "Continue verification",
   authRecovery:
     "Verification continuation is unavailable or expired. Return to sign in to continue.",
   authNoChallenge:
@@ -117,6 +124,22 @@ export const en = {
   authCheckInformation: "Please check the information and try again.",
   authOtpSafety:
     "Use the latest email. Do not share your code or follow unsolicited requests.",
+  authForgotTitle: "Reset your password",
+  authForgotDescription: "Request a secure password reset link.",
+  authResetTitle: "Set a new password",
+  authResetDescription:
+    "Choose a new password using the secure link from your email.",
+  authResetRequest: "Request password reset",
+  authResetAccepted:
+    "If that email can receive a password reset, check its inbox for the next step.",
+  authNewPassword: "New password",
+  authResetPassword: "Reset password",
+  authResettingPassword: "Resetting password…",
+  authInvalidResetLink: "This password reset link is invalid or expired.",
+  authResetComplete:
+    "Your password has been reset. Sign in with your new password.",
+  authResetOpenError: "Unable to open this secure link. Request a new link.",
+  authResetJavascript: "JavaScript is required to open this secure link.",
 } as const;
 
 export type TranslationKey = keyof typeof en;

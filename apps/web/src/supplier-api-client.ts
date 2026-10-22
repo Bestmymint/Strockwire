@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { privateFetch, readPrivateJson } from "@/session-lifecycle";
 
 const statusSchema = z.enum(["ACTIVE", "INACTIVE"]);
 const timestampSchema = z.string().datetime({ offset: false, precision: 3 });
@@ -51,7 +52,7 @@ function query(
 async function request(path: string, init?: RequestInit): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(`/api/v1/${path}`, {
+    response = await privateFetch(`/api/v1/${path}`, {
       credentials: "same-origin",
       headers: {
         accept: "application/json",
@@ -66,7 +67,7 @@ async function request(path: string, init?: RequestInit): Promise<unknown> {
   }
   let body: unknown;
   try {
-    body = await response.json();
+    body = await readPrivateJson(response);
   } catch {
     throw new SupplierApiError("unavailable");
   }

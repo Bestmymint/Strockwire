@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { privateFetch, readPrivateJson } from "@/session-lifecycle";
 
 const insightSchema = z.object({
   cadence: z.enum(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"]),
@@ -38,7 +39,7 @@ export async function getLatestInsight(
   if (scope.scope === "branch") params.set("branchId", scope.branchId);
   let response: Response;
   try {
-    response = await fetch(
+    response = await privateFetch(
       `/api/v1/organizations/${organizationId}/ai-insights/latest?${params}`,
       {
         credentials: "same-origin",
@@ -52,7 +53,7 @@ export async function getLatestInsight(
   }
   if (!response.ok) throw new InsightApiError(response.status);
   try {
-    return latestResponseSchema.parse(await response.json()).data;
+    return latestResponseSchema.parse(await readPrivateJson(response)).data;
   } catch {
     throw new InsightApiError(0);
   }

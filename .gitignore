@@ -1,3 +1,4 @@
+
 # Dependencies and package-manager state
 node_modules/
 .pnpm-store/
@@ -33,3 +34,10 @@ Thumbs.db
 Desktop.ini
 *.swp
 *.swo
+
+# Local one-off Better Auth investigation scratch files (not product source)
+.d3-verification.mts
+.d4-native-run.ts
+apps/api/.d3-fix-schema-before.prisma
+apps/api/.d3-owned-*/
+apps/api/.d4-native-smoke.mts

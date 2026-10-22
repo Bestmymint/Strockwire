@@ -68,8 +68,17 @@ async function main(): Promise<void> {
     environment,
     prisma,
     emailProvider,
-    onDeliveryFailure(kind) {
-      logger.error({ deliveryType: kind }, "identity email delivery failed");
+    onDeliveryFailure(kind, failure) {
+      logger.error(
+        {
+          deliveryType: kind,
+          ...(failure === undefined ? {} : { failureStage: failure.stage }),
+          ...(failure?.providerHttpStatus === undefined
+            ? {}
+            : { providerHttpStatus: failure.providerHttpStatus }),
+        },
+        "identity email delivery failed",
+      );
     },
   });
   const { authenticationMiddleware } = authentication;

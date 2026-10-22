@@ -30,7 +30,7 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/**", (route) =>
     route.fulfill({
       status: 401,
-      json: { error: { code: "UNAUTHENTICATED" } },
+      json: { error: { code: "AUTHENTICATION_REQUIRED" } },
     }),
   );
 });
@@ -58,6 +58,7 @@ test("link entry never serializes credentials and requires explicit POST across 
     posts.push(route.request().postDataJSON());
     await route.fulfill({ json: { data: { status: "verified" } } });
   });
+  await page.goto("/");
   await page.goto(`/verify-email?token=${token}`);
   await expect(
     page.getByRole("button", { name: "Verify", exact: true }),
@@ -66,15 +67,18 @@ test("link entry never serializes credentials and requires explicit POST across 
   await expectNoCredential(page);
   await page.getByRole("button", { name: "Verify", exact: true }).click();
   await expect(
-    page.getByRole("link", { name: "Sign in", exact: true }),
+    page.getByRole("main").getByRole("link", { name: "Sign in", exact: true }),
   ).toBeVisible();
   expect(posts).toEqual([{ token }]);
   await expectNoCredential(page);
-  await page.getByRole("link", { name: "Sign in", exact: true }).click();
+  await page
+    .getByRole("main")
+    .getByRole("link", { name: "Sign in", exact: true })
+    .click();
   await expect(page).toHaveURL(/\/login$/);
   await expectNoCredential(page);
   await page.goBack();
-  await expect(page).toHaveURL(/\/verify-email$/);
+  await expect(page).toHaveURL(/\/$/);
   await expectNoCredential(page);
   await page.goForward();
   await expect(page).toHaveURL(/\/login$/);
@@ -92,6 +96,7 @@ test("abandoning or reloading a link loses its credential rather than restoring 
     posts += 1;
     return route.fulfill({ json: { data: { status: "verified" } } });
   });
+  await page.goto("/");
   await page.goto(`/verify-email?token=${token}`);
   await expect(
     page.getByRole("button", { name: "Verify", exact: true }),
@@ -99,7 +104,7 @@ test("abandoning or reloading a link loses its credential rather than restoring 
   await page.getByRole("link", { name: "Back to sign in" }).click();
   await expect(page).toHaveURL(/\/login$/);
   await page.goBack();
-  await expect(page).toHaveURL(/\/verify-email$/);
+  await expect(page).toHaveURL(/\/$/);
   await expectNoCredential(page);
   await expect(
     page.getByRole("button", { name: "Verify", exact: true }),
@@ -287,7 +292,9 @@ test("an active password-proof retry verifies the same link exactly once", async
   await page
     .getByRole("button", { name: "Confirm password", exact: true })
     .click();
-  await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
+  await expect(
+    page.getByRole("main").getByRole("link", { name: "Sign in", exact: true }),
+  ).toBeVisible();
   expect(proofPosts).toBe(1);
   expect(verifyPosts).toBe(2);
   expect(verifyPayloads).toEqual([{ token }, { token }]);
@@ -514,3 +521,62 @@ for (const width of [320, 390]) {
     }
   }
 }
+
+test("BFCache restore retains the OTP email and focus does not discard its draft", async ({
+  page,
+}) => {
+  await page.addInitScript(
+    ({ storageKey, challengeId }) => {
+      sessionStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          version: 1,
+          canonicalEmail: "synthetic@example.com",
+          challengeId,
+          savedAt: Date.now(),
+        }),
+      );
+    },
+    { storageKey, challengeId },
+  );
+  let posts = 0;
+  await page.route("**/api/v1/auth/verify-email-code", (route) => {
+    posts++;
+    expect(route.request().postDataJSON()).toEqual({
+      email: "synthetic@example.com",
+      challengeId,
+      code: "654321",
+    });
+    return route.fulfill({ json: { data: { status: "verified" } } });
+  });
+  await page.goto("/verify-email");
+  const input = page.getByLabel("6-digit verification code");
+  await input.fill("012345");
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("blur"));
+    window.dispatchEvent(new Event("focus"));
+  });
+  await expect(input).toHaveValue("012345");
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new PageTransitionEvent("pagehide", { persisted: true }),
+    );
+    window.dispatchEvent(
+      new PageTransitionEvent("pageshow", { persisted: true }),
+    );
+  });
+  await expect(
+    page.getByText("synthetic@example.com", { exact: false }),
+  ).toBeVisible();
+  await expect(input).toHaveValue("");
+  expect(posts).toBe(0);
+  await input.fill("654321");
+  await page.getByRole("button", { name: "Verify", exact: true }).click();
+  await expect(
+    page.getByRole("main").getByRole("link", { name: "Sign in", exact: true }),
+  ).toBeVisible();
+  expect(posts).toBe(1);
+  expect(
+    await page.evaluate((key) => sessionStorage.getItem(key), storageKey),
+  ).toBeNull();
+});

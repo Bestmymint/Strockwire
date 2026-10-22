@@ -8,6 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { acceptInvitation, MembershipApiError } from "@/membership-api-client";
 
@@ -33,15 +34,29 @@ afterEach(() => {
   window.history.replaceState(null, "", "/");
   localStorage.clear();
   sessionStorage.clear();
+  delete (window as Window & { __stockwiseTakeCredentialLink?: unknown })
+    .__stockwiseTakeCredentialLink;
 });
+
+function renderInvitation() {
+  const client = new QueryClient();
+  render(
+    <QueryClientProvider client={client}>
+      <InvitationAcceptanceForm />
+    </QueryClientProvider>,
+  );
+  return client;
+}
 
 describe("invitation acceptance form", () => {
   it("submits the transient token, removes it, and navigates to accepted organization", async () => {
-    window.history.replaceState(
-      null,
-      "",
-      "/accept-invitation?token=opaque-invitation-token",
-    );
+    Object.defineProperty(window, "__stockwiseTakeCredentialLink", {
+      configurable: true,
+      value: vi.fn(() => ({
+        route: "/accept-invitation",
+        token: "opaque-invitation-token",
+      })),
+    });
     vi.mocked(acceptInvitation).mockResolvedValue({
       membership: {
         branchAssignments: [],
@@ -59,7 +74,10 @@ describe("invitation acceptance form", () => {
       },
       replayed: false,
     });
-    render(<InvitationAcceptanceForm />);
+    const client = renderInvitation();
+    client.setQueryData(["access-context"], {
+      organizations: [{ id: "old-org" }],
+    });
     fireEvent.click(screen.getByRole("button", { name: "Accept invitation" }));
 
     await waitFor(() =>
@@ -69,20 +87,25 @@ describe("invitation acceptance form", () => {
     expect(replace).toHaveBeenCalledWith(
       `/app?organizationId=${ORGANIZATION_ID}`,
     );
+    expect(client.getQueryData(["access-context"])).toBeUndefined();
+    // No SessionLifecycleProvider is mounted in this focused form test;
+    // it verifies local cache discard. Browser E2E verifies cross-tab hints.
     expect(localStorage.length).toBe(0);
     expect(sessionStorage.length).toBe(0);
   });
 
   it("guides unauthenticated users without persisting or displaying the token", async () => {
-    window.history.replaceState(
-      null,
-      "",
-      "/accept-invitation?token=secret-token-value",
-    );
+    Object.defineProperty(window, "__stockwiseTakeCredentialLink", {
+      configurable: true,
+      value: vi.fn(() => ({
+        route: "/accept-invitation",
+        token: "secret-token-value",
+      })),
+    });
     vi.mocked(acceptInvitation).mockRejectedValue(
       new MembershipApiError("authentication_required"),
     );
-    render(<InvitationAcceptanceForm />);
+    renderInvitation();
     fireEvent.click(screen.getByRole("button", { name: "Accept invitation" }));
 
     expect((await screen.findByRole("alert")).textContent).toContain(
@@ -95,20 +118,56 @@ describe("invitation acceptance form", () => {
   });
 
   it("uses generic invalid UX and removes an unusable token", async () => {
-    window.history.replaceState(
-      null,
-      "",
-      "/accept-invitation?token=invalid-token",
-    );
+    Object.defineProperty(window, "__stockwiseTakeCredentialLink", {
+      configurable: true,
+      value: vi.fn(() => ({
+        route: "/accept-invitation",
+        token: "invalid-token",
+      })),
+    });
     vi.mocked(acceptInvitation).mockRejectedValue(
       new MembershipApiError("invalid_invitation"),
     );
-    render(<InvitationAcceptanceForm />);
+    renderInvitation();
     fireEvent.click(screen.getByRole("button", { name: "Accept invitation" }));
 
     expect((await screen.findByRole("alert")).textContent).toContain(
       "invalid or expired",
     );
     expect(window.location.search).toBe("");
+  });
+
+  it("retains a transient invitation across retryable outages without claiming expiry", async () => {
+    Object.defineProperty(window, "__stockwiseTakeCredentialLink", {
+      configurable: true,
+      value: vi.fn(() => ({
+        route: "/accept-invitation",
+        token: "synthetic-private-invitation",
+      })),
+    });
+    vi.mocked(acceptInvitation).mockRejectedValue(
+      new MembershipApiError("unavailable"),
+    );
+    renderInvitation();
+    fireEvent.click(screen.getByRole("button", { name: "Accept invitation" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Please try again",
+    );
+    expect(document.body.textContent).not.toContain(
+      "synthetic-private-invitation",
+    );
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("button", { name: "Accept invitation" })
+          .hasAttribute("disabled"),
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Accept invitation" }));
+    await waitFor(() => expect(acceptInvitation).toHaveBeenCalledTimes(2));
+    expect(acceptInvitation).toHaveBeenNthCalledWith(
+      2,
+      "synthetic-private-invitation",
+    );
   });
 });

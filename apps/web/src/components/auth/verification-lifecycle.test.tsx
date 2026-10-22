@@ -40,7 +40,14 @@ const accountB = {
 };
 const token = "synthetic_" + "a".repeat(34);
 function submit(name: string) {
-  fireEvent.submit(screen.getByRole("button", { name }).closest("form")!);
+  const accessibleName =
+    name === "Verify" &&
+    screen.queryByRole("button", { name: "Check verification link" })
+      ? "Check verification link"
+      : name;
+  fireEvent.submit(
+    screen.getByRole("button", { name: accessibleName }).closest("form")!,
+  );
 }
 beforeEach(() => {
   sessionStorage.clear();
@@ -167,4 +174,36 @@ describe("verification abandonment and continuation identity", () => {
       }
     }
   }
+});
+
+it("restores the canonical OTP continuation after BFCache without accepting abandoned work", async () => {
+  saveContinuation(accountA);
+  const delayed = Promise.withResolvers<{
+    data: { status: "verified" };
+  }>();
+  vi.mocked(verifyEmailCode).mockReturnValueOnce(delayed.promise);
+  render(<VerificationForm />);
+  fireEvent.change(screen.getByLabelText("6-digit verification code"), {
+    target: { value: "012345" },
+  });
+  submit("Verify");
+  fireEvent(window, new PageTransitionEvent("pagehide", { persisted: true }));
+  fireEvent(window, new PageTransitionEvent("pageshow", { persisted: true }));
+  await act(async () => delayed.resolve({ data: { status: "verified" } }));
+  expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();
+  expect(loadContinuation().continuation).toEqual(accountA);
+  const input = screen.getByLabelText("6-digit verification code");
+  expect((input as HTMLInputElement).value).toBe("");
+  vi.mocked(verifyEmailCode).mockResolvedValueOnce({
+    data: { status: "verified" },
+  });
+  fireEvent.change(input, { target: { value: "654321" } });
+  submit("Verify");
+  await screen.findByRole("link", { name: "Sign in" });
+  expect(vi.mocked(verifyEmailCode).mock.calls[1]?.[0]).toEqual({
+    email: accountA.canonicalEmail,
+    challengeId: accountA.challengeId,
+    code: "654321",
+  });
+  expect(loadContinuation().continuation).toBeNull();
 });

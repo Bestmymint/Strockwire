@@ -7,6 +7,7 @@ import { logout } from "@/api-client";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useLanguage } from "@/providers/language-provider";
+import { notifySessionChange } from "@/session-lifecycle";
 
 export function LogoutButton() {
   const router = useRouter();
@@ -20,8 +21,8 @@ export function LogoutButton() {
     setIsSubmitting(true);
     try {
       await logout();
-      queryClient.removeQueries({ queryKey: ["access-context"] });
-      router.push("/login");
+      notifySessionChange(queryClient);
+      router.replace("/login");
     } catch {
       setError(true);
     } finally {

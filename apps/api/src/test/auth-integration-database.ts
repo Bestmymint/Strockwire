@@ -29,7 +29,7 @@ export function authIntegrationResources(owner: string) {
     volume: `${project}-postgres-data`,
     network: `${project}_default`,
     database: "stockwise_t02a_auth_test",
-    port: 55439,
+    port: 56221,
     image: "postgres:16.15-alpine",
   });
 }
@@ -419,7 +419,7 @@ export async function createOwnedAuthDatabase(
   command: AuthDockerCommand = executeDocker,
 ) {
   validateAuthIntegrationInvocation(environment);
-  await requireFreeLoopbackPort(55439);
+  await requireFreeLoopbackPort(56221);
   const owned = await createOwnedAuthResources(environment, command);
   const { resources: r, username, password, confirmOwnership, cleanup } = owned;
   const teardown = createAuthCleanup();

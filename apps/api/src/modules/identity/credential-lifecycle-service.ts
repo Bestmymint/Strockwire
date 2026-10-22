@@ -2,6 +2,7 @@ import type { IdentityEmailProvider } from "./email-provider.ts";
 import type { PasswordHasher } from "./password-hasher.ts";
 import {
   type CredentialLifecycleRepository,
+  type PasswordResetRepository,
   OneTimeTokenCollisionError,
 } from "./credential-lifecycle-repository.ts";
 import {
@@ -24,13 +25,18 @@ export interface CredentialLifecycleService {
   }): Promise<boolean>;
 }
 
+export type PasswordResetService = Pick<
+  CredentialLifecycleService,
+  "requestPasswordReset" | "resetPassword"
+>;
+
 function tokenUrl(origin: string, path: string, rawToken: string): string {
   const url = new URL(path, origin);
   url.searchParams.set("token", rawToken);
   return url.toString();
 }
 
-export function createCredentialLifecycleService({
+export function createPasswordResetService({
   emailProvider,
   now = () => new Date(),
   onDeliveryFailure = () => undefined,
@@ -44,9 +50,9 @@ export function createCredentialLifecycleService({
   onDeliveryFailure?: (kind: DeliveryFailureKind) => void;
   passwordHasher: PasswordHasher;
   publicWebOrigin: string;
-  repository: CredentialLifecycleRepository;
+  repository: PasswordResetRepository;
   tokenProvider: OneTimeTokenProvider;
-}): CredentialLifecycleService {
+}): PasswordResetService {
   return {
     async requestPasswordReset(email) {
       const issuedAt = now();
@@ -77,6 +83,9 @@ export function createCredentialLifecycleService({
               kind: "password_reset",
               recipient: issued.recipient,
               url: tokenUrl(publicWebOrigin, "/reset-password", token.rawToken),
+            });
+            await repository.confirmPasswordResetDelivery?.({
+              tokenId: issued.id,
             });
           } catch {
             onDeliveryFailure("password_reset");
@@ -120,16 +129,28 @@ export function createCredentialLifecycleService({
         userId: validToken.userId,
       });
     },
+  };
+}
 
+export function createCredentialLifecycleService(
+  input: Omit<
+    Parameters<typeof createPasswordResetService>[0],
+    "repository"
+  > & {
+    repository: CredentialLifecycleRepository;
+  },
+): CredentialLifecycleService {
+  const now = input.now ?? (() => new Date());
+  return {
+    ...createPasswordResetService(input),
     async logoutCurrent(tokenHash) {
-      await repository.revokeSessionByTokenHash({
+      await input.repository.revokeSessionByTokenHash({
         revokedAt: now(),
         tokenHash,
       });
     },
-
     async logoutAll(userId) {
-      await repository.revokeAllSessions({
+      await input.repository.revokeAllSessions({
         reason: "logout_all",
         revokedAt: now(),
         userId,

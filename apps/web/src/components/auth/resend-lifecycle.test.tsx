@@ -17,7 +17,10 @@ import {
 import type * as AuthApi from "@/api-client";
 import { VerificationResendForm } from "./verification-resend-form";
 
-const { push } = vi.hoisted(() => ({ push: vi.fn() }));
+const { push, replace } = vi.hoisted(() => ({
+  push: vi.fn(),
+  replace: vi.fn(),
+}));
 const email = "person@example.com";
 const key = "stockwise_verification_continuation";
 type ResendResult = {
@@ -26,7 +29,7 @@ type ResendResult = {
     verification: { challengeId: string };
   };
 };
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push, replace }) }));
 vi.mock("@/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof AuthApi>()),
   resendVerification: vi.fn(),
@@ -65,6 +68,7 @@ function submit() {
 
 beforeEach(() => {
   push.mockReset();
+  replace.mockReset();
   sessionStorage.clear();
   vi.mocked(resendVerification).mockReset();
 });
@@ -86,6 +90,7 @@ describe("verification resend lifecycle", () => {
     await act(async () => request.resolve(result(replacementChallengeId)));
 
     expect(push).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(key)).toBeNull();
   });
 
@@ -98,6 +103,7 @@ describe("verification resend lifecycle", () => {
     clearContinuation();
     await act(async () => request.resolve(result(replacementChallengeId)));
     expect(push).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
     expect(loadContinuation().continuation).toBeNull();
   });
 
@@ -114,6 +120,7 @@ describe("verification resend lifecycle", () => {
     await act(async () => request.resolve(result(replacementChallengeId)));
 
     expect(push).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
     expect(loadContinuation().continuation).toEqual(original);
   });
 
@@ -134,6 +141,7 @@ describe("verification resend lifecycle", () => {
     await act(async () => request.resolve(result(challengeId)));
 
     expect(push).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
     expect(loadContinuation().continuation).toEqual(accountB);
   });
 
@@ -149,13 +157,40 @@ describe("verification resend lifecycle", () => {
 
     await act(async () => request.resolve(result(replacementChallengeId)));
 
-    expect(push).toHaveBeenCalledWith("/verify-email");
+    expect(replace).toHaveBeenCalledWith("/verify-email");
+    expect(push).not.toHaveBeenCalled();
     expect(loadContinuation().continuation).toEqual({
       version: 1,
       canonicalEmail: email,
       challengeId: replacementChallengeId,
       savedAt,
     });
+  });
+
+  it("ignores pagehide-abandoned delivery and restores the saved email for retry", async () => {
+    save();
+    const original = loadContinuation().continuation!;
+    const request = deferred();
+    vi.mocked(resendVerification).mockReturnValueOnce(request.promise);
+    setup();
+    submit();
+    const options = vi.mocked(resendVerification).mock.calls[0]?.[1];
+    fireEvent(window, new Event("pagehide"));
+    fireEvent(window, new PageTransitionEvent("pageshow", { persisted: true }));
+    await act(async () => request.resolve(result(replacementChallengeId)));
+
+    expect(options?.signal?.aborted).toBe(true);
+    expect(replace).not.toHaveBeenCalled();
+    expect(loadContinuation().continuation).toEqual(original);
+    expect(
+      (screen.getByLabelText("Email address") as HTMLInputElement).value,
+    ).toBe(email);
+    vi.mocked(resendVerification).mockResolvedValueOnce(
+      result(replacementChallengeId),
+    );
+    submit();
+    await act(async () => {});
+    expect(replace).toHaveBeenCalledWith("/verify-email");
   });
 
   it("aborts and ignores a response after unmount", async () => {
@@ -171,6 +206,7 @@ describe("verification resend lifecycle", () => {
     await act(async () => request.resolve(result(replacementChallengeId)));
 
     expect(push).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
     expect(loadContinuation().continuation?.challengeId).toBe(challengeId);
   });
 });

@@ -60,6 +60,7 @@ async function registerSuccessor(input: Scenario, email: string) {
     .getByRole("button", { name: "Create account", exact: true })
     .click();
   expect((await response)?.status()).toBe(202);
+  await input.page.getByRole("link", { name: "Continue verification" }).click();
   await expect(input.page).toHaveURL(`${origin}/verify-email`);
   await expect(
     input.page.getByLabel("6-digit verification code"),
@@ -94,7 +95,7 @@ scenario(
 );
 
 scenario(
-  "02 real six-digit OTP verifies, clears proof, consumes both methods and creates no session",
+  "02 OTP consumes verification once and keeps link informational only before expiry",
   async (input) => {
     const { mail, challengeId } = await register(input);
     expect(/^[0-9]{6}$/.test(mail.code)).toBe(true);
@@ -103,13 +104,11 @@ scenario(
       (await input.page.context().cookies()).some((c) => c.name === proofName),
     ).toBe(false);
     expect((await submitCode(input, challengeId, mail.code)).status).toBe(400);
-    expect(
-      (
-        await post(input.page, "auth/verify-email", {
-          token: linkToken(mail.url),
-        })
-      ).status,
-    ).toBe(400);
+    const replay = await post(input.page, "auth/verify-email", {
+      token: linkToken(mail.url),
+    });
+    expect(replay.status).toBe(200);
+    expect(replay.data).toMatchObject({ data: { status: "already_verified" } });
     await noAuthority(input);
   },
 );
@@ -241,15 +240,15 @@ scenario(
 );
 
 scenario(
-  "07 resend UI replaces challenge without renewing proof",
+  "07 one-click resend UI replaces challenge without renewing proof",
   async (input) => {
     const previous = await register(input);
     const proof = (await input.page.context().cookies()).find(
       (c) => c.name === proofName,
     );
-    await input.page.getByRole("link", { name: "Request a new code" }).click();
+    await expect(input.page.getByLabel("Email address")).toHaveCount(0);
     await input.page
-      .getByRole("button", { name: "Request verification code" })
+      .getByRole("button", { name: "Request a new code" })
       .click();
     const next = await input.harness.mailbox.next(input.email);
     await expect(input.page).toHaveURL(`${origin}/verify-email`);
@@ -572,10 +571,7 @@ scenario(
     );
     try {
       await input.page
-        .getByRole("link", { name: "Request a new code" })
-        .click();
-      await input.page
-        .getByRole("button", { name: "Request verification code" })
+        .getByRole("button", { name: "Request a new code" })
         .click();
       expect(await delayed.status()).toBe(202);
       await input.harness.mailbox.next(input.email);
@@ -878,7 +874,23 @@ scenario(
       submitCode(input, challengeId, mail.code),
       post(input.page, "auth/verify-email", { token: linkToken(mail.url) }),
     ]);
-    expect(outcomes.map((r) => r.status).sort()).toEqual([200, 400]);
+    const [otpOutcome, linkOutcome] = outcomes;
+    if (otpOutcome.status === 200) {
+      // OTP won the user lock: the link can only report already verified.
+      expect(otpOutcome.data).toMatchObject({ data: { status: "verified" } });
+      expect(linkOutcome.status).toBe(200);
+      expect(linkOutcome.data).toMatchObject({
+        data: { status: "already_verified" },
+      });
+    } else {
+      // Link won the user lock: the losing OTP is terminal and invalid.
+      expect(otpOutcome.status).toBe(400);
+      expect(otpOutcome.data).toMatchObject({
+        error: { code: "INVALID_VERIFICATION_CODE" },
+      });
+      expect(linkOutcome.status).toBe(200);
+      expect(linkOutcome.data).toMatchObject({ data: { status: "verified" } });
+    }
     const challenge =
       await input.harness.prisma.emailVerificationChallenge.findUniqueOrThrow({
         where: { id: challengeId },

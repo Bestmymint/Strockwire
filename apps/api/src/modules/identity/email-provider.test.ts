@@ -54,6 +54,41 @@ describe("identity email providers", () => {
         recipient: "user@example.com",
         url: "https://app.example.com/reset-password?token=sensitive",
       }),
-    ).rejects.toEqual(new EmailDeliveryError());
+    ).rejects.toMatchObject({
+      name: "EmailDeliveryError",
+      category: "provider_http",
+      httpStatus: 503,
+      message: "Identity email delivery failed.",
+    });
   });
+
+  it.each([
+    ["network", new Error("sensitive network response")],
+    ["timeout", new DOMException("sensitive timeout response", "TimeoutError")],
+  ] as const)(
+    "classifies %s without exposing the underlying exception",
+    async (category, error) => {
+      const provider = createResendEmailProvider({
+        apiKey: "sensitive-api-key",
+        fetchImplementation: vi.fn<typeof fetch>().mockRejectedValue(error),
+        from: "verified@example.com",
+      });
+      try {
+        await provider.send({
+          kind: "verification",
+          recipient: "user@example.com",
+          url: "https://app.example.com/verify-email?token=sensitive",
+          code: "123456",
+        });
+        throw new Error("Expected provider failure");
+      } catch (failure) {
+        expect(failure).toBeInstanceOf(EmailDeliveryError);
+        expect(failure).toMatchObject({
+          category,
+          message: "Identity email delivery failed.",
+        });
+        expect(JSON.stringify(failure)).not.toContain("sensitive");
+      }
+    },
+  );
 });

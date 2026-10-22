@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { privateFetch, readPrivateJson } from "@/session-lifecycle";
 
 const nullableMetricSchema = z.object({
   reason: z.string().nullable(),
@@ -271,7 +272,7 @@ async function request<T>(
 ): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(path, {
+    response = await privateFetch(path, {
       credentials: "same-origin",
       headers: { accept: "application/json" },
       ...(signal ? { signal } : {}),
@@ -282,7 +283,7 @@ async function request<T>(
   }
   let body: unknown;
   try {
-    body = await response.json();
+    body = await readPrivateJson(response);
   } catch {
     throw new AnalyticsApiError("unavailable");
   }

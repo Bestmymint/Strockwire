@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -20,6 +21,11 @@ import {
   register,
   resetPassword,
 } from "@/api-client";
+import type { LoginResult } from "@/api-client";
+import {
+  clearContinuation,
+  saveContinuation,
+} from "@/verification-continuation-browser";
 
 import { passwordValidationMessage } from "./auth-form-support";
 import { EmailRequestForm } from "./email-request-form";
@@ -29,10 +35,13 @@ import { OnboardingForm } from "./onboarding-form";
 import { RegistrationForm } from "./registration-form";
 import { ResetPasswordForm } from "./reset-password-form";
 
-const { routerPush } = vi.hoisted(() => ({ routerPush: vi.fn() }));
+const { routerPush, routerReplace } = vi.hoisted(() => ({
+  routerPush: vi.fn(),
+  routerReplace: vi.fn(),
+}));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: routerPush }),
+  useRouter: () => ({ push: routerPush, replace: routerReplace }),
 }));
 
 vi.mock("@/api-client", async (importOriginal) => {
@@ -51,6 +60,7 @@ vi.mock("@/api-client", async (importOriginal) => {
 afterEach(() => {
   cleanup();
   routerPush.mockReset();
+  routerReplace.mockReset();
   vi.mocked(forgotPassword).mockReset();
   vi.mocked(completeFirstOrganizationOnboarding).mockReset();
   vi.mocked(login).mockReset();
@@ -58,6 +68,8 @@ afterEach(() => {
   vi.mocked(register).mockReset();
   vi.mocked(resetPassword).mockReset();
   window.history.replaceState(null, "", "/");
+  delete (window as Window & { __stockwiseTakeCredentialLink?: unknown })
+    .__stockwiseTakeCredentialLink;
   sessionStorage.clear();
 });
 
@@ -76,7 +88,7 @@ function renderWithQueryClient(ui: ReactNode, queryClient = new QueryClient()) {
 }
 
 describe("registration form", () => {
-  it("preserves exact credentials and transitions directly to non-secret verification continuation", async () => {
+  it("goes directly to OTP verification after the privacy-neutral accepted response", async () => {
     vi.mocked(register).mockResolvedValue({
       data: {
         nextStep: "verify_email",
@@ -98,8 +110,12 @@ describe("registration form", () => {
       }),
     );
     await waitFor(() =>
-      expect(routerPush).toHaveBeenCalledWith("/verify-email"),
+      expect(routerReplace).toHaveBeenCalledWith("/verify-email"),
     );
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: "Continue verification" }),
+    ).toBeNull();
     const saved = JSON.parse(
       sessionStorage.getItem("stockwise_verification_continuation") ?? "{}",
     );
@@ -109,9 +125,130 @@ describe("registration form", () => {
       challengeId: "11111111-1111-4111-8111-111111111111",
       savedAt: expect.any(Number),
     });
-    expect(screen.queryByLabelText("Password")).toBeNull();
-    expect(screen.queryByLabelText("Email address")).toBeNull();
-    expect(routerPush).not.toHaveBeenCalledWith("/app");
+    expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe(
+      "",
+    );
+    expect(routerReplace).not.toHaveBeenCalledWith("/app");
+    expect(routerPush).not.toHaveBeenCalled();
+  });
+
+  it.each(["unmount", "pagehide", "superseded"])(
+    "does not persist a late accepted result after %s",
+    async (exit) => {
+      const deferred = Promise.withResolvers<{
+        data: {
+          status: "accepted";
+          nextStep: "verify_email";
+          verification: { challengeId: string };
+        };
+      }>();
+      vi.mocked(register).mockReturnValue(deferred.promise);
+      const view = render(<RegistrationForm />);
+      fillCredentials();
+      const form = screen
+        .getByRole("button", { name: "Create account" })
+        .closest("form")!;
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+      expect(register).toHaveBeenCalledTimes(1);
+      if (exit === "unmount") view.unmount();
+      else if (exit === "pagehide") fireEvent(window, new Event("pagehide"));
+      else {
+        clearContinuation();
+        saveContinuation({
+          version: 1,
+          canonicalEmail: "successor@example.test",
+          challengeId: "22222222-2222-4222-8222-222222222222",
+          savedAt: Date.now(),
+        });
+      }
+      const before = sessionStorage.getItem(
+        "stockwise_verification_continuation",
+      );
+      await act(async () =>
+        deferred.resolve({
+          data: {
+            status: "accepted",
+            nextStep: "verify_email",
+            verification: {
+              challengeId: "11111111-1111-4111-8111-111111111111",
+            },
+          },
+        }),
+      );
+      expect(
+        sessionStorage.getItem("stockwise_verification_continuation"),
+      ).toBe(before);
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(routerReplace).not.toHaveBeenCalled();
+    },
+  );
+
+  it("ignores a late registration error after leaving without replacing successor state", async () => {
+    const deferred = Promise.withResolvers<{
+      data: {
+        status: "accepted";
+        nextStep: "verify_email";
+        verification: { challengeId: string };
+      };
+    }>();
+    vi.mocked(register).mockReturnValue(deferred.promise);
+    const view = render(<RegistrationForm />);
+    fillCredentials();
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Create account" }).closest("form")!,
+    );
+    view.unmount();
+    await act(async () => deferred.reject(new AuthApiError("unavailable")));
+    expect(
+      sessionStorage.getItem("stockwise_verification_continuation"),
+    ).toBeNull();
+    expect(routerReplace).not.toHaveBeenCalled();
+  });
+
+  it("allows a fresh submission after document restoration without accepting the abandoned result", async () => {
+    const abandoned = Promise.withResolvers<{
+      data: {
+        status: "accepted";
+        nextStep: "verify_email";
+        verification: { challengeId: string };
+      };
+    }>();
+    vi.mocked(register)
+      .mockReturnValueOnce(abandoned.promise)
+      .mockResolvedValueOnce({
+        data: {
+          status: "accepted",
+          nextStep: "verify_email",
+          verification: { challengeId: "22222222-2222-4222-8222-222222222222" },
+        },
+      });
+    render(<RegistrationForm />);
+    fillCredentials();
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Create account" }).closest("form")!,
+    );
+    fireEvent(window, new Event("pagehide"));
+    fireEvent(window, new Event("pageshow"));
+    const submit = screen.getByRole("button", { name: "Create account" });
+    expect(submit.hasAttribute("disabled")).toBe(false);
+    fireEvent.submit(submit.closest("form")!);
+    await waitFor(() =>
+      expect(routerReplace).toHaveBeenCalledWith("/verify-email"),
+    );
+    await act(async () =>
+      abandoned.resolve({
+        data: {
+          status: "accepted",
+          nextStep: "verify_email",
+          verification: { challengeId: "11111111-1111-4111-8111-111111111111" },
+        },
+      }),
+    );
+    expect(
+      JSON.parse(sessionStorage.getItem("stockwise_verification_continuation")!)
+        .challengeId,
+    ).toBe("22222222-2222-4222-8222-222222222222");
   });
 
   it("shows client validation and rate limit feedback without submitting invalid input", async () => {
@@ -138,6 +275,37 @@ describe("registration form", () => {
 });
 
 describe("login form", () => {
+  it.each(["unmount", "pagehide"])(
+    "ignores a pending-login continuation after %s",
+    async (leave) => {
+      const pending = Promise.withResolvers<LoginResult>();
+      vi.mocked(login).mockReturnValue(pending.promise);
+      renderWithQueryClient(<LoginForm />);
+      fillCredentials();
+      fireEvent.submit(
+        screen.getByRole("button", { name: "Sign in" }).closest("form")!,
+      );
+      if (leave === "unmount") cleanup();
+      else
+        act(() =>
+          window.dispatchEvent(
+            new PageTransitionEvent("pagehide", { persisted: true }),
+          ),
+        );
+      await act(async () =>
+        pending.resolve({
+          outcome: "verification_required",
+          status: "verification_required",
+          nextStep: "verify_email",
+          verification: { challengeId: null },
+        }),
+      );
+      expect(
+        sessionStorage.getItem("stockwise_verification_continuation"),
+      ).toBeNull();
+      expect(routerReplace).not.toHaveBeenCalled();
+    },
+  );
   function renderLoginForm(queryClient = new QueryClient()) {
     return renderWithQueryClient(<LoginForm />, queryClient);
   }
@@ -178,7 +346,8 @@ describe("login form", () => {
         .hasAttribute("disabled"),
     ).toBe(true);
     resolveLogin?.();
-    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/app"));
+    await waitFor(() => expect(routerReplace).toHaveBeenCalledWith("/app"));
+    expect(routerPush).not.toHaveBeenCalled();
     expect(queryClient.getQueryData(["access-context"])).toBeUndefined();
   });
 
@@ -284,7 +453,8 @@ describe("first organization onboarding form", () => {
         .hasAttribute("disabled"),
     ).toBe(true);
     resolveOnboarding?.();
-    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/app"));
+    await waitFor(() => expect(routerReplace).toHaveBeenCalledWith("/app"));
+    expect(routerPush).not.toHaveBeenCalled();
     expect(queryClient.getQueryData(["access-context"])).toBeUndefined();
   });
 
@@ -333,6 +503,19 @@ describe("first organization onboarding form", () => {
 });
 
 describe("password recovery and logout", () => {
+  it("clears all private cache only after confirmed logout", async () => {
+    vi.mocked(logout).mockRejectedValueOnce(new AuthApiError("unavailable"));
+    const client = renderWithQueryClient(<LogoutButton />);
+    client.setQueryData(["sales"], "private receipt");
+    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+    await screen.findByRole("alert");
+    expect(client.getQueryData(["sales"])).toBe("private receipt");
+    expect(routerReplace).not.toHaveBeenCalled();
+    vi.mocked(logout).mockResolvedValueOnce(undefined);
+    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+    await waitFor(() => expect(routerReplace).toHaveBeenCalledWith("/login"));
+    expect(client.getQueryData(["sales"])).toBeUndefined();
+  });
   it("keeps forgot-password completion non-disclosing and handles rate limits", async () => {
     vi.mocked(forgotPassword).mockResolvedValue({
       data: { status: "accepted" },
@@ -375,11 +558,13 @@ describe("password recovery and logout", () => {
     expect(passwordValidationMessage("a".repeat(129))).not.toBeNull();
     expect(passwordValidationMessage("😀".repeat(15))).toBeNull();
 
-    window.history.replaceState(
-      null,
-      "",
-      "/reset-password?token=opaque-reset-token",
-    );
+    Object.defineProperty(window, "__stockwiseTakeCredentialLink", {
+      configurable: true,
+      value: vi.fn(() => ({
+        route: "/reset-password",
+        token: "opaque-reset-token",
+      })),
+    });
     vi.mocked(resetPassword).mockResolvedValue({
       data: { status: "password_reset" },
     });
@@ -415,7 +600,8 @@ describe("password recovery and logout", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Log out" }));
     await waitFor(() => expect(logout).toHaveBeenCalledTimes(1));
-    expect(routerPush).toHaveBeenCalledWith("/login");
+    expect(routerReplace).toHaveBeenCalledWith("/login");
+    expect(routerPush).not.toHaveBeenCalled();
     expect(queryClient.getQueryData(["access-context"])).toBeUndefined();
   });
 });
